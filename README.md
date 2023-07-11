@@ -1,6 +1,6 @@
 # Empath
 
-## Scrapper
+## scrapper
 
 Gets <body>  textual content from cisco customer centre pages.
 
