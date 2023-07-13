@@ -1,0 +1,422 @@
+Configuration Examples and TechNotes
+Configuring a Router to Dial Multiple Sites using ISDN BRI
+Save
+Translations
+Download
+Print
+
+Updated:February 4, 2010
+Document ID:14562
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Conventions
+Related Products
+Configure
+Network Diagram
+Configurations
+Verify
+Troubleshoot
+Troubleshooting Commands
+Debug Output
+Related Information
+Introduction
+In certain situations, you would need to configure a router to dial multiple sites. For example, you may have to dial one router to connect to a part of your corporate network, and dial the Internet Service Provider (ISP) router to connect to the Internet.
+This document presents a configuration example in which a central router accesses the Internet, and a remote office uses Integrated Services Digital Network (ISDN). The remote office can also access the central router and the Internet through the central router.
+Prerequisites
+Requirements
+Before you proceed with this configuration, ensure that you:
+Verify that ISDN Layer 1 and 2 are up. For more information, see Using the show isdn status Command for BRI Troubleshooting.
+Obtain the necessary information from the ISP, such as the authentication method, which could be Challenge Handshake Authentication Protocol (CHAP) or Password Authentication Protocol (PAP), the username and password, the number to dial, and the IP address for the dialer interface (unless the interface uses a negotiated address). Also, find out if NAT is needed to connect multiple hosts to the ISP.
+From the remote router, obtain information about the authentication method, username and password, the number to dial, and the IP address.
+Components Used
+The information in this document is based on these software and hardware versions:
+Cisco 803 router with Cisco IOS® Software Release 12.1(11) IP plus.
+Note: If you need to configure NAT, ensure that you have the IP Plus (it has an "is" in the IOS file name) feature set.
+Cisco 2501 router, which is the remote office that runs Cisco IOS Software Release 12.2(5).
+Note: The configuration for the ISP router is not included. Refer to the Dial and Access Technology Support page for some example configurations.
+The information presented in this document was created from devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If you are working in a live network, ensure that you understand the potential impact of any command before using it.
+Conventions
+For more information on document conventions, see the Cisco Technical Tips Conventions.
+Related Products
+This configuration can be used with any router with a Basic Rate Interface (BRI) interface. This includes routers with built-in BRI interfaces, such as Cisco 800 (for example, 801, 802, 803, 804) and Cisco 1600 (for example, 1603-R and 1604-R) Series Routers. It also includes routers that accept BRI WAN Interface Cards (WICs) or Network Modules, like the 1600, 1700, 2600 and 3600 Series. For more information on BRI WICs or Network Modules, refer to WAN Interface Card (WIC) / Platform Hardware Compatibility Matrix for 1600, 1700, 2600 and 3600 Series Routers.
+Note: Use the show version command to check whether your router has a BRI interface.
+Configure
+In this section, you are presented with the information to configure the features described in this document.
+Note: To find additional information on the commands used in this document, use the Command Lookup Tool (registered customers only) .
+Network Diagram
+This document uses this network setup:
+Configurations
+In this configuration, the central router is named "central" and the remote corporate office is named "remote".
+On central, dialer interface 1 is configured to access the Internet. The IP address is dynamically assigned by the ISP. NAT is used to allow the IP networks of the central LAN, remote LAN, and central-remote WAN to access the Internet with the help of one dynamically-assigned IP address. Contact your ISP to check whether you need NAT.
+Note: We have configured both PAP and CHAP, because this depends on what the ISP has configured (however, only one of them is used).
+central
+ version 12.1 
+  no parser cache 
+  service timestamps debug datetime msec 
+  service timestamps log datetime msec 
+  ! 
+  hostname central 
+  ! 
+  username remote password 0 remote
+ 
+ !--- Username and shared secret password for the router (remote) !--- (used for CHAP authentication). !--- Shared secret password must be the same on both sides.
+
+  ! 
+  isdn switch-type basic-net3
+  !  
+  ! 
+  interface Ethernet0 
+   ip address 10.1.0.1 255.255.255.0 
+   ip nat inside 
+
+ !--- Ethernet 0 is an inside NAT interface. !--- All traffic from this network will be translated.
+
+   no cdp enable 
+  ! 
+  interface BRI0
+
+ !--- If you have additional BRIs, copy this BRI 0 configuration to the other BRIs.
+
+   no ip address 
+   encapsulation ppp 
+   dialer pool-member 1
+
+ !--- Assign BRI0 as member of dialer pool 1. !--- Dialer pool 1 is specified in interface Dialer 1.
+
+   dialer pool-member 2 
+
+ !--- Assign BRI0 as member of dialer pool 2. !--- Dialer pool 2 is specified in interface Dialer 2.
+
+   isdn switch-type basic-net3     
+
+ !--- This depends on the country. 
+
+   no cdp enable 
+   ppp authentication chap pap callin
+
+ !--- Permit one-way CHAP and PAP authentication. !--- Configure authentication on both the physical and dialer interface.
+
+  ! 
+  interface Dialer1 
+
+ !--- Create a dialer interface for every device to which you need to connect.
+
+   description CONNECTION TO INTERNET 
+   ip address negotiated 
+   
+!--- This IP address is obtained from the ISP. If the ISP permits a static !--- address, configure that address instead.
+
+   ip nat outside 
+
+ !--- The Outside NAT interface. Because this interface only has one IP address, !--- all traffic from the inside network will be Port Address Translated (PAT).
+
+   encapsulation ppp 
+   dialer pool 1 
+
+ !--- Dialer profile 1. Remember that interface BRI 0 is a member of this profile.
+
+   dialer remote-name ISP  
+   dialer idle-timeout 180 
+   dialer string 6122 
+
+ !--- The number used to dial the ISP.
+
+   dialer-group 1 
+   
+!--- Apply interesting traffic definition from dialer-list 1.
+
+   no cdp enable 
+   ppp authentication chap pap callin 
+   ppp chap hostname XXXXX   
+
+ !--- XXXXX is the username the ISP expects in order to authenticate this router. !--- For more information, refer to the document on ppp chap hostname.
+
+   ppp chap password YYYYY    
+  
+ !--- YYYYY is the password the ISP expects in order to authenticate this router.
+
+   ppp pap sent-username XXXXX password YYYYY 
+
+ !--- PAP username and password. !--- This is required only if the ISP does not support CHAP.
+
+  ! 
+  interface Dialer2 
+   description CONNECTION TO REMOTE OFFICE 
+   ip address 192.168.17.2 255.255.255.252
+
+ !--- IP address for the connection to the remote office. !--- The remote office BRI interface is in the same subnet.
+
+   ip nat inside
+
+ !--- Dialer 2 is an inside NAT interface. !--- With this configuration, traffic from remote office is translated !--- before it is sent to the ISP.
+
+   encapsulation ppp 
+   dialer pool 2 
+
+ !--- Dialer profile 2. Remember that interface BRI 0 is a member of this profile.
+
+   dialer remote-name remote 
+
+ !--- Specifies the remote router name (remote). !--- This name must match that used by the remote router to authenticate itself. !--- Remember that we configured the router username and password earlier.
+
+   dialer idle-timeout 180 
+   dialer string 6121 
+
+ !--- Number used to dial the remote office router.
+
+   dialer-group 1 
+
+ !--- Apply interesting traffic definition from dialer-list 1.
+
+   no cdp enable 
+   ppp authentication chap callin 
+  ! 
+  ip nat inside source list 101 interface Dialer1 overload 
+
+ !--- Establishes dynamic source translation (with PAT) for addresses that are !--- identified by the access list 101.
+
+  no ip http server 
+  ip classless 
+  ip route 0.0.0.0 0.0.0.0 Dialer1 
+
+ !--- Default route. Such traffic will use dialer 1 to the ISP.
+
+  ip route 10.2.0.0 255.255.255.0 Dialer2 
+
+ !--- Route to remote router network. Traffic for 10.2.0.0/24 uses Dialer2.
+
+  ! 
+  access-list 101 permit ip 10.1.0.0 0.0.0.255 any 
+  access-list 101 permit ip 10.2.0.0 0.0.0.255 any 
+  access-list 101 permit ip 192.168.17.0 0.0.0.3 any 
+  
+!--- Defines an access list that permits the addresses to be translated. !--- Note that the Ethernet 0 network, the remote router network and the !--- BRI network (between this router and the remote one) will be translated.
+
+  dialer-list 1 protocol ip permit 
+
+ !--- Interesting traffic definition. !--- This definition is applied to both connections. !--- If you need to define different interesting traffic for each connection, !--- create two dialer-lists and apply one to each dialer profile with dialer-group.
+
+  no cdp run 
+  ! 
+  line con 0 
+   exec-timeout 3 0 
+  line vty 0 4 
+   exec-timeout 3 0 
+  ! 
+  !  
+  end
+remote
+version 12.2 
+  service timestamps debug datetime msec 
+  service timestamps log datetime msec 
+  ! 
+  hostname remote 
+  ! 
+  username central password 0 remote 
+
+ !--- Username and shared secret password for the router (central) !--- (used for CHAP authentication). !--- Shared secret must be the same on both sides. 
+
+  ! 
+  isdn switch-type basic-net3
+  ! 
+  interface Ethernet0 
+   ip address 10.2.0.1 255.255.255.0 
+
+ !--- Remember that this network is included in the NAT statements on central.
+
+   no cdp enable 
+  ! 
+  interface BRI0 
+    no ip address 
+   encapsulation ppp 
+   dialer pool-member 1 
+
+ !--- Assign BRI0 as member of dialer pool 1. !--- Dialer pool 1 is specified in interface Dialer 1.
+
+   isdn switch-type basic-net3 
+   no cdp enable 
+   ppp authentication chap 
+  ! 
+  interface Dialer1 
+   ip address 192.168.17.1 255.255.255.252 
+   encapsulation ppp 
+   dialer pool 1 
+
+ !--- Dialer profile 1. Remember that interface BRI 0 is a member of this profile. 
+
+   dialer remote-name central 
+
+ !--- Specifies the name of the other router (central). !--- This name must match that used by the remote router to authenticate itself. !--- Remember that we configured the router username and password earlier.
+
+   dialer string 6131
+
+ !--- The number used to dial the central router. 
+
+   dialer-group 1 
+   
+!--- Apply interesting traffic definition from dialer-list 1.
+
+   pulse-time 0 
+   no cdp enable 
+   ppp authentication chap callin 
+  ! 
+  ip classless 
+  ip route 0.0.0.0 0.0.0.0 Dialer1 
+
+ !--- Default route. Such traffic will use dialer 1 to the central router.
+
+  no ip http server 
+  ! 
+  dialer-list 1 protocol ip permit
+
+ !--- All IP traffic is interesting. 
+
+  ! 
+  line con 0 
+   exec-timeout 3 0 
+  line aux 0 
+  line vty 0 4 
+   exec-timeout 3 0 
+  ! 
+  end
+Verify
+This section provides information you can use to confirm your configuration is working properly.
+Certain show commands are supported by the Output Interpreter Tool (registered customers only) , which allows you to view an analysis of show command output.
+show isdn active—shows the ISDN number you have used to place the call, and indicates whether the call is inbound or outbound.
+show caller ip—displays a summary of caller information for the IP address you provide.
+show ip interface dialer 1 | include Internet—lists a summary of a dialer interface's IP information and status.
+show dialer [interface type number]—displays general diagnostic information for interfaces configured for dial-on-demand routing (DDR). If the dialer came up properly, this message appears:
+Dialer state is data link layer up
+If physical layer up appears, it implies that the line protocol came up, but the Network Control Protocol (NCP) did not. The source and destination addresses of the packet that initiated the dialing are shown in the Dial reason line. This show command also displays the configuration of the timer, and the time before the connection times out.
+Troubleshoot
+This section provides information you can use to troubleshoot your configuration.
+Troubleshooting Commands
+Certain show commands are supported by the Output Interpreter Tool (registered customers only) , which allows you to view an analysis of show command output.
+Note: Before issuing debug commands, please see Important Information on Debug Commands.
+debug dialer—displays debugging information about the packets or events on a dialer interface.
+debug isdn q931—displays information about call setup and teardown of ISDN network connections (Layer 3) between the local router (user side) and the network.
+debug ppp negotiation—displays information on Point-to-Point Protocol (PPP) traffic and exchanges during the negotiation of PPP components, and includes information on Link Control Protocol (LCP), Authentication, and NCP. A successful PPP negotiation will first open the LCP state, then Authenticate, and finally negotiate NCP.
+debug ppp authentication—causes the debug ppp command to display authentication protocol messages, including CHAP packet exchanges and PAP exchanges.
+debug ip peer—contains information on the peer.
+Debug Output
+To troubleshoot the configuration, use these debugs:
+   central#debug isdn q931 
+   ISDN Q931 packets debugging is on 
+   
+   central#debug dialer 
+   Dial on demand events debugging is on 
+   
+   central#debug ppp negotiation 
+   PPP protocol negotiation debugging is on 
+   
+   central#debug ppp authentication 
+   PPP authentication debugging is on 
+   
+   central#debug ip peer 
+   IP peer address activity debugging is on 
+The router called central initiates a call to the Internet: 198.133.219.25 is an IP address on the Internet.
+   central#ping 198.133.219.25
+
+   :.!!!! 
+   Success rate is 80 percent (4/5), round-trip min/avg/max = 40/41/44 ms 
+
+   *Mar 1 00:06:12.984: BR0 DDR: rotor dialout [priority] 
+   *Mar 1 00:06:12.988: BR0 DDR: Dialing cause ip (s=172.17.243.115, 
+    d=198.133.219.25)    
+   *Mar 1 00:06:12.988: BR0 DDR: Attempting to dial 6122 
+   *Mar 1 00:06:12.996: ISDN BR0: TX -> SETUP pd = 8 callref = 0x01 
+
+ !--- central initiates the call to ISDN number 6122. 
+
+   *Mar 1 00:06:13.000: Bearer Capability i = 0x8890 
+   *Mar 1 00:06:13.008: Channel ID i = 0x83 
+   *Mar 1 00:06:13.008: Called Party Number i = 0x80, '6122', Plan:Unknown,
+   Type:Unknown 
+   *Mar 1 00:06:13.088: ISDN BR0: RX <- CALL_PROC pd = 8 callref = 0x81 
+   *Mar 1 00:06:13.092: Channel ID i = 0x89 
+   *Mar 1 00:06:13.244: ISDN BR0: RX <- CONNECT pd = 8 callref = 0x81 
+
+ !--- central receives a connect message : the ISDN B channel is established. 
+
+   *Mar 1 00:06:13.252: ISDN BR0: TX -> CONNECT_ACK pd = 8 callref = 0x01 
+   *Mar 1 00:06:13.260: %LINK-3-UPDOWN: Interface BRI0:1, changed state to up 
+   *Mar 1 00:06:13.268: BR0:1: interface must be fifo queue, force FIFO 
+   *Mar 1 00:06:13.272: %DIALER-6-BIND: Interface BR0:1 bound to profile Di1 
+   *Mar 1 00:06:13.280: BR0:1 PPP: Treating connection as a callout 
+   *Mar 1 00:06:13.280: BR0:1 PPP: Phase is ESTABLISHING, Active Open 
+   *Mar 1 00:06:13.284: BR0:1 PPP: No remote authentication for call-out 
+   *Mar 1 00:06:13.284: BR0:1 LCP: O CONFREQ [Closed] id 1 len 10 
+   *Mar 1 00:06:13.284: BR0:1 LCP: MagicNumber 0x108130DD (0x0506108130DD) 
+   *Mar 1 00:06:13.300: BR0:1 LCP: I CONFREQ [REQsent] id 132 Len 15 
+   *Mar 1 00:06:13.300: BR0:1 LCP: AuthProto CHAP (0x0305C22305) 
+
+ !--- The ISP wants to use CHAP authentication. 
+
+   *Mar 1 00:06:13.304: BR0:1 LCP: MagicNumber 0xE4225290 (0x0506E4225290) 
+   *Mar 1 00:06:13.304: BR0:1 LCP: O CONFACK [REQsent] id 132 Len 15 
+   *Mar 1 00:06:13.308: BR0:1 LCP: AuthProto CHAP (0x0305C22305) 
+   *Mar 1 00:06:13.308: BR0:1 LCP: MagicNumber 0xE4225290 (0x0506E4225290) 
+   *Mar 1 00:06:13.308: BR0:1 LCP: I CONFACK [ACKsent] id 1 Len 10 
+   *Mar 1 00:06:13.312: BR0:1 LCP: MagicNumber 0x108130DD (0x0506108130DD) 
+   *Mar 1 00:06:13.312: BR0:1 LCP: State is Open 
+   *Mar 1 00:06:13.320: BR0:1 PPP: Phase is AUTHENTICATING, by the peer 
+   *Mar 1 00:06:13.328: BR0:1 AUTH: Started process 0 pid 22 
+   *Mar 1 00:06:13.328: BR0:1 CHAP: I CHALLENGE id 118 Len 27 from "posets"    
+   *Mar 1 00:06:13.332: BR0:1 CHAP: Using alternate hostname XXXXX 
+   *Mar 1 00:06:13.332: BR0:1 CHAP: Username posets not found 
+   *Mar 1 00:06:13.336: BR0:1 CHAP: Using default password 
+   *Mar 1 00:06:13.336: BR0:1 CHAP: O RESPONSE id 118 Len 26 from "XXXXX"    
+   *Mar 1 00:06:13.360: BR0:1 CHAP: I SUCCESS id 118 Len 4 
+   
+!--- central receives a CHAP SUCCESS from ISP. 
+
+   *Mar 1 00:06:13.360: BR0:1 PPP: Phase is UP 
+   *Mar 1 00:06:13.364: BR0:1 IPCP: O CONFREQ [Not negotiated] id 1 Len 10 
+   *Mar 1 00:06:13.364: BR0:1 IPCP: Address 0.0.0.0 (0x030600000000) 
+   *Mar 1 00:06:13.368: BR0:1 IPCP: I CONFREQ [REQsent] id 108 Len 10 
+   *Mar 1 00:06:13.368: BR0:1 IPCP: Address 194.183.201.1 (0x0306C2B7C901) 
+   *Mar 1 00:06:13.368: BR0:1: IPPOOL: validate address = 194.183.201.1 
+   *Mar 1 00:06:13.372: BR0:1 set_ip_peer(3): new address 194.183.201.1 
+   *Mar 1 00:06:13.372: BR0:1 IPCP: O CONFACK [REQsent] id 108 Len 10 
+   *Mar 1 00:06:13.376: BR0:1 IPCP: Address 194.183.201.1 (0x0306C2B7C901) 
+   *Mar 1 00:06:13.380: BR0:1 IPCP: I CONFNAK [ACKsent] id 1 Len 10 
+   *Mar 1 00:06:13.380: BR0:1 IPCP: Address 194.183.201.3 (0x0306C2B7C903) 
+
+ !--- 194.183.201.3 is assigned by ISP to dialer 1 of central. 
+
+   *Mar 1 00:06:13.384: BR0:1 IPCP: O CONFREQ [ACKsent] id 2 Len 10 
+   *Mar 1 00:06:13.384: BR0:1 IPCP: Address 194.183.201.3 (0x0306C2B7C903) 
+   *Mar 1 00:06:13.396: BR0:1 IPCP: I CONFACK [ACKsent] id 2 Len 10 
+   *Mar 1 00:06:13.400: BR0:1 IPCP: Address 194.183.201.3 (0x0306C2B7C903) 
+   *Mar 1 00:06:13.400: BR0:1 IPCP: State is Open 
+   *Mar 1 00:06:13.400: Di1 IPCP: Install negotiated IP interface address
+   194.183.201.3 
+   *Mar 1 00:06:13.412: BR0:1 DDR: dialer protocol up 
+   *Mar 1 00:06:13.416: Di1 IPCP: Install route to 194.183.201.1 
+   *Mar 1 00:06:14.360: %LINEPROTO-5-UPDOWN: Line protocol on Interface BRI0:1,
+   changed state to up 
+   *Mar 1 00:06:19.276: %ISDN-6-CONNECT: Interface BRI0:1 is now connected to 6122
+   unknown
+Related Information
+Dial and Access Technology Support
+Technical Support & Documentation - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+04-Feb-2010
+Initial Release
+Contributed by
+npanicke
+pdetroye
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Dial-on-Demand Routing (DDR)
+Integrated Services Digital Networks (ISDN), Channel-Associated Signaling (CAS)

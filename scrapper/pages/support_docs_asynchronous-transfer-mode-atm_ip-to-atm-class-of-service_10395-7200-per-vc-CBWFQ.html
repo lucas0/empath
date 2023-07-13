@@ -1,0 +1,196 @@
+Configuration Examples and TechNotes
+Per-VC Class-Based, Weighted Fair Queuing (Per-VC CBWFQ) on the Cisco 7200, 3600, and 2600 Routers
+Save
+Translations
+Print
+Updated:December 12, 2005
+Document ID:10395
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Conventions
+Configure
+Network Diagram
+Sample Configuration
+Advanced CBWFQ Configuration on 7200 Routers
+Verify
+Troubleshoot
+Related Information
+Introduction
+Weighted Fair Queuing (WFQ) was implemented for slow speed links (such as serial) to provide a fair treatment for each type of traffic. To do its job, WFQ classifies the traffic into different flows based on the associated layer 3 and layer 4 information (IP addresses, TCP ports, and so on). You do not need to define access-lists in order for this to work. With WFQ, low bandwidth traffic has effective priority over high bandwidth traffic. The high bandwidth traffic shares the transmission media proportionally to assigned weights.
+WFQ has the following limitations:
+If the traffic flow increases significantly, WFQ cannot adjust because it is not scalable.
+WFQ is not available on high speed interfaces, such as ATM.
+A new feature, Class-Based Weighted Fair Queuing (CBWFQ), has been developed to address the limitations of WFQ. Unlike WFQ, CBWFQ allows you to define traffic classes. Once classes have been defined, parameters can then be applied. These parameters includes bandwidth and queue-limit.
+When using CBWFQ, the weight specified for a class becomes the weight of each packet that matches the class criteria. This weight is derived from the bandwidth you assign to the class. WFQ is then applied to these classes instead of being applied to the flows themselves. The classes can include several flows.
+Below is a summary of Per-VC CBWFQ availability on the 7200, 3600, and 2600 routers:
+7200: Cisco IOS® versions 12.0(5)T, 12.0(5)XE, 12.1(1), 12.1(1)T, 12.1(1)E and later using a PA-A3.
+7200 with NSE: Cisco IOS version 12.1(7)E and later.
+7200 with NSE-1 Services Accelerator: Cisco IOS version 12.2(4)B1.
+2600/3600 with NM-1A-T3/E3 modules support LLQ / CBWFQ on Cisco IOS version 12.1(5)T and later.
+2600/3600 with DS3/E3 network modules: Cisco IOS version 12.1(2)T.
+Note: Cisco express forwarding (CEF) switching functionality must be used because CBWFQ monitors only CEF-switched packets.
+Prerequisites
+Requirements
+There are no specific requirements for this document.
+Components Used
+The information in this document is based on these hardware versions:
+Cisco 7200, 3600, and 2600 Series Routers
+Conventions
+For more information on document conventions, refer to Cisco Technical Tips Conventions.
+Configure
+In this section, you are presented with the information to configure the features described in this document.
+Note: To find additional information on the commands used in this document, use the Command Lookup Tool (registered customers only) .
+Network Diagram
+This document uses this network setup:
+1/130 is the VPI/VCI value assigned on both ends of the PVC between the 7200 and Router A.
+The traffic generator is connected to interface Fast-Ethernet 3/0.
+The 7200 is running Cisco IOS version 12.0(5)T.
+Router A is used as a sink device for the tests.
+The configuration is performed on a 7200, but it is similar on a 2600/3600.
+Sample Configuration
+Below is the 7200 configuration necessary to implement CBWFQ:
+7200
+    class-map ixia
+      match input-interface FastEthernet3/0
+    class-map loopbacks
+      match access-group 102
+    !
+    policy-map mypol
+      class ixia
+       bandwidth 40000
+       queue-limit 40
+      class loopbacks
+       bandwidth 10000
+      class class-default
+       fair-queue
+    !
+    interface ATM2/0.130 point-to-point
+     ip address 14.0.0.2 255.0.0.0
+     no ip directed-broadcast
+     pvc 1/130
+      service-policy output mypol
+      vbr-nrt 100000 75000
+      broadcast
+      encapsulation aal5mux ip
+    !
+    access-list 102 permit ip host 10.0.0.1 host 11.0.0.1
+Below are some comments on the configuration:
+Class maps classify and assign weights to traffic. Classification parameters and class maps are defined at the same place. In this case, one class is applied to all the incoming traffic on Fast-Ethernet 3/0 (the traffic from the traffic generator). The other class is related to the traffic between the loopbacks (defined on the 7200 and Router A).
+After defining the classification parameters, you can use a policy map to apply traffic parameters to these classified flows. In this case, the flow from the traffic generator is "allocated" a bandwidth of 40 Mbps and a queue depth of 40 packets. The traffic between loopbacks is allocated a bandwidth of 10 Mbps.
+The queue depth is the number of packets that can be stored for a particular class before drops occur. The default value is 64 (which is also the maximum queue depth).
+After the traffic parameters have been defined for each class, CBWFQ is applied on a VC-basis using the following command: service-policy [input|output] policy-map-name.
+Traffic not matching one of the defined class maps will be assigned a default class map (class default) which is defined in the policy map. All non-classified traffic will be applied the parameters defined under this default class. In this case, normal Weighted Fair Queuing is configured.
+For this sample configuration, CBWFQ is applied on a VC, but it can be used on a PVC bundle as well. In addition, CBWFQ can be associated with Weighted Random Early Discard (WRED) as a drop mechanism (when the queue-limit is reached).
+Important:
+Before performing the configuration tasks in this section, you must first create the classes that will be used to differentiate traffic on the VC, then define a policy map to include them. You can configure class policies for as many classes as are defined on the router -- up to the maximum of 64. However, the total amount of allocated VC bandwidth (for all classes included in a policy map) must not exceed 75 percent of the VC's available bandwidth.
+Because CBWFQ provides a minimum bandwidth guarantee, you can only apply CBWFQ to VCs with classes of service other than UBR and UBR+.
+You cannot apply per-VC WFQ and CBWFQ to UBR and UBR+ VCs because both of these service classes are best-effort classes that do not guarantee minimum bandwidth. When CBWFQ is enabled for a VC, all classes configured as a part of the service policy are installed in the Fair Queuing system.
+If you apply a service policy to an ATM VC and the policy includes a feature that is not Parallel Express Forwarding (PXF)-enabled, the packets will be punted to the next lower switching path. Execute the show pxf acc summ command and look for an incrementing value for punts due to "output feature."
+router#show pxf acc sum      
+            Pkts             Dropped   RP Processed             Ignored 
+           Total                 242      328395045                   0 
+10 second averages: PXF complex busy:       28%  PXF read pipeline full:   0% 
+PXF Statistic: 
+     Packets RP -> PXF: 
+         switch ip:                       0 
+         switch raw:              556612940 
+         qos fastsend:                    0 
+         qos enqueue:                     0 
+     Total:                       556612940 
+Packets PXF -> RP: 
+         qos pkts:                        0 
+         fast pkts:               228217649 
+         drops: total                   242 
+           "    no route               :         242 
+         punts: total             328395045 
+           "    not IP                 :         597 
+           "    IP options             :         676 
+           "    CEF no adjacency       :      186770 
+           "    CEF receive            :      265306 
+           "    output feature         :   327916956 
+Advanced CBWFQ Configuration on 7200 Routers
+On Cisco 7200 routers running Cisco IOS version 12.1(5)E, 12.1(5)T and later, we can group the map classes to form more complicated class maps. Additionally, we can associate logical operations to class map parameters (to determine if traffic matches a class).
+Let's look at the following class maps to clarify this concept:
+Advanced CBWFQ Configuration
+class-map match-all ixia
+  description traffic from Ixia 
+  match input-interface FastEthernet1/0 
+class-map match-all ftp1 
+  description ftp traffic initiated by the traffic generator 
+  match class-map ixia 
+  match class-map ftp2 
+class-map match-all ftp2 
+  match access-group 103 
+class-map match-any test 
+  match access-group 102    
+  match input-interface Ethernet0/0 
+! 
+access-list 103 permit tcp any any eq ftp    
+! 
+access-list 102 permit ip host 10.1.1.1 any
+The difference between match-all and match-any is as follows:
+match-all: a flow is associated with a class map if ALL of the associated conditions are verified.
+match-any means: a flow is associated with a class-map if ANY of associated conditions are verified (not necessarily all the conditions).
+We can see here that a class map can include tests against other configured class maps. In this case, a flow is associated with ftp1 if it matches all the conditions defined under class map ixia and class map ftp2.
+Verify
+This section provides information you can use to confirm your configuration is working properly.
+Certain show commands are supported by the Output Interpreter Tool (registered customers only) , which allows you to view an analysis of show command output.
+show policy-map interface atm x/y[.z]—This command allows you to see the statistics per queue, such as the drops. It is useful for monitoring the results of a service-policy created with Cisco's modular Quality of Service (QoS) command-line interface (CLI) (MQC). For more detailed information on how to interpret the output of this command, refer to Understanding Packet Counters in show policy-map interface Output.
+        7200#show policy-map interface atm 2/0.130 
+         ATM2/0.130: VC 1/130 - output : mypol 
+          Weighted Fair Queueing 
+            Class ixia 
+              Output Queue: Conversation 264 
+                Bandwidth 40000 (kbps) Packets Matched 0 Max Threshold 40(packets) 
+                (discards/tail drops) 0/0 
+            Class loopbacks 
+              Output Queue: Conversation 265 
+                Bandwidth 10000 (kbps) Packets Matched 0 Max Threshold 64(packets) 
+                (discards/tail drops) 0/0 
+            Class class-default 
+              Output Queue: Conversation 266 
+                Bandwidth 0 (kbps) Packets Matched 0 Max Threshold 64 (packets) 
+                (discards/tail drops) 0/0
+Note: See the following explanations regarding the two types of drops:
+Discards: total drops from this queue.
+Tail Drops: drops from this queue only when another queue has an incoming packet with a "lower" WFQ sequence number and the WFQ system reaches the max-queue-limit number of packets.
+show policy-map interface atm x/y[.z] vc [vcd | vpi/vci]—This command gives more granularity for specific VCs.
+        7200#show policy-map interface atm 2/0.130 vc 1/130 
+         ATM2/0.130: VC 1/130 - output : mypol 
+          Weighted Fair Queueing 
+            Class ixia 
+              Output Queue: Conversation 264 
+                Bandwidth 40000 (kbps) Packets Matched 0 Max Threshold 40(packets) 
+                (discards/tail drops) 0/0 
+            Class loopbacks 
+              Output Queue: Conversation 265 
+                Bandwidth 10000 (kbps) Packets Matched 0 Max Threshold 64(packets) 
+                (discards/tail drops) 0/0 
+            Class class-default 
+              Output Queue: Conversation 266 
+                Bandwidth 0 (kbps) Packets Matched 0 Max Threshold 64 (packets) 
+                (discards/tail drops) 0/0
+You can also use other commands like show class-map or show policy-map class to get more detailed information on the map classes.
+Troubleshoot
+There is currently no specific troubleshooting information available for this configuration.
+Related Information
+Class-Based Weighted Fair Queueing
+ATM Technical Support
+Technical Support - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+12-Dec-2005
+Initial Release
+Contributed by
+fvanderb
+kbenhabe
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)

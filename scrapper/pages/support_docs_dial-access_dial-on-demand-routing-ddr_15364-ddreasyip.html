@@ -1,0 +1,421 @@
+Configuration Examples and TechNotes
+Dial-on-demand Routing (DDR) with Easy IP and DHCP Server
+Save
+Translations
+Download
+Print
+
+Updated:October 24, 2005
+Document ID:15364
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Conventions
+Background Information
+Components of Easy IP
+How Easy IP works Step-by Step
+Configure
+Network Diagram
+Configurations
+Verify
+show Commands
+Sample show Output
+Troubleshoot
+debug Commands
+Sample debug output
+Related Information
+Introduction
+This document explains the use of the Cisco IOS® Software Easy IP feature which is useful in cases where an entire site connects to the Internet via an Internet Service Provider (ISP) that assigns only one IP address for the entire remote site. The Easy IP Router dials Network Access Server (NAS) at the service provider and negotiates its own WAN IP address. The router then uses Network Address Translation (NAT) through this negotiated address with port address translation (PAT) to provide outside access for the inside clients. Another optional function of the Easy IP router is to act as a Dynamic Host Configuration Protocol (DHCP) server to the LAN inside clients. The Cisco small office, home office (SOHO) router is commonly used in this configuration type.
+Prerequisites
+Requirements
+There are no specific prerequisites for this document.
+Components Used
+The information in this document is based on these software and hardware versions:
+Easy IP Router - A Cisco 3620 with four Ethernet and eight BRI interface running Cisco IOS software release 12.0 (7) XK2.
+Access Server - A Cisco AS5300 with one Ethernet, one Fast Ethernet and four channelized T1/PRI ports running Cisco IOS software release 12.1(7).
+The information presented in this document was created from devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If you are working in a live network, ensure that you understand the potential impact of any command before using it.
+Conventions
+For more information on document conventions, see the Cisco Technical Tips Conventions.
+Background Information
+Components of Easy IP
+Point-to-Point Protocol (PPP)/IP Control Protocol (IPCP): This is defined in RFC 1332 . IPCP provides the ability to dynamically configure an IP addresses over PPP. A Cisco IOS Easy IP router uses PPP/IPCP to dynamically negotiate its own registered WAN interface IP address from a central access server or DHCP server.
+NAT: Operates on a router that connects two or more networks together. In Easy IP, at least one of these networks (designated as "inside" or "LAN") is addressed with private addresses that must be converted into a registered address before packets can be forwarded to the other registered network (designated as "outside" or "WAN"). Within the context of Easy IP, port address translation (PAT) is used to translate all internal private addresses to a single outside registered IP address.
+DHCP to the LAN clients: This is an optional function of the Cisco Easy IP router which can be used to assign IP addresses to the inside LAN clients. Other methods of assigning IP addresses to the clients such as static assignments or the use of a DHCP PC server could also be used.
+How Easy IP works Step-by Step
+If the Easy IP router is configured as a DHCP server, the LAN inside clients receive a private IP address from it upon power up. If it is not configured as such, the clients must have an IP address assigned to them in some other way.
+When a LAN inside client generates "interesting" traffic (as defined by access control lists) for dialup, the Easy IP router dials and requests a single registered IP address from the central site's access server via PPP/IPCP. Once this connection is made, other LAN inside clients are able to use this circuit as explained in step 4.
+The Central Site Access Server replies with a dynamic global address from a local IP address pool which is assigned to the WAN interface of the Easy IP router.
+The Easy IP router uses PAT to automatically create a translation that associates the registered IP address of the WAN interface with the private IP address of the LAN inside client and a connection to the Central Site Access Server is made.
+For a more detailed understanding of Easy IP, refer to White Paper - Cisco IOS Easy IP.
+Configure
+In this section, you are presented with the information to configure the features described in this document.
+Network Diagram
+This document uses the network setup shown in the diagram below.
+Configurations
+This document uses this configuration:
+Easy IP Router
+EasyIP#show running-config
+Building configuration...
+
+Current configuration:
+!
+version 12.0
+service timestamps debug uptime
+service timestamps log uptime
+no service password-encryption
+!
+hostname EasyIP
+!
+username ISP-AS password 0 ipnegotiate
+
+! --- Username for remote router (ISP-AS) and shared secret. ! --- Shared secret(used for CHAP) must be the same on both sides.
+
+ip subnet-zero
+no ip domain-lookup
+no ip dhcp conflict logging
+
+! --- Disable the recording of DHCP address conflicts on the DHCP server.
+
+ip dhcp excluded-address 10.0.0.1
+
+! --- Specifies a IP address that the DHCP server should not assign to clients.
+
+ip dhcp pool soho
+
+! --- Configure the DHCP address pool name and enter DHCP pool configuration mode.
+
+ network 10.0.0.0 255.0.0.0
+
+ ! --- Specifies the subnet network number and mask of the DHCP address pool.
+
+ default-router 10.0.0.1
+
+ ! --- Specifies the IP address of the default router for a DHCP clients.
+ 
+ lease infinite
+
+ ! --- Specifies the duration of the lease.
+
+!
+isdn switch-type basic-5ess
+isdn voice-call-failure 0
+!
+interface Ethernet0/0
+ ip address 10.0.0.1 255.0.0.0
+
+ ! --- IP address for the Ethernet interface. 
+
+ no ip directed-broadcast
+ ip nat inside
+
+! --- Defines the interface as internal for network address translation.
+
+!
+
+! Unused ethernet interfaces omitted for brevity
+
+!
+interface BRI1/0
+ ip address negotiated
+
+! --- Enables PPP/IPCP negotiation for this interface.
+
+ no ip directed-broadcast
+ ip nat outside
+
+! --- Defines the interface as external for network address translation.
+
+ encapsulation ppp
+ dialer idle-timeout 60
+
+! --- Idle timeout(in seconds)for this BRI interface.
+
+ dialer string 97771200
+
+! --- Specifies the telephone number required to reach the central access server.
+
+ dialer-group 1
+
+! --- Apply interesting traffic defined in dialer-list 1.
+
+ isdn switch-type basic-5ess
+ ppp authentication chap
+!
+
+!-- Unused BRI interfaces omitted for brevity.
+
+!
+ip nat inside source list 100 interface BRI1/0 overload 
+
+! --- Establishes dynamic source translation (with PAT) for addresses which are ! --- identified by the access list 100.
+
+ip classless
+ip route 0.0.0.0 0.0.0.0 BRI1/0 permanent
+
+! --- Default route is via BRI1/0.
+
+no ip http server
+!
+access-list 100 permit ip 10.0.0.0 0.255.255.255 any
+
+! --- Defines an access list permitting those addresses that are to be translated.
+
+dialer-list 1 protocol ip permit
+
+! --- Interesting traffic is defined by dialer-list1. ! --- This is applied to BRI1/0 using dialer-group 1.
+
+line con 0
+ transport input none
+line aux 0
+line vty 0 4
+ login
+!         
+end
+Verify
+This section provides information you can use to confirm your configuration is working properly.
+show Commands
+Certain show commands are supported by the Output Interpreter tool, which allows you to view an analysis of show command output.
+show ip interface brief - Displays the interface status and the IP address configured on the interface.
+show interfaces - Provides high-level information about the interface staus for a particular interface.
+show ip nat statistics - Displays Network Address Translation (NAT) statistics.
+show ip nat translations - Displays active NAT translations.
+show isdn status - Displays the status of each ISDN layer. Verifies that ISDN Layer 1 and 2 are functioning. See the document Using the show isdn status Command for BRI Troubleshooting for further troubleshooting information.
+show dialer - Displays the dialer information.
+Sample show Output
+The following show command outputs, which are taken before the Easy IP Router initiating the dialup connection to Central Site Access Server shows the BRI1/0 interface is up and has no IP address but the IP address will be negotiated using IPCP.
+EasyIP#show ip interface brief
+Interface                  IP-Address      OK? Method Status                Prol
+Ethernet0/0                10.0.0.1        YES manual up                    up  
+Ethernet0/1                unassigned      YES manual administratively down dow 
+Ethernet0/2                unassigned      YES manual administratively down dow 
+Ethernet0/3                unassigned      YES manual administratively down dow 
+BRI1/0                     unassigned      YES IPCP   up                    up
+
+! -- Interface is Up, but no IP Address is assigned since it is not connected
+
+BRI1/0:1                   unassigned      YES unset  down                  dow 
+BRI1/0:2                   unassigned      YES unset  down                  dow 
+
+! -- Both B-channels are down
+
+BRI1/1                     unassigned      YES manual administratively down dow 
+BRI1/1:1                   unassigned      YES unset  administratively down dow 
+BRI1/1:2                   unassigned      YES unset  administratively down dow
+
+EasyIP#show interfaces bri1/0
+BRI1/0 is up, line protocol is up (spoofing)
+  Hardware is BRI with integrated NT1
+Internet address will be negotiated using IPCP
+  MTU 1500 bytes, BW 64 Kbit, DLY 20000 usec,
+     reliability 255/255, txload 1/255, rxload 1/255
+Encapsulation PPP, loopback not set
+   .
+   .
+EasyIP#
+The following show command outputs, which are taken after the Easy IP Router initiated the dialup connection with the Central Site Access Server shows the BRI1/0 interface has received its IP address 200.1.0.3 from the Central Site Access Server via PPP/IPCP.
+EasyIP#show ip interface brief 
+Interface                  IP-Address      OK? Method Status                Prorocol
+Ethernet0/0                10.0.0.1        YES manual up                    up  
+Ethernet0/1                unassigned      YES manual administratively down dow 
+Ethernet0/2                unassigned      YES manual administratively down dow 
+Ethernet0/3                unassigned      YES manual administratively down dow 
+BRI1/0                     200.1.0.3       YES IPCP   up                    up  
+
+! -- Int BRI1/0 has a registers IP address assigned after connection is up
+
+BRI1/0:1                   unassigned      YES unset  up                    up  
+BRI1/0:2                   unassigned      YES unset  down                  dow 
+
+! -- 1st B-channel (BRI1/0:1) is UP
+
+BRI1/1                     unassigned      YES manual administratively down dow 
+BRI1/1:1                   unassigned      YES unset  administratively down dow 
+BRI1/1:2                   unassigned      YES unset  administratively down dow
+EasyIP#show interfaces bri1/0
+BRI1/0 is up, line protocol is up (spoofing)
+  Hardware is BRI with integrated NT1
+Internet address is 200.1.0.3/32
+  MTU 1500 bytes, BW 64 Kbit, DLY 20000 usec,
+     reliability 255/255, txload 1/255, rxload 1/255
+Encapsulation PPP, loopback not set
+  .
+  . 
+  EasyIP#
+We need to check whether the inside private network hosts are able to connect to Central Site Access Server or not and the NAT feature is functioning properly or not. This can be accomplished by using the extended ping utility. On the EasyIP router, ping the ethernet interface of the Central Site Access Server and specify the source of the ping as the LAN (private) address of the EasyIP router. This ensures that the packet is processed by PAT and that clients on the LAN can communicate with the central site network.
+EasyIP#ping
+Protocol [ip]: 
+Target IP address: 192.168.16.1
+
+! -- Ethernet interface IP address of the Central Site Access Server.
+
+Repeat count [5]: 10
+Datagram size [100]: 
+Timeout in seconds [2]: 
+Extended commands [n]: y
+Source address or interface: 10.0.0.1
+
+! --Ethernet interface IP address (private) of the Easy IP router.
+
+Type of service [0]: 
+Set DF bit in IP header? [no]: 
+Validate reply data? [no]: 
+Data pattern [0xABCD]: 
+Loose, Strict, Record, Timestamp, Verbose[none]: 
+Sweep range of sizes [n]: 
+Type escape sequence to abort.
+Sending 10, 100-byte ICMP Echos to 192.168.16.1, timeout is 2 seconds:
+!!!!!!!!!!
+Success rate is 100 percent (10/10), round-trip min/avg/max = 32/34/36 ms
+The above output shows the success rate is 100 percent which means that the NAT feature is working fine and the SOHO hosts is able to communicate with Central Site Access Server. We can get more detailed information about the NAT translations from the following show commands output.
+EasyIP#show ip nat statistics 
+Total active translations: 10 (0 static, 10 dynamic; 10 extended)
+Outside interfaces:
+  BRI1/0, BRI1/0:1, BRI1/0:2
+Inside interfaces: 
+  Ethernet0/0
+Hits: 169  Misses: 185
+Expired translations: 175
+Dynamic mappings:
+-- Inside Source
+access-list 100 interface BRI1/0 refcount 10
+EasyIP#show ip nat translations 
+Pro Inside global      Inside local       Outside local      Outside global
+icmp 200.1.0.3:32      10.0.0.1:32        192.168.16.1:32    192.168.16.1:32
+icmp 200.1.0.3:33      10.0.0.1:33        192.168.16.1:33    192.168.16.1:33
+icmp 200.1.0.3:34      10.0.0.1:34        192.168.16.1:34    192.168.16.1:34
+icmp 200.1.0.3:35      10.0.0.1:35        192.168.16.1:35    192.168.16.1:35
+icmp 200.1.0.3:36      10.0.0.1:36        192.168.16.1:36    192.168.16.1:36
+icmp 200.1.0.3:37      10.0.0.1:37        192.168.16.1:37    192.168.16.1:37
+icmp 200.1.0.3:38      10.0.0.1:38        192.168.16.1:38    192.168.16.1:38
+icmp 200.1.0.3:39      10.0.0.1:39        192.168.16.1:39    192.168.16.1:39
+icmp 200.1.0.3:40      10.0.0.1:40        192.168.16.1:40    192.168.16.1:40
+icmp 200.1.0.3:41      10.0.0.1:41        192.168.16.1:41    192.168.16.1:41
+EasyIP#
+The following show isdn status command output displays the status of each ISDN layer. Verify that Layer 1 and 2 are as shown in the example
+EasyIP#show isdn status 
+Global ISDN Switchtype = basic-5ess
+ISDN BRI1/0 interface
+        dsl 8, interface ISDN Switchtype = basic-5ess
+    Layer 1 Status:
+        ACTIVE
+    Layer 2 Status:
+        TEI = 64, Ces = 1, SAPI = 0, State = MULTIPLE_FRAME_ESTABLISHED
+    Layer 3 Status:
+        1 Active Layer 3 Call(s)
+    Activated dsl 8 CCBs = 1
+        CCB:callid=8098, sapi=0, ces=1, B-chan=1, calltype=DATA
+    The Free Channel Mask:  0x80000002
+See the document Using the show isdn status Command for BRI Troubleshooting for further troubleshooting information.
+The following show dialer output shows that dialing is initiated by the inside private network IP address (for example,10.0.0.1).
+EasyIP#show dialer 
+
+BRI1/0 - dialer type = ISDN
+
+Dial String      Successes   Failures    Last DNIS   Last status
+97771200                23          0    00:02:02       successful   Default
+0 incoming call(s) have been screened.
+0 incoming call(s) rejected for callback.
+
+BRI1/0:1 - dialer type = ISDN
+Idle timer (120 secs), Fast idle timer (20 secs)
+Wait for carrier (30 secs), Re-enable (15 secs)
+Dialer state is data link layer up
+Dial reason: ip (s=10.0.0.1, d=192.168.16.1)
+Time until disconnect 36 secs
+Current call connected 00:02:03
+Connected to 97771200 (ISP-AS)
+
+BRI1/0:2 - dialer type = ISDN
+Idle timer (120 secs), Fast idle timer (20 secs)
+Wait for carrier (30 secs), Re-enable (15 secs)
+Dialer state is idle
+Troubleshoot
+debug Commands
+Note: Before issuing debug commands, please see Important Information on Debug Commands.
+debug ppp negotiation- Provides information about PPP protocol negotiation process. debug ip nat - Provides information
+debug ip nat- Provides information about IP packets translated by the IP network address translation (NAT) feature.
+debug isdn q921- Provides data-link layer debugging of q.921 messages.
+debug isdn q931 - Provides network-layer debugging of q.931 messages.
+debug dialer - Provides DDR information for the outbound call.
+Sample debug output
+The following debug ppp negotiation output shows the PPP/IPCP protocol negotiation process.
+EasyIP#debug ppp negotiation 
+PPP protocol negotiation debugging is on
+.
+.
+
+2d07h: BR1/0:1 IPCP: O CONFREQ [Closed] id 223 len 10
+2d07h: BR1/0:1 IPCP:    Address 0.0.0.0 (0x030600000000)
+2d07h: BR1/0:1 CDPCP: O CONFREQ [Closed] id 63 len 4
+2d07h: BR1/0:1 IPCP: I CONFREQ [REQsent] id 47 len 10
+2d07h: BR1/0:1 IPCP:    Address 200.1.0.1 (0x0306C8010001)
+2d07h: BR1/0:1 IPCP: O CONFACK [REQsent] id 47 len 10
+2d07h: BR1/0:1 IPCP:    Address 200.1.0.1 (0x0306C8010001)
+2d07h: BR1/0:1 CDPCP: I CONFREQ [REQsent] id 41 Len 4
+2d07h: BR1/0:1 CDPCP: O CONFACK [REQsent] id 41 Len 4
+2d07h: BR1/0:1 IPCP: I CONFNAK [ACKsent] id 223 Len 10
+2d07h: BR1/0:1 IPCP:    Address 200.1.0.3 (0x0306C8010003)
+2d07h: BR1/0:1 IPCP: O CONFREQ [ACKsent] id 224 Len 10
+2d07h: BR1/0:1 IPCP:    Address 200.1.0.3 (0x0306C8010003)
+2d07h: BR1/0:1 CDPCP: I CONFACK [ACKsent] id 63 Len 4
+2d07h: BR1/0:1 CDPCP: State is Open
+2d07h: BR1/0:1 IPCP: I CONFACK [ACKsent] id 224 Len 10
+2d07h: BR1/0:1 IPCP:    Address 200.1.0.3 (0x0306C8010003)
+2d07h: BR1/0:1 IPCP: State is Open
+2d07h: BR1/0 IPCP: Install negotiated IP interface address 200.1.0.3
+
+! -- The EasyIP router will install the negotiated WAN IP address.
+
+2d07h: BR1/0 IPCP: Install route to 200.1.0.1
+
+! -- A route to the Central Site Access Server is installed.
+
+2d07h: %LINEPROTO-5-UPDOWN: Line protocol on Interface BRI1/0:1, changed state Up
+2d07h: %ISDN-6-CONNECT: Interface BRI1/0:1 is now connected to 97771200 ISP-AS
+EasyIP#
+The debug ip nat output displays the information about IP packets translated by the IP network address translation (NAT) feature.
+EasyIP#debug ip nat detailed 
+IP NAT detailed debugging is on
+.
+.
+2d00h: NAT: o: icmp (10.0.0.1, 2015) -> (192.168.16.1, 2015) [909]
+2d00h: NAT: i: icmp (10.0.0.1, 2015) -> (192.168.16.1, 2015) [909]
+2d00h: NAT: ipnat_allocate_port: wanted 2015 got 2015
+2d00h: NAT*: o: icmp (192.168.16.1, 2015) -> (200.1.0.3, 2015) [909]
+2d00h: NAT: o: icmp (10.0.0.1, 2016) -> (192.168.16.1, 2016) [910]
+2d00h: NAT: i: icmp (10.0.0.1, 2016) -> (192.168.16.1, 2016) [910]
+2d00h: NAT: ipnat_allocate_port: wanted 2016 got 2016
+2d00h: NAT*: o: icmp (192.168.16.1, 2016) -> (200.1.0.3, 2016) [910]
+2d00h: NAT: o: icmp (10.0.0.1, 2017) -> (192.168.16.1, 2017) [911]
+2d00h: NAT: i: icmp (10.0.0.1, 2017) -> (192.168.16.1, 2017) [911]
+2d00h: NAT: ipnat_allocate_port: wanted 2017 got 2017
+2d00h: NAT*: o: icmp (192.168.16.1, 2017) -> (200.1.0.3, 2017) [911]
+2d00h: NAT: o: icmp (10.0.0.1, 2018) -> (192.168.16.1, 2018) [912]
+2d00h: NAT: i: icmp (10.0.0.1, 2018) -> (192.168.16.1, 2018) [912]
+.
+.
+
+EasyIP#undebug all 
+All possible debugging has been turned off
+Related Information
+Using the show isdn status Command for BRI Troubleshooting
+Verifying NAT Operation and Basic NAT Troubleshooting
+NAT Support Page
+Dial and Access Technology Support
+Technical Support & Documentation - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+24-Oct-2005
+Initial Release
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Dial-on-Demand Routing (DDR)
+Integrated Services Digital Networks (ISDN), Channel-Associated Signaling (CAS)

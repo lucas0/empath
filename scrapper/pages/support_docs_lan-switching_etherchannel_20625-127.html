@@ -1,0 +1,169 @@
+Troubleshooting TechNotes
+Understand EtherChannel Inconsistency Detection
+Save
+Translations
+Download
+Print
+
+
+
+Updated:March 17, 2023
+Document ID:20625
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Conventions
+Background Information
+How Inconsistency Detection Works
+Troubleshoot EtherChannel Inconsistency Detection
+Related Information
+Introduction
+This document describes information on EtherChannel inconsistency and how it is detected in Cisco Catalyst switches.
+Prerequisites
+Requirements
+There are no specific requirements for this document.
+Components Used
+This document is not restricted to specific software and hardware versions.
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, ensure that you understand the potential impact of any command.
+Conventions
+Refer toCisco Technical Tips Conventionsfor more information on document conventions.
+Background Information
+This document does not go into detail about how EtherChannels work or how they are configured. For documentation that provides details about how to understand and configure EtherChannels, as well as sample configurations between different Catalyst switches, refer to EtherChannel Technical Support Page.
+An EtherChannel is an aggregated set of physical ports presented as a single logical port. The goal of EtherChannel is to provide greater bandwidth and availability than that of a single port.
+Spanning Tree Protocol (STP) sees an EtherChannel as a single port. If your channeled ports are not consistent on both sides of the channel, forwarding loops can be created.
+This diagram provides an example:
+Broadcast Packet
+If switch A has two separate physical links that are not in a channel, and switch B considers those same links to be part of the channel, switch B sends a broadcast or unknown unicast packet to switch A. Since the links are not bundled together as a channel on switch A, the packet is forwarded back to switch B, as seen in the diagram. This causes packet duplication and changes the forwarding table on switch B to point in the wrong direction.
+Special protocols such as Cisco Port Aggregation Protocol (PAgP) and the IEEE Link Aggregation Control Protocol (LACP) are designed to ensure that there is consistency among channeling neighbor switches. However, there are cases when neither of these protocols are supported by either system, or they are disabled due to other considerations. Cisco has developed a special mechanism to detect and disable channel inconsistency in order to prevent packet duplication, looping, and other issues associated with inconsistent EtherChannels. This feature is supported by Catalyst 4500/4000, 5500/6000, and 6500/6000 switches, and it is enabled by default, regardless of whether the channel mode isdesirable, active, auto, passive,oron.
+How Inconsistency Detection Works
+An EtherChannel is seen as a single port by STP. All the ports in the channel share the same STP state and only one STP bridge protocol data unit (BPDU) can be sent or received for each VLAN and for each hello interval.
+This is not the case if one switch considers the links to be a channel and a neighbor switch considers those links to be separate connections, that is, inconsistent. Consider this example:
+STP BPDU
+In the diagram, switch A does not channel, while switch B channels. Assume that the STP designated port for the channel is on the switch B side. This means that switch B is supposed to send BPDUs. As long as the channel is regarded as a single STP port, only one BPDU is sent for each VLAN on the channel. This BPDU is physically transmitted by one of the links in the channel. Therefore, only one of the ports on switch A receives it. This is represented with a black arrow in the diagram.
+After switch A receives the BPDU, the other port on switch A becomes the STP designated port. This is because the port is not bundled as a channel with the port that received the BPDU, and it does not receive BPDUs directly from switch B. As the STP designated port on switch A, it now transmits BPDUs, which are represented by the red arrow in the diagram, back to switch B. Switch B receives BPDUs from switch A, and an inconsistency is detected.
+The EtherChannel inconsistency detection mechanism requires that only one designated port in the channel, for each VLAN, either sends or receives BPDUs. Each port on the Catalyst switch has its own unique MAC address used when it sends BPDUs.
+For Catalyst OS (CatOS), you can see this MAC address if you issue the  show port mac-address mod/portcommand in version 7.1(1) and later, or the  show module mod   command. This is a sample output:
+Cat6k> (enable) show port mac-address 2/7
+
+Port  Mac address
+----- -----------------
+ 2/7  00-02-fc-90-19-2c
+
+Cat6k> (enable) show module 2 bold
+Mod Slot Ports Module-Type               Model               Sub Status
+--- ---- ----- ------------------------- ------------------- --- --------
+2   2    16    10/100/1000BaseT Ethernet WS-X6516-GE-TX      no  ok
+
+Mod Module-Name          Serial-Num
+--- -------------------- -----------
+2                        SAD05170009
+
+Mod MAC-Address(es)                        Hw     Fw         Sw
+--- -------------------------------------- ------ ---------- -----------------
+2   00-02-fc-90-19-26 to 00-02-fc-90-19-35 0.231  6.1(3)     7.1(1)
+For Cisco IOS® software on a Catalyst switch, you can see the MAC address if you issue the  show interface type mod/portcommand as shown in this sample output:
+Cat6k-CiscoIOS# show interface fastEthernet 4/1
+FastEthernet4/1 is up, line protocol is down (monitoring)
+  Hardware is C6k 100Mb 802.3, address is 0005.7461.c838 (bia 0005.7461.c838)
+  Description: I,NSP49,10.101.5.96,OCCRBC7505BN1A HSSI 1/0/0
+  MTU 1500 bytes, BW 100000 Kbit, DLY 100 usec,
+     reliability 255/255, txload 1/255, rxload 1/255
+  Encapsulation ARPA, loopback not set
+  Full-duplex, 100Mb/s
+  input flow-control is off, output flow-control is off
+  ARP type: ARPA, ARP Timeout 04:00:00
+  Last input never, output never, output hang never
+  Last clearing of "show interface" counters never
+  Input queue: 0/2000/0/0 (size/max/drops/flushes); Total output drops: 262140
+  Queueing strategy: fifo
+  Output queue :0/40 (size/max)
+  5 minute input rate 0 bits/sec, 0 packets/sec
+  5 minute output rate 0 bits/sec, 0 packets/sec
+     119374 packets input, 8353326 bytes, 0 no buffer
+     Received 118782 broadcasts, 299 runts, 0 giants, 0 throttles
+     748 input errors, 14 CRC, 0 frame, 0 overrun, 0 ignored
+     0 input packets with dribble condition detected
+     9225693 packets output, 591962436 bytes, 0 underruns
+     0 output errors, 0 collisions, 1 interface resets
+     0 babbles, 0 late collision, 0 deferred
+     0 lost carrier, 0 no carrier
+     0 output buffer failures, 0 output buffers swapped out
+Cat6k-CiscoIOS# 
+If the source MAC address of the received or sent BPDUs alternates constantly on an EtherChannel, then multiple STP ports send BPDUs. This is a clear sign of inconsistency, as the STP considers the channel a single port.
+Note: This mechanism allows for some tolerance, as it is possible for BPDUs to come from different MAC addresses. For example, when STP converges, the STP designated port can change between different sides of the channel. However, this process must settle within a short time.
+Both sent and received BPDUs are examined by the detection mechanism. An EtherChannel is considered inconsistent if the channel detects greater than 75 BPDUs from different MAC addresses in more than 30 seconds. However, if 5 BPDUs areseenconsecutively from the same MAC address, the detection counters are reset. These timers/counters can change in future software releases.
+Note: Due to the general nature of this mechanism, inconsistency detection can be triggered even if the channel is configured consistently.
+For example, if there is a hardware or software issue with a switch in the network and two separate switches, connected by a channel, cannot agree on which side the STP designated port is, each side sends BPDUs. EtherChannels with these symptoms can be disabled by the consistency detection mechanism. This must not be regarded as a harmful side effect, as this change potentially allows split networks to converge.
+Even when STP is disabled, BPDUs are not flooded by hardware. The STP still has to process on BPDUs, which includes a change of the source from the MAC address in the BPDU to the MAC address for the port that sends the BPDU. This means that inconsistency detection works on the channel even if STP is disabled.
+Troubleshoot EtherChannel Inconsistency Detection
+By default, detection is enabled both on CatOS and Cisco IOS Software.
+It is also possible to monitor the operation of the feature. In order to do this, issue the  show spantree statistics mod/port [vlan]  command for CatOS. Consider this example:
+Cat6k> (enable) show spantree statistics 2/5 199
+Port  2/5   VLAN 199
+  
+
+!--- Output suppressed.
+
+
+channel_src_mac                      00-d0-5a-eb-67-5a
+channel src count                    73
+channel OK count                     1
+
+Cat6k> (enable) show spantree statistics 2/5 199
+Port  2/5   VLAN 199
+
+
+!--- Output suppressed.
+
+
+channel_src_mac                      00-50-14-bb-63-a9
+channel src count                    76
+channel OK count                     1
+This list explains the  show spantree statistics mod/port [vlan]  parameters in the sample output.
+channel_src_mac— Shows the source MAC address of the last BPDU sent or received on the channel
+channel src count— Counts the number of BPDUs sent or received with different source MAC addresses
+channel OK count— Counts the number of BPDUs sent consecutively with the same MAC address
+Note: The channel src count parameter increases. Once it surpasses 75, all links in the channel are put into error-disabled state, and the syslog messages are issued. Also, note that the MAC addresses seen in the two samples of output are different.
+You can also see this error message in syslog output for CatOS if there are EtherChannel misconfiguration issues:
+%SPANTREE-2-CHNMISCFG: STP loop - channel 2/5-12 is disabled in vlan/instance 199
+This message indicates that there is a possible misconfiguration in the EtherChannel type setting (auto/desirable/on). A misconfigured channel has formed, which causes spanning tree loops. Within the message:
+[dec]is the module number
+[chars]is the port number
+vlan [dec]is the VLAN number
+In CatOS release 8.1 and later,%SPANTREE-2-CHNMISCFG2: BPDUaccompanies the error message. This message helps when you troubleshoot because the MAC addresses are now in the syslogs and can be reviewed for and easier job when you troubleshoot.
+%SPANTREE-2-CHNMISCFG2: BPDU source mac addresses: [chars], [chars]
+This message appears after theSPANTREE-2-CHNMISCFGmessage is displayed. This message provides the source MAC addresses of the STP BPDUs that caused the error disabling of the channel. Within the message,[chars], [chars]are the source MAC addresses of the BPDUs.
+For Cisco IOS Software, you must use standard STP troubleshooting procedures in order to detect EtherChannel inconsistency. If you see this error message in syslog output, there can be EtherChannel misconfiguration issues:
+SPANTREE-2-CHNL_MISCFG: Detected loop due to etherchannel misconfiguration of [chars] 
+ [chars]
+This message indicates that the misconfiguration of a channel group is detected. For example, ports on one side of the EtherChannel either are not configured to be in the channel or failed to bundle, while ports on the other side of the EtherChannel are successfully bundled. Within the message,[chars]is the channel group ID.
+Determine the misconfigured local ports with the  show interfaces status err-disabled  command. Check the EtherChannel configuration on the remote device with the  show etherchannel summary  command on the remote device. Once the configuration is corrected, issue the  shutdown command and then the  no shutdowncommand on the associated port-channel interface.
+For more information on the STP  debug   commands and how to troubleshoot, refer toTroubleshoot STP Issues on Catalyst Switches.
+Related Information
+Layer 3 and Layer 2 EtherChannel
+Catalyst 6500 Release 12.2SXF and Rebuilds Software Configuration Guide
+LAN Product Support (Wireless)
+Tools and Resources
+Cisco Technical Support & Downloads
+Revision History
+Revision Publish Date Comments
+2.0
+17-Mar-2023
+Update format. Correct CCW alerts. Recertification.
+1.0
+26-Feb-2002
+Initial Release
+Contributed by Cisco Engineers
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Understand EtherChannel Load Balance and Redundancy on Catalyst Switches
+Catalyst Express 500 Series Switches Configuration Example
+Configuring EtherChannel and 802.1Q Trunking Between Catalyst L2 Fixed Configuration Switches and Catalyst Switches Running CatOS
++ Show 3 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)

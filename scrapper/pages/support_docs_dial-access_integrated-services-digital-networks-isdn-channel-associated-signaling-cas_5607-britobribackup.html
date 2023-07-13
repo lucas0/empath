@@ -1,0 +1,615 @@
+Configuration Examples and TechNotes
+DDR Backup using BRIs and the Backup Interface Command
+Save
+Translations
+Download
+Print
+
+Updated:September 14, 2005
+Document ID:5607
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Background Theory
+Conventions
+Configure
+Network Diagram
+Configurations
+Verify
+Sample show ip route Output
+Sample Show interface Output
+Troubleshoot
+Troubleshooting Commands
+Sample debug Output
+Related Information
+Introduction
+This configuration demonstrates the use of an Integrated Services Digital Network (ISDN) Basic Rate Interface (BRI) line to backup a leased line connection. The backup interface command places the specified interface into the standby mode until such time as the primary interface goes down. For more information on the features of the backup interface, refer to Evaluating Backup Interfaces, Floating Static Routes, and Dialer Watch for DDR Backup.
+Prerequisites
+Requirements
+It is recommended that you refer to the document Configuring and Troubleshooting DDR Backup for more information.
+Components Used
+In this scenario we have a Cisco 1604 router connected to a Cisco 3640 router across a serial connection. Both routers are also equipped with BRI interfaces, which are used for the backup link. The Cisco 1604 is running Cisco IOS® Software Release12.1(5)T and the Cisco 3640 is using Cisco IOS 12.1(2).
+Note: The concepts in this configuration can be used on any router with BRI and WAN interfaces.
+The information presented in this document was created from devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If you are working in a live network, ensure that you understand the potential impact of any command before using it.
+Background Theory
+This example uses legacy Dial on Demand Routing (DDR), which uses the dialer map command for the BRI connection. You can also use dialer profiles instead of legacy DDR. For more information on dialer profiles refer to Configuring ISDN DDR with Dialer Profiles.
+Configuring DDR backup involves two distinct steps:
+Configure the DDR with either legacy DDR or dialer profiles. Verify that your DDR connection functions correctly before implementing the backup configuration.
+Configure the router to initiate the DDR connection when the primary link fails. This configuration uses backup interfaces to trigger the dialout. Refer to Evaluating Backup Interfaces, Floating Static Routes, and Dialer Watch for DDR Backup for more information on the other options.
+Conventions
+For more information on document conventions, see the Cisco Technical Tips Conventions.
+Configure
+In this section, you are presented with the information to configure the features described in this document.
+Note: To find additional information on the commands used in this document, use the Command Lookup tool
+Network Diagram
+This document uses the network setup shown in the diagram below.
+Configurations
+This document uses the configurations shown below.
+maui-soho-01 (1600)
+maui-nas-05 (3640)
+This configuration uses a BRI circuit to backup a serial link. This configuration is also using the Open Shortest Path First (OSPF) routing protocol between the two routers. Once the backup connection is activated, you must ensure that the routing table is updated to use the new backup route.
+Note:  For more information on command conventions, see the Cisco Technical Tips Conventions.
+maui-soho-01 (1600)
+maui-soho-01#show running-config 
+Building configuration...
+
+Current configuration : 1720 bytes
+!
+version 12.1
+service timestamps debug datetime msec
+service timestamps log datetime msec
+service password-encryption
+!
+hostname maui-soho-01
+!
+aaa new-model
+aaa authentication login default local
+aaa authentication login NO_AUTHEN none
+aaa authentication ppp default if-needed local
+
+!--- This is basic aaa configuration for PPP calls.
+
+enable secret 5 <deleted>
+!
+username admin password 7 <deleted>
+username maui-nas-05 password 7 <deleted>
+
+!--- Username for remote router (maui-nas-05) and shared secret !--- (used for CHAP authentication). Shared secret must be the same on both sides.
+
+ip subnet-zero
+no ip finger
+!
+isdn switch-type basic-ni
+!
+interface Loopback0
+ ip address 172.17.1.1 255.255.255.0
+!
+interface Ethernet0
+ ip address 172.16.1.1 255.255.255.0
+!
+interface Serial0
+ backup delay 10 30
+
+!--- Backup link is activated 10 seconds after primary link goes down. !--- Backup link is deactivated 30 seconds after primary link is restored.
+
+ backup interface BRI0
+
+!--- BRI0 will backup interface serial 0.
+
+ ip address 192.168.10.2 255.255.255.252
+ encapsulation ppp
+ no ip mroute-cache
+ no fair-queue
+!
+interface BRI0
+ ip address 172.20.10.2 255.255.255.0
+
+!--- IP address for the BRI interface (backup link).
+
+ encapsulation ppp
+ dialer idle-timeout 900
+
+!--- Idle timeout(in seconds)for this link.
+
+ dialer map ip 172.20.10.1 name maui-nas-05 broadcast 5551111
+ dialer map ip 172.20.10.1 name maui-nas-05 broadcast 5551112
+
+!--- Dialer maps for remote destination. !--- The 2 different phone numbers correspond to the b-channels of the remote side.
+
+ dialer load-threshold 1 outbound
+
+!--- Load level for traffic at which additional connections !--- will be added to the MPPP bundle. !--- Load level values range from 1 (unloaded) to 255 (fully loaded).
+
+ dialer-group 1
+
+!--- Apply interesting traffic definition from dialer-list 1.
+
+ isdn switch-type basic-ni
+ isdn spid1 51299699380101 9969938
+ isdn spid2 51299699460101 9969946
+ ppp authentication chap
+
+!--- Use CHAP authentication.
+
+ ppp multilink
+
+!--- Use multilink to bring up both BRI channels.
+
+!
+router ospf 5
+
+!--- OSPF configuration. If you use a different protocol !--- configure that here. Make sure to include the BRI network in the RP.
+
+ log-adjacency-changes
+ network 172.16.0.0 0.0.255.255 area 0
+ network 172.17.0.0 0.0.255.255 area 0
+ network 172.20.10.0 0.0.0.255 area 0
+ network 192.168.10.0 0.0.0.3 area 0
+!
+ip classless
+no ip http server
+!
+access-list 101 remark Interesting traffic definition for backup link
+access-list 101 permit ip any any
+
+!--- Interesting traffic definition. If you do not want OSPF to bring up !--- the link, then mark it uninteresting.
+
+dialer-list 1 protocol ip list 101
+
+!--- Interesting traffic is applied to BRI0 using dialer-group 1.
+
+!
+line con 0
+ exec-timeout 0 0
+ login authentication NO_AUTHEN
+ transport input none
+line vty 0 4
+!
+end
+!
+Verify the following points in the configuration of the client maui-soho-01(1600):
+A loopback address is used. This is used so the router id for OSPF will not change and the backup link can establish a peer when it is activated.
+The dialer load threshold is set low. This value can be changed if you do not require a 128k multilink backup connection.
+Any IP traffic will trigger the dial (based on dialer-list 1 and dialer-group 1). Since the backup link requires interesting traffic to dial the backup link, verify that you do have a traffic source generating interesting traffic. In this example, OSPF hello packets will trigger the dial. If you are not using a routing protocol you can use ICMP pings to dial the backup link. Adjust the interesting traffic depending on your needs.
+OSPF is used. You can use any routing protocol you wish. Just make sure that the primary and backup interface networks are included in the routing protocol. If you wish to use static routes instead of a routing protocol, create a static route with the next hop being the remote bri interface (you may have to make it a floating static route depending on the scenario).
+maui-nas-05 (3640)
+maui-nas-05#show running-config 
+Building configuration...
+
+Current configuration:
+!
+version 12.1
+service timestamps debug datetime msec
+service timestamps log datetime msec
+service password-encryption
+!
+hostname maui-nas-05
+!
+aaa new-model
+aaa authentication login default local
+aaa authentication login NO_AUTHEN none
+aaa authentication ppp default if-needed local
+
+!--- Basic AAA configuration for PPP calls.
+
+enable secret 5 <deleted>
+!
+username admin password 7 <deleted>
+username maui-soho-01 password 7 <deleted>
+
+!--- Username for remote router (maui-soho-01) and shared secret !--- (used for CHAP authentication). The shared secret must be the same on both sides.
+
+!
+ip subnet-zero
+!   
+isdn switch-type basic-ni
+!
+interface Loopback0
+ ip address 172.22.1.1 255.255.255.0
+!
+interface Ethernet0/0
+ no ip address
+ shutdown
+!
+interface Ethernet0/1
+ no ip address
+ shutdown
+!
+interface BRI1/0
+ ip address 172.20.10.1 255.255.255.0
+
+!--- IP address for the BRI interface (backup link).
+
+ encapsulation ppp
+ dialer idle-timeout 900
+ dialer map ip 172.20.10.2 name maui-soho-01 broadcast
+
+!--- Dialer map for remote destination. !--- The name should match the authentication username provided by the remote side. !--- Even though this router is not dialing out, the dialer map statement !--- should be used.
+
+ dialer-group 1
+
+!--- Apply interesting traffic defined in dialer-list 1.
+
+ isdn switch-type basic-ni
+ isdn spid1 51255511110101 5551111
+ isdn spid2 51255511120101 5551112
+ ppp authentication chap
+ ppp multilink
+
+!--- Use multilink to bring up both B-channels.
+
+!
+
+!--- Output removed.
+
+!
+interface Serial2/0
+ ip address 192.168.10.1 255.255.255.252
+ encapsulation ppp
+ no fair-queue
+ clockrate 64000
+!
+
+!--- Output removed.
+
+!
+router ospf 5
+ network 172.20.10.0 0.0.0.255 area 0
+ network 172.22.1.0 0.0.0.255 area 0
+ network 192.168.10.0 0.0.0.3 area 0
+!
+ip classless
+no ip http server
+!
+dialer-list 1 protocol ip any
+
+!--- This defines all IP traffic as interesting.
+
+!
+Line con 0
+ login authentication NO_AUTHEN
+ transport input none
+line 97 102
+line AUX 0
+line vty 0 4
+!
+end
+Verify the following points in the configuration of the server maui-nas-05 (3640):
+A dialer map statement for the remote site is configured. An incorrect dialer map statement could result in routing issues on the connected backup link.
+All IP traffic is defined as interesting. This will reset the idle timeout and keep the connection up until the primary comes back up. If you do not require the backup link to be nailed up, you can change this.
+Verify
+This section provides information you can use to confirm your configuration is working properly.
+Certain show commands are supported by the Output Interpreter tool, which allows you to view an analysis of show command output.
+show interface bri0 - This indicates whether the BRI interface is up. If the primary link is up, the BRI interface will be in standby. Only when the primary link goes down will the BRI interface be up.
+show isdn status - Use this to ensure that the router is properly communicating with the ISDN switch. In the output, verify that Layer 1 Status is ACTIVE, and that the Layer 2 Status state = MULTIPLE_FRAME_ESTABLISHED appears. This command also displays the number of active calls.
+Sample show ip route Output
+The routing table of the client, maui-soho-01 (1600), with the primary link functioning is shown below:
+maui-soho-01#show ip route
+Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+     192.168.10.0/24 is variably subnetted, 2 subnets, 2 masks
+C       192.168.10.0/30 is directly connected, Serial0
+C       192.168.10.1/32 is directly connected, Serial0
+     172.17.0.0/24 is subnetted, 1 subnets
+C       172.17.1.0 is directly connected, Loopback0
+     172.16.0.0/24 is subnetted, 1 subnets
+C       172.16.1.0 is directly connected, Ethernet0
+     172.20.0.0/24 is subnetted, 1 subnets
+O       172.20.10.0 [110/1626] via 192.168.10.1, 00:00:22, Serial0
+     172.22.0.0/32 is subnetted, 1 subnets
+O       172.22.1.1 [110/65] via 192.168.10.1, 00:00:23, Serial0
+The output of show ip route shown above, displays the OSPF routes learned from the peers using the primary link (serial 0). Now we bring down the primary link and activate the backup link.
+Note: Issuing the shutdown command on the primary interface will not cause the backup BRI to dial. If you issue a shutdown command to bring down the primary connection , the Cisco IOS software will not automatically bring up a backup connection. You must physically bring down the primary connection by unplugging cables or some equivalent method in order to bring up the backup interfaces.
+After the backup link was activated, the OSPF table is exchanged and the new routes using the backup link is installed. Traffic now flows across the backup link. An example of this is shown below:
+maui-soho-01#show ip route
+Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+     172.17.0.0/24 is subnetted, 1 subnets
+C       172.17.1.0 is directly connected, Loopback0
+     172.16.0.0/24 is subnetted, 1 subnets
+C       172.16.1.0 is directly connected, Ethernet0
+     172.20.0.0/16 is variably subnetted, 2 subnets, 2 masks
+C       172.20.10.0/24 is directly connected, BRI0
+C       172.20.10.1/32 is directly connected, BRI0
+     172.22.0.0/32 is subnetted, 1 subnets
+O       172.22.1.1 [110/1563] via 172.20.10.1, 00:00:22, BRI0
+Sample Show interface Output
+The show interface command allows to verify if LCP, ICP and Multilink phases of PPP are successfully passed.
+maui-soho-01#show interface BRI 0
+    BRI0 is up, line protocol is up
+     Hardware is BRI with U interface and external S bus interface     
+     Internet address is 172.20.10.2, subnet mask is 255.255.255.0
+     MTU 1500 bytes, BW 256 Kbit, DLY 100000 usec,
+     reliability 255/255, txload 1/255, rxload 1/255
+     Encapsulation PPP, loopback not set
+     DTR is pulsed for 5 seconds on reset
+     LCP Open, multilink Open
+     Open: IPCP
+   ...........................
+Troubleshoot
+This section provides information you can use to troubleshoot your configuration.
+Troubleshooting Commands
+Certain show commands are supported by the Output Interpreter tool, which allows you to view an analysis of show command output.
+Note: Before issuing debug commands, please see Important Information on Debug Commands.
+debug dialer - This is used to see dial-on-demand routing information.
+debug isdn events - This is used to see ISDN activity occurring on the user side of the ISDN interface.
+debug isdn q931 - This shows call setup and tear down of the ISDN network connection (Layer 3) and can be used to isolate problems.
+debug ppp negotiation - This displays information on PPP traffic and exchanges while negotiating the PPP components including Link Control Protocol (LCP), Authentication, and Network Control Protocol (NCP). A successful PPP negotiation will first open the LCP state, then authenticate, and finally negotiate the NCP.
+debug ppp authentication - This displays the PPP authentication protocol messages, including Challenge Authentication Protocol (CHAP) packet exchanges and Password Authentication Protocol (PAP) exchanges. If you observe a failure verify that the chap username and password are configured correctly.
+debug ppp error - This displays protocol errors and error statistics associated with PPP connection negotiation and operation.
+Sample debug Output
+For information on troubleshooting DDR backup refer to the document Configuring and Troubleshooting DDR Backup.
+The following debug output was generated using the debugs described previously. The output shows the primary link failing and the backup link activating:
+*Mar  1 03:37:42.350: %LINK-3-UPDOWN: Interface Serial0, changed state to down
+
+!--- Primary Link is unplugged.
+
+*Mar  1 03:37:42.358: Se0 IPCP: State is Closed
+*Mar  1 03:37:42.362: Se0 CDPCP: State is Closed
+*Mar  1 03:37:42.366: Se0 PPP: Phase is TERMINATING [0 sess, 1 load]
+*Mar  1 03:37:42.370: Se0 LCP: State is Closed
+*Mar  1 03:37:42.370: Se0 PPP: Phase is DOWN [0 sess, 1 load]
+*Mar  1 03:37:42.386: Se0 IPCP: Remove route to 192.168.10.1
+*Mar  1 03:37:42.394: %OSPF-5-ADJCHG: Process 5, Nbr 172.22.1.1 on Serial0 from
+   FULL to DOWN, Neighbor Down: Interface down or detached
+*Mar  1 03:37:43.358: %LINEPROTO-5-UPDOWN: Line protocol on Interface Serial0,
+   changed state to down
+*Mar  1 03:37:52.302: %LINK-3-UPDOWN: Interface BRI0:1, changed state to down
+
+!--- The backup interface is changed to from "standby" to "down". !--- The backup interface was activated 10 seconds after the primary link !--- went down. !--- This interval was defined with the backup delay command in maui-soho-01 !--- (the 1600).
+
+*Mar  1 03:37:52.306: BR0:1 LCP: State is Closed
+*Mar  1 03:37:52.310: BR0:1 DDR: disconnecting call
+*Mar  1 03:37:52.314: %LINK-3-UPDOWN: Interface BRI0:2, changed state to down
+*Mar  1 03:37:52.318: BR0:2 LCP: State is Closed
+*Mar  1 03:37:52.322: BR0:2 DDR: disconnecting call
+*Mar  1 03:37:52.417: %LINK-3-UPDOWN: Interface BRI0, changed state to up
+*Mar  1 03:37:52.477: ISDN BR0: Event: Syncing Discards: L2 Discards 4,
+   L2D_Task Counter 2
+*Mar  1 03:37:52.489: BR0 DDR: Dialing cause ip (s=172.20.10.2, d=224.0.0.5)
+
+!--- OSPF hellos cause the router to dial.
+
+*Mar  1 03:37:52.493: BR0 DDR: Attempting to dial 5551111
+
+!--- This is the phone number of the remote router that is dialed.
+
+*Mar  1 03:37:54.477: ISDN BR0: Event: Syncing Discards: L2 Discards 4,
+   L2D_Task Counter 3
+*Mar  1 03:37:56.528: %ISDN-6-LAYER2UP: Layer 2 for Interface BR0,
+   TEI 112 changed to up
+*Mar  1 03:37:56.556: ISDN BR0: TX ->  INFORMATION pd = 8  callref = (null)
+        SPID Information i = '51299699380101'
+*Mar  1 03:37:56.627: ISDN BR0: TX ->  SETUP pd = 8  callref = 0x1F
+*Mar  1 03:37:56.635:         Bearer Capability i = 0x8890
+*Mar  1 03:37:56.643:         Channel ID i = 0x83
+*Mar  1 03:37:56.651:         Keypad Facility i = '5551111'
+*Mar  1 03:37:56.667: ISDN BR0: RX <-  INFORMATION pd = 8  callref = (null)
+   ENDPOINT IDent i = 0x8081
+*Mar  1 03:37:56.703: ISDN BR0: Received EndPoint ID
+*Mar  1 03:37:56.738: ISDN BR0: RX <-  INFORMATION pd = 8  callref = (null)
+   Locking Shift to Codeset 5
+*Mar  1 03:37:56.750:         Codeset 5 IE 0x2A  i = 0x808001, 'P'
+*Mar  1 03:37:56.857: %ISDN-6-LAYER2UP: Layer 2 for Interface BR0, TEI 65
+   changed to up
+*Mar  1 03:37:56.881: ISDN BR0: TX ->  INFORMATION pd = 8  callref = (null)
+   SPID Information i = '51299699460101'
+*Mar  1 03:37:56.917: ISDN BR0: RX <-  CALL_PROC pd = 8  callref = 0x9F
+*Mar  1 03:37:56.925:         Channel ID i = 0x89
+*Mar  1 03:37:56.949: ISDN BR0: RX <-  INFORMATION pd = 8  callref = (null)
+   ENDPOINT IDent i = 0x8181
+*Mar  1 03:37:56.984: ISDN BR0: Received Endpoint ID
+*Mar  1 03:37:57.175: ISDN BR0: RX <-  CONNECT pd = 8  callref = 0x9F
+
+!--- The call is connected.
+
+*Mar  1 03:37:57.199: %LINK-3-UPDOWN: Interface BRI0:1, changed state to up
+*Mar  1 03:37:57.218: BR0:1 PPP: Treating connection as a callout
+
+!--- PPP negotiation begins.
+
+*Mar  1 03:37:57.222: BR0:1 PPP: Phase is ESTABLISHING, Active Open
+   [0 sess, 1 load]
+*Mar  1 03:37:57.230: BR0:1 LCP: O CONFREQ [Closed] id 18 len 34
+*Mar  1 03:37:57.234: BR0:1 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  1 03:37:57.242: BR0:1 LCP:    MagicNumber 0x1144F392 (0x05061144F392)
+*Mar  1 03:37:57.246: BR0:1 LCP:    MRRU 1524 (0x110405F4)
+*Mar  1 03:37:57.250: BR0:1 LCP:    EndpointDisc 1 Local
+   (0x130F016D6175692D736F686F2D3031)
+*Mar  1 03:37:57.262: ISDN BR0: TX ->  CONNECT_ACK pd = 8  callref = 0x1F
+*Mar  1 03:37:57.282: BR0:1 LCP: I CONFREQ [REQsent] id 43 Len 33
+*Mar  1 03:37:57.286: BR0:1 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  1 03:37:57.294: BR0:1 LCP:    MagicNumber 0x363030C5 (0x0506363030C5)
+*Mar  1 03:37:57.298: BR0:1 LCP:    MRRU 1524 (0x110405F4)
+*Mar  1 03:37:57.302: BR0:1 LCP:    EndpointDisc 1 Local
+   (0x130E016D6175692D6E61732D3035)
+*Mar  1 03:37:57.310: BR0:1 LCP: O CONFACK [REQsent] id 43 Len 33
+*Mar  1 03:37:57.314: BR0:1 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  1 03:37:57.318: BR0:1 LCP:    MagicNumber 0x363030C5 (0x0506363030C5)
+*Mar  1 03:37:57.326: BR0:1 LCP:    MRRU 1524 (0x110405F4)
+*Mar  1 03:37:57.330: BR0:1 LCP:    EndpointDisc 1 Local
+   (0x130E016D6175692D6E61732D3035)
+*Mar  1 03:37:57.341: BR0:1 LCP: I CONFACK [ACKsent] id 18 Len 34
+*Mar  1 03:37:57.345: BR0:1 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  1 03:37:57.349: BR0:1 LCP:    MagicNumber 0x1144F392 (0x05061144F392)
+*Mar  1 03:37:57.353: BR0:1 LCP:    MRRU 1524 (0x110405F4)
+*Mar  1 03:37:57.361: BR0:1 LCP:    EndpointDisc 1 Local
+   (0x130F016D6175692D736F686F2D3031)
+*Mar  1 03:37:57.365: BR0:1 LCP: State is Open
+*Mar  1 03:37:57.369: BR0:1 PPP: Phase is AUTHENTICATING, by both
+   [0 sess, 1 load]
+
+!--- PPP authentication begins.
+
+*Mar  1 03:37:57.373: BR0:1 CHAP: O CHALLENGE id 17 Len 33 from "maui-soho-01"
+
+!--- The username for CHAP is challenge. The remote router must have this !--- username configured along with it's shared secret password.
+
+*Mar  1 03:37:57.381: BR0:1 CHAP: I CHALLENGE id 30 Len 32 from "maui-nas-05"
+
+!--- The incoming username for CHAP is challenge. !--- This username must be locally configured.
+
+*Mar  1 03:37:57.397: BR0:1 CHAP: O RESPONSE id 30 Len 33 from "maui-soho-01"
+*Mar  1 03:37:57.425: BR0:1 CHAP: I SUCCESS id 30 Len 4
+*Mar  1 03:37:57.433: BR0:1 CHAP: I RESPONSE id 17 Len 32 from "maui-nas-05"
+*Mar  1 03:37:57.445: BR0:1 CHAP: O SUCCESS id 17 Len 4
+
+!--- CHAP authentication is successful.
+
+*Mar  1 03:37:57.453: BR0:1 PPP: Phase is VIRTUALIZED [0 sess, 1 load]
+*Mar  1 03:37:57.460: Vi1 PPP: Phase is DOWN, Setup [0 sess, 1 load]
+*Mar  1 03:37:57.480: BR0:1 IPCP: Packet buffered while building
+   MLP bundle interface
+*Mar  1 03:37:57.484: BR0:1 CDPCP: Packet buffered while building
+   MLP bundle interface
+*Mar  1 03:37:57.488: %LINK-3-UPDOWN: Interface Virtual-Access1,
+   changed state to up
+
+!--- Virtual Access Interface is created for the multilink !--- (2 b-channel) connection.
+
+*Mar  1 03:37:57.496: Vi1 DDR: Dialer statechange to up
+*Mar  1 03:37:57.500: Vi1 DDR: Dialer call has been placed
+*Mar  1 03:37:57.504: Vi1 PPP: Treating connection as a callout
+*Mar  1 03:37:57.508: Vi1 PPP: Phase is ESTABLISHING, Active Open
+   [0 sess, 1 load]
+*Mar  1 03:37:57.516: Vi1 LCP: O CONFREQ [Closed] id 1 Len 34
+*Mar  1 03:37:57.520: Vi1 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  1 03:37:57.524: Vi1 LCP:    MagicNumber 0x1144F4B0 (0x05061144F4B0)
+*Mar  1 03:37:57.528: Vi1 LCP:    MRRU 1524 (0x110405F4)
+*Mar  1 03:37:57.536: Vi1 LCP:    EndpointDisc 1 Local
+   (0x130F016D6175692D736F686F2D3031)
+*Mar  1 03:37:57.548: Vi1 PPP: Phase is UP [0 sess, 1 load]
+*Mar  1 03:37:57.556: Vi1 IPCP: O CONFREQ [Closed] id 1 Len 10
+*Mar  1 03:37:57.560: Vi1 IPCP:    Address 172.20.10.2 (0x0306AC140A02)
+*Mar  1 03:37:57.572: Vi1 CDPCP: O CONFREQ [Closed] id 1 Len 4
+*Mar  1 03:37:57.576: BR0:1 MLP: maui-nas-05, multilink up, first link
+*Mar  1 03:37:57.580: Vi1 PPP: Pending ncpQ size is 2
+*Mar  1 03:37:57.583: BR0:1 IPCP: Redirect packet to Vi1
+*Mar  1 03:37:57.587: Vi1 IPCP: I CONFREQ [REQsent] id 1 Len 10
+*Mar  1 03:37:57.591: Vi1 IPCP:    Address 172.20.10.1 (0x0306AC140A01)
+*Mar  1 03:37:57.599: Vi1 IPCP: O CONFACK [REQsent] id 1 Len 10
+*Mar  1 03:37:57.603: Vi1 IPCP:    Address 172.20.10.1 (0x0306AC140A01)
+*Mar  1 03:37:57.607: BR0:1 CDPCP: Redirect packet to Vi1
+*Mar  1 03:37:57.611: Vi1 CDPCP: I CONFREQ [REQsent] id 1 Len 4
+*Mar  1 03:37:57.615: Vi1 CDPCP: O CONFACK [REQsent] id 1 Len 4
+*Mar  1 03:37:57.623: Vi1 IPCP: I CONFACK [ACKsent] id 1 Len 10
+*Mar  1 03:37:57.631: Vi1 IPCP:    Address 172.20.10.2 (0x0306AC140A02)
+*Mar  1 03:37:57.635: Vi1 IPCP: State is Open
+
+!--- IPCP state is open and route will be installed.
+
+*Mar  1 03:37:57.643: Vi1 CDPCP: I CONFACK [ACKsent] id 1 Len 4
+*Mar  1 03:37:57.643: Vi1 CDPCP: State is Open
+*Mar  1 03:37:57.651: Vi1 DDR: dialer protocol up
+*Mar  1 03:37:57.663: BR0 IPCP: Install route to 172.20.10.1
+*Mar  1 03:37:58.072: BR0 DDR: Attempting to dial 5551111
+
+!--- Router is dialing.
+
+*Mar  1 03:37:58.199: ISDN BR0: TX ->  SETUP pd = 8  callref = 0x20
+*Mar  1 03:37:58.206:         Bearer Capability i = 0x8890
+*Mar  1 03:37:58.218:         Channel ID i = 0x83
+*Mar  1 03:37:58.226:         Keypad Facility i = '5551111'
+*Mar  1 03:37:58.445: %LINEPROTO-5-UPDOWN: Line protocol on Interface BRI0:1,
+   changed state to up
+*Mar  1 03:37:58.512: ISDN BR0: RX <-  CALL_PROC pd = 8  callref = 0xA0
+*Mar  1 03:37:58.524:         Channel ID i = 0x8A
+*Mar  1 03:37:58.548: %LINEPROTO-5-UPDOWN: Line protocol on Interface
+   Virtual-Access1, changed state to up
+*Mar  1 03:37:58.599: BR0:1 LCP: I ECHOREQ [Open] id 1 Len 12 magic 0x363030C5
+*Mar  1 03:37:58.603: BR0:1 LCP: O ECHOREP [Open] id 1 Len 12 magic 0x1144F392
+*Mar  1 03:37:58.746: ISDN BR0: RX <-  CONNECT pd = 8  callref = 0xA0
+*Mar  1 03:37:58.774: %LINK-3-UPDOWN: Interface BRI0:2, changed state to up
+*Mar  1 03:37:58.786: %ISDN-6-CONNECT: Interface BRI0:1 is now connected to
+   5551111 maui-nas-05
+*Mar  1 03:37:58.794: BR0:2 PPP: Treating connection as a callout
+*Mar  1 03:37:58.798: BR0:2 PPP: Phase is ESTABLISHING, Active Open
+   [0 sess, 0 load]
+*Mar  1 03:37:58.810: BR0:2 LCP: O CONFREQ [Closed] id 16 Len 34
+*Mar  1 03:37:58.814: BR0:2 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  1 03:37:58.818: BR0:2 LCP:    MagicNumber 0x1144F9C9 (0x05061144F9C9)
+*Mar  1 03:37:58.821: BR0:2 LCP:    MRRU 1524 (0x110405F4)
+*Mar  1 03:37:58.825: BR0:2 LCP:    EndpointDisc 1 Local
+   (0x130F016D6175692D736F686F2D3031)
+*Mar  1 03:37:58.837: ISDN BR0: TX ->  CONNECT_ACK pd = 8  callref = 0x20
+*Mar  1 03:37:58.861: BR0:2 LCP: I CONFREQ [REQsent] id 33 Len 33
+*Mar  1 03:37:58.865: BR0:2 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  1 03:37:58.869: BR0:2 LCP:    MagicNumber 0x363036F1 (0x0506363036F1)
+*Mar  1 03:37:58.873: BR0:2 LCP:    MRRU 1524 (0x110405F4)
+*Mar  1 03:37:58.877: BR0:2 LCP:    EndpointDisc 1 Local
+   (0x130E016D6175692D6E61732D3035)
+*Mar  1 03:37:58.889: BR0:2 LCP: O CONFACK [REQsent] id 33 Len 33
+*Mar  1 03:37:58.893: BR0:2 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  1 03:37:58.897: BR0:2 LCP:    MagicNumber 0x363036F1 (0x0506363036F1)
+*Mar  1 03:37:58.901: BR0:2 LCP:    MRRU 1524 (0x110405F4)
+*Mar  1 03:37:58.905: BR0:2 LCP:    EndpointDisc 1 Local
+   (0x130E016D6175692D6E61732D3035)
+*Mar  1 03:37:58.917: BR0:2 LCP: I CONFACK [ACKsent] id 16 Len 34
+*Mar  1 03:37:58.921: BR0:2 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  1 03:37:58.929: BR0:2 LCP:    MagicNumber 0x1144F9C9 (0x05061144F9C9)
+*Mar  1 03:37:58.933: BR0:2 LCP:    MRRU 1524 (0x110405F4)
+*Mar  1 03:37:58.937: BR0:2 LCP:    EndpointDisc 1 Local
+   (0x130F016D6175692D736F686F2D3031)
+*Mar  1 03:37:58.941: BR0:2 LCP: State is Open
+*Mar  1 03:37:58.945: BR0:2 PPP: Phase is AUTHENTICATING, by both
+   [0 sess, 0 load]
+*Mar  1 03:37:58.952: BR0:2 CHAP: O CHALLENGE id 15 Len 33 from "maui-soho-01"
+*Mar  1 03:37:58.956: BR0:2 CHAP: I CHALLENGE id 22 Len 32 from "maui-nas-05"
+*Mar  1 03:37:58.976: BR0:2 CHAP: O RESPONSE id 22 Len 33 from "maui-soho-01"
+*Mar  1 03:37:59.008: BR0:2 CHAP: I SUCCESS id 22 Len 4
+*Mar  1 03:37:59.012: BR0:2 CHAP: I RESPONSE id 15 Len 32 from "maui-nas-05"
+*Mar  1 03:37:59.028: BR0:2 CHAP: O SUCCESS id 15 Len 4
+
+!--- Authentication (for the 2nd call) is successful.
+
+*Mar  1 03:37:59.036: BR0:2 PPP: Phase is VIRTUALIZED [0 sess, 0 load]
+*Mar  1 03:37:59.044: BR0:2 MLP: maui-nas-05, multilink up
+*Mar  1 03:38:00.036: %LINEPROTO-5-UPDOWN: Line protocol on Interface BRI0:2,
+   changed state to up
+*Mar  1 03:38:02.555: %OSPF-5-ADJCHG: Process 5, Nbr 172.22.1.1 on BRI0 from
+   LOADING to FULL, Loading Done
+*Mar  1 03:38:04.742: %ISDN-6-CONNECT: Interface BRI0:2 is now connected to
+   5551111 maui-nas-05
+
+!--- Second B-channel (BRI0:2) is connected.
+
+*Mar  1 03:38:08.599: BR0:1 LCP: I ECHOREQ [Open] id 2 Len 12 magic 0x363030C5
+*Mar  1 03:38:08.603: BR0:1 LCP: O ECHOREP [Open] id 2 Len 12 magic 0x1144F392
+maui-soho-01#
+Related Information
+Configuring and Troubleshooting DDR Backup
+Evaluating Backup Interfaces, Floating Static Routes, and Dialer Watch for DDR Backup
+Using the show isdn status Command for BRI Troubleshooting
+Technical Support - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+14-Sep-2005
+Initial Release
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Dial-on-Demand Routing (DDR)
+Integrated Services Digital Networks (ISDN), Channel-Associated Signaling (CAS)

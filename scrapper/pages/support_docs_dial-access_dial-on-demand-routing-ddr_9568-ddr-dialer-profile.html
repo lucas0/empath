@@ -1,0 +1,494 @@
+Configuration Examples and TechNotes
+Configuring ISDN DDR with Dialer Profiles
+Save
+Translations
+Download
+Print
+
+Updated:February 4, 2010
+Document ID:9568
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Background Theory
+Conventions
+Configure
+Network Diagram
+Configurations
+Tuning and Optional Commands
+Verify
+Troubleshoot
+Troubleshooting Commands
+Sample debug Output
+Related Information
+Introduction
+Dial-on-Demand Routing (DDR) addresses the need for intermittent network connections over circuit-switched WANs. There are two main methods to configure DDR: legacy DDR and dialer profiles. This document addresses dialer profiles. For information on configuring legacy DDR, please refer to these resources:
+DC: Part 5: Dial-on-Demand Routing Configuration
+Configuring BRI-to-BRI Dialup with DDR Dialer Maps
+Prerequisites
+Requirements
+We strongly recommend that you read the document Configuring and Troubleshooting Dialer Profiles before you configure dialer profiles.
+Components Used
+The information in this document is based on these software and hardware versions.
+Cisco 2503 with Cisco IOS® Software Release Version 12.2(10b)
+Cisco 2503 with Cisco IOS Software Release Version 12.2(10b)
+Cisco 2520 with Cisco IOS Software Release Version 12.2(10b)
+The information presented in this document was created from devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If you work in a live network, ensure that you understand the potential impact of any command before you use it.
+Background Theory
+Dialer profiles separate logical configurations from the physical interfaces that receive or make calls. Because of this separation, multiple dialer profile configurations can share interfaces such as ISDN, asynchronous modems, or synchronous serial connections. Dialer profiles allow you to bind logical and physical configurations together dynamically on a per call basis. This allows physical interfaces to take on different characteristics based on incoming or outgoing call requirements. Dialer profiles can define encapsulation, access control lists, minimum or maximum calls, and toggle features on or off. Dialer profiles are particularly useful where multiple ISDN B channels are to be used to connect to multiple remote destinations simultaneously. In such a case, one dialer profile can be bound to one set of B channels while another dialer profile can be bound to another set of B channels. This allows the same physical interface to connect to multiple remote destinations simultaneously.
+The components of a dialer profile include:
+Dialer interfaces - logical entities that use a per-destination dialer profile. You can create any number of dialer interfaces in a router. All configuration settings specific to the destination go in the dialer interface configuration. Each dialer interface uses a dialer pool, which is a pool of physical interfaces (ISDN BRI and PRI, asynchronous-modem, and synchronous serial).
+Dialer pool - Each interface references a dialer pool, which is a group of physical interfaces associated with a dialer profile. A physical interface can belong to multiple dialer pools. Contention for a specific physical interface is resolved by configuring the optional priority command.
+Physical interfaces - Interfaces in a dialer pool are configured for encapsulation parameters. The interfaces are also configured to identify the dialer pools to which the interface belong. Dialer profiles support PPP and High-Level Data Link Control (HDLC) encapsulation.
+Dialer map-class (optional) - Supply configuration parameters to dialer interfaces (for example, ISDN speed, dialer timers parameters, and so on). A map-class can be referenced from multiple dialer interfaces.
+For more information on Dialer Profiles, and to determine whether Dialer Profiles are appropriate for your situation, refer to the document Configuring and Troubleshooting Dialer Profiles.
+Conventions
+For more information on document conventions, refer to the Cisco Technical Tips Conventions.
+Configure
+In this section, you are presented with the information to configure the features described in this document.
+Note: To find additional information on the commands used in this document, use the Command Lookup Tool (registered customers only) .
+Network Diagram
+This document uses the network setup shown in this diagram.
+Configurations
+This document uses these configurations.
+R3: Central Site (Cisco 2503)
+R1: Remote Site (Cisco 2503)
+R2 : Telecommuter (Cisco 2520)
+R3: Central Site (Cisco 2503)
+version 12.2
+service timestamps debug datetime msec
+service timestamps log datetime msec
+service password-encryption
+!
+hostname R3
+!
+aaa new-model
+aaa authentication login default local
+aaa authentication ppp default local
+!
+username admin privilege 15 password 7 <deleted>
+username R1 password 7 <deleted>
+username R2 password 7 <deleted>
+
+!--- For Challenge Handshake Authentication Protocol (CHAP), passwords must !--- be the same on both routers.
+
+ip subnet-zero          
+!
+isdn switch-type basic-5ess
+!
+interface Ethernet0
+  ip address 172.22.80.4 255.255.255.0 
+!
+interface BRI0
+  no ip address
+  encapsulation ppp
+  dialer pool-member 1
+
+!--- Places the interface into dialer pool # from which Dialer interfaces !--- may draw channels as needed. !--- Links the physical interface with the logical dialer interfaces.
+
+  isdn switch-type basic-5ess
+  ppp authentication chap
+  ppp multilink
+
+!--- Configure authentication and multilink on both physical and dialer interfaces.
+
+!
+interface Dialer0
+  ip address 172.22.85.1 255.255.255.0 
+  encapsulation ppp
+  dialer pool 1
+
+!--- Defines the pool of physical resources from which the Dialer interface !--- may draw B channels as needed.
+
+dialer remote-name R1
+
+!--- Should match the authenticated username of the peer 
+
+ dialer string 6661000 class mapclass1
+
+!--- Dialer0 is linked to map-class mapclass1 
+
+dialer load-threshold 128 outbound
+dialer-group 5
+
+!--- DDR configuration command. !--- This command is linked to the dialer-list 5 command.
+
+ppp authentication chap
+ppp multilink
+!
+interface Dialer1
+  ip address 172.22.86.1 255.255.255.0
+  encapsulation ppp
+  dialer pool 1
+  dialer remote-name R2
+  dialer string 6662000
+  dialer-group 5
+  ppp authentication chap
+!
+router eigrp 69
+  redistribute static
+
+!--- The redistribute static command advertises static routes !--- to a dynamic routing protocol.
+
+passive-interface Dialer0
+  passive-interface Dialer1
+
+!--- The passive-interface command deactivates dynamic routing updates !--- on the dialer interfaces. Prevents the Enhanced Interior Gateway !--- Routing Protocol (EIGRP) process from continuously bringing up the ISDN link.
+ 
+  network 172.22.0.0
+  auto-summary
+  no eigrp log-neighbor-changes
+!
+ip classless
+ip route 172.22.95.0 255.255.255.0 Dialer1
+ip route 172.22.96.0 255.255.255.0 Dialer0
+
+!--- Router uses dialer1 when reaching network 172.22.95.0. !--- Router uses dialer0 when reaching network 172.22.96.0. 
+         
+!
+map-class dialer mapclass1 
+  dialer idle-timeout 180
+  dialer fast-idle 5
+dialer-list 5 protocol ip permit
+
+!--- Defines DDR interesting traffic for dialer-group 5. Access-list may be used.
+
+!
+line con 0
+line aux 0
+line vty 0 4
+!
+end
+R1: Remote Site (Cisco 2503)
+version 12.2
+service timestamps debug datetime msec
+service timestamps log datetime msec
+service password-encryption
+!
+hostname R1
+!
+aaa new-model
+aaa authentication login default local
+aaa authentication ppp default local
+!
+username admin privilege 15 password 7 <deleted>
+username R3 password 7 <deleted>
+
+!--- For CHAP, passwords must be the same on both routers.
+
+ip subnet-zero
+!
+isdn switch-type basic-5ess
+!
+interface Ethernet0
+ip address 172.22.96.1 255.255.255.0
+!
+interface BRI0
+no ip address
+encapsulation ppp
+dialer pool-member 10
+isdn switch-type basic-5ess
+ppp multilink
+!
+interface Dialer1
+ip address 172.22.85.2 255.255.255.0
+encapsulation ppp
+dialer pool 10
+dialer remote-name R3
+dialer string 6663000
+dialer load-threshold 128 outbound
+dialer-group 5
+ppp authentication chap
+ppp multilink
+!
+ip classless
+ip route 172.22.0.0 255.255.0.0 172.22.80.0 
+ip route 172.22.80.0 255.255.255.0 Dialer1
+!
+dialer-list 5 protocol ip permit
+!
+line con 0
+line aux 0
+line vty 0 4
+!
+end
+R2 : Telecommuter (Cisco 2520)
+version 12.2
+service timestamps debug datetime msec
+service timestamps log datetime msec
+service password-encryption
+!
+hostname R2
+!
+aaa new-model
+aaa authentication login default local
+aaa authentication ppp default local
+!
+username admin privilege 15 password 7 <deleted>
+username R3 password 7 <deleted>
+
+!--- For CHAP, passwords must be the same on both routers.
+
+ip subnet-zero
+!
+isdn switch-type basic-5ess
+!
+interface Ethernet0
+ip address 172.22.95.1 255.255.255.0
+!
+interface BRI0
+ip address 172.22.86.2 255.255.255.0
+encapsulation ppp
+dialer map ip 172.22.86.1 name R3 6663000
+dialer-group 1
+isdn switch-type basic-5ess
+ppp authentication chap
+!
+ip classless
+ip route 0.0.0.0 0.0.0.0 172.22.86.1
+!
+dialer-list 1 protocol ip permit
+!
+line con 0
+stopbits 1
+line aux 0
+line vty 0 4
+!
+end
+Tuning and Optional Commands
+For more information on DDR commands, refer to the Peer-to-Peer DDR with Dialer Profiles Commands documentation.
+Here is a list of optional timer commands:
+dialer idle-timeout seconds - Specifies the idle timer value to use for the call. This timer disconnects the call if no interesting traffic has been transmitted for the specified time. The default is 120 seconds.
+dialer fast-idle seconds - Specifies a quick disconnect time if there is another call waiting for the same interface and the interface is idle. The waiting call does not have to wait for the idle timer to expire. The default is 20 seconds.
+dialer wait-for-carrier-time seconds - Specifies the time for the carrier time value to use for the call. If no carrier is detected within the specified time, the call is abandoned.
+Following is a list of optional map class commands:
+map-class dialer class-name - Specifies a map class and enters map class configuration mode. The map-class configuration is linked to a dialer profile with the dialer string # class class-name command applied on the interface dialer mode. The following commands are available in the map class configuration mode:
+dialer idle-timeout sec , dialer fast-idle sec , dialer wait-for-carrier-time sec (refer to the Timers section).
+dialer isdn [speed speed ] [spc] - Specifies the ISDN line speed (64kbps is the default). The spc option is used to specify an ISDN semi-permanent connection.
+Following is a list of optional multilink PPP commands:
+ppp multilink - Specifies that this dialer interface uses multilink PPP (fragments packets over a bundle of interfaces connected to the same destination). This command is placed on the physical interface for incoming calls and in the dialer interface for outgoing calls.
+dialer load-threshold load [outbound | inbound | either] - Specifies at what traffic load additional links will be brought up for multilink PPP. Valid values are from 1 to 255 (255 is 100 percent of link utilization).
+Here is a list of other commands you can use:
+dialer hold-queue packets - Specifies the length of the queue for packets waiting for the line to come up. Valid values are from 0 to 100.
+dialer pool-member number [priority priority] [min-link minimum] [max link maximum] - Assigns a physical interface to a dialer pool.
+priority priority - Sets the priority of the physical interface within the dialer pool (from 1 to 255). Interfaces with the highest priorities are selected first when dialing out.
+min-link minimum - Sets the minimum number of ISDN B channels on an interface reserved for this dialer pool (from 1 to 255). Used for dialer backup.
+max-link maximum - Sets the maximum number of ISDN B channels on an interface reserved for this dialer pool (from 1 to 255).
+dialer-list dialer-group protocol protocol-name {permit | deny | list access-list-number} - Global configuration command used to define interesting traffic that will start a DDR connection. This command is linked to the dialer-group number interface command.
+permit - Permits access to an entire protocol.
+deny - Denies access to an entire protocol.
+list - Specifies an access list to be used for defining a granularity finer than an entire protocol.
+Verify
+This section provides information you can use to confirm your configuration works properly.
+Certain show commands are supported by the Output Interpreter Tool (registered customers only) , which allows you to view an analysis of show command output.
+show dialer [interface type number] - Displays general diagnostic information for interfaces configured for DDR. If the dialer came up properly, the Dialer state is data link layer up message should appear. If physical layer up appears, then the line protocol came up, but the Network Control Protocol (NCP) did not. The Dial reason line shows the source and destination addresses of the packet that initiated the dialing. This show command also displays the timer's configuration and the time before the connection times out.
+show isdn status - Ensure that the router is properly communicating with the ISDN switch. In the output, verify that Layer 1 Status is ACTIVE, and that the Layer 2 Status state = MULTIPLE_FRAME_ESTABLISHED appears. This command also displays the number of active calls.
+Troubleshoot
+This section provides information you can use to troubleshoot your configuration.
+Troubleshooting Commands
+Certain show commands are supported by the Output Interpreter Tool (registered customers only) , which allows you to view an analysis of show command output.
+Note: Before issuing debug commands, please see Important Information on Debug Commands.
+debug isdn q931 - Shows call setup and tear down of the ISDN network connection (Layer 3).
+debug isdn q921 - Shows data link layer messages (Layer 2) on the D channel between the router and the ISDN switch. Use this debug if the show isdn status command does not display Layer 1 and Layer 2 up.
+debug dialer [events | packets] - Displays DDR debugging information about the packets received on a dialer interface.
+debug ppp negotiation - Displays information on PPP traffic and exchanges while negotiating the PPP components including Link Control Protocol (LCP), authentication, and NCP. A successful PPP negotiation first opens the LCP state, then authenticates, and finally negotiates NCP.
+debug ppp authentication - Displays the PPP authentication protocol messages, including Challenge Authentication Protocol (CHAP) packet exchanges and Password Authentication Protocol (PAP) exchanges.
+debug ppp error - Displays protocol errors and error statistics associated with PPP connection negotiation and operation.
+For more information on troubleshooting Dialer Profiles refer to the document Configuring and Troubleshooting Dialer Profiles
+Sample debug Output
+R1 (172.22.85.2) pings R3 (172.22.85.1) and triggers an ISDN DDR connection:
+R1#debug dialer events 
+     Dial on demand events debugging is on
+R1#ping 172.22.85.1 
+
+Type escape sequence to abort. 
+     
+Sending 5, 100-byte ICMP Echos to 172.22.85.1, timeout is 2 seconds:
+*Mar 1 02:27:06.067: BR0 DDR: rotor dialout [priority]
+*Mar 1 02:27:06.071: BR0 DDR: Dialing cause ip (s=172.22.85.2, d=172.22.85.1)
+*Mar 1 02:27:06.075: BR0 DDR: Attempting to dial 6663000
+*Mar 1 02:27:06.407: %LINK-3-UPDOWN: Interface BRI0:1, changed state to up
+
+!--- R1 initiates the DDR process and uses its first BRI B channel.
+
+*Mar 1 02:27:06.411: BR0:1: interface must be fifo queue, force fifo
+*Mar 1 02:27:06.419: %DIALER-6-BIND: Interface BR0:1 bound to profile Di1
+*Mar 1 02:27:06.619: Di1 DDR: Authenticated host R3 with no matching dialer map
+*Mar 1 02:27:06.691: Di1 DDR: dialer protocol up.!!!!
+Success rate is 80 percent (4/5), round-trip min/avg/max = 36/36/36 ms
+R1#
+*Mar 1 02:27:07.611: %LINEPROTO-5-UPDOWN: Line protocol on Interface BRI0:1,
+changed state to up
+*Mar 1 02:27:12.427: %ISDN-6-CONNECT: Interface BRI0:1 is now connected to 
+6663000 R3
+
+!--- Call timeouts, R1 (172.22.85.2) pings R3 (172.22.85.1) !--- and triggers an ISDN DDR connection.
+
+
+R3#debug ppp negotiation 
+PPP protocol negotiation debugging is on
+     
+R3#debug ppp authentication
+PPP authentication debugging is on
+R3# 
+*Mar 1 02:36:13.015: %LINK-3-UPDOWN: Interface BRI0:1, changed state to up
+
+!--- R3 receives an ISDN call from R1
+
+*Mar 1 02:36:13.019: BR0:1 PPP: Treating connection as a callin
+*Mar 1 02:36:13.019: BR0:1 PPP: Phase is ESTABLISHING, 
+Passive Open [0 sess, 1 load]
+*Mar 1 02:36:13.019: BR0:1 LCP: State is Listen
+
+!--- Incoming configuration request
+
+*Mar 1 02:36:13.447: BR0:1 LCP: I CONFREQ [Listen] id 62 len 30
+*Mar 1 02:36:13.447: BR0:1 LCP: AuthProto CHAP (0x0305C22305)
+*Mar      1 02:3:13.447: BR0:1      LCP: MagicNumber 0x60C29964 (0x050660C29964)
+*Mar      1 02:3:13.447: BR0:1      LCP: MRRU 1524 (0x110405F4)
+*Mar      1 02:3:13.447: BR0:1      LCP: EndpointDisc 1 R1 
+(0x130B0156656E75732D484B
+
+!--- Outgoing configuration request
+ 
+*Mar      1 02:36 13.451:BR0:1 LCP: O CONFREQ [Listen] id 2 len 32
+*Mar      1 02:3:13.451: BR0:1      LCP: AuthProto CHAP (0x0305C22305)
+*Mar      1 02:3:13.451: BR0:1      LCP: MagicNumber 0x0070D085 (0x05060070D085)
+*Mar      1 02:3:13.451: BR0:1      LCP: MRRU 1524 (0x110405F4)
+*Mar      1 02:3:13.451: BR0:1      LCP: EndpointDisc 1 R3 
+(0x130D014A7570697465722D484B)
+
+!--- Outgoing configuration acknowledgment
+
+*Mar 1 02:3:13.451:      BR0:1 LCP: O CONFACK [Listen] id 62 len 30
+*Mar      1 02:3:13.451: BR0:1      LCP: AuthProto CHAP (0x0305C22305)
+*Mar      1 02:3:13.451: BR0:1      LCP: MagicNumber 0x60C29964 (0x050660C29964)
+*Mar      1 02:3:13.451: BR0:1      LCP: MRRU 1524 (0x110405F4)
+*Mar      1 02:3:13.451: BR0:1      LCP: EndpointDisc 1 R1 
+                                              (0x130B0156656E75732D484B)
+
+!--- Incoming configuration acknowledgment
+
+*Mar 1 02:36:13.511:      BR0:1 LCP: I CONFACK [ACKsent] id 2 len 32
+*Mar      1 02:36:13.511: BR0:1      LCP: AuthProto CHAP (0x0305C22305)
+*Mar      1 02:36:13.511: BR0:1      LCP: MagicNumber 0x0070D085 (0x05060070D085)
+*Mar      1 02:36:13.511: BR0:1      LCP: MRRU 1524 (0x110405F4)
+*Mar      1 02:36:13.511: BR0:1      LCP: EndpointDisc 1 R3 
+                                          (0x130D014A7570697465722D484B)
+
+!--- Link Control Protocol is open 
+
+*Mar      1 02:3:13.511:      BR0:1 LCP: State is Open
+01:49:36: BR0:1 PPP: Phase is AUTHENTICATING, by both [0 sess, 1 load]
+*Mar      1 02:3:13.511: BR0:1      CHAP: O CHALLENGE id 2 len 31 from "R3"
+*Mar      1 02:3:13.515: BR0:1      CHAP: I CHALLENGE id 22 len 29 from "R1"
+*Mar      1 02:3:13.515: BR0:1      CHAP: Waiting for peer to authenticate first
+*Mar      1 02:3:13.571: BR0:1      CHAP: I RESPONSE id 2 len 29 from "R1"
+*Mar      1 02:3:13.575:      BR0:1 CHAP: O SUCCESS id 2 len 4
+*Mar 1 02:36:13.575:BR0:1 CHAP: Processing saved Challenge, id 22
+*Mar 1 02:36:13.575:%DIALER-6-BIND: Interface BR0:1 bound to profile Di0
+*Mar 1 02:36:13.575:BR0:1 CHAP: O RESPONSE id 22 len 31 from "R3"
+*Mar 1 02:36:13.575:      BR0:1 CHAP: I SUCCESS id 22 len 4
+
+!--- PPP CHAP Authentication succeeded 
+
+*Mar 1 02:36:13.607:BR0:1 PPP: Phase is VIRTUALIZED [0 sess, 0 load]
+*Mar 1 02:36:13.611:Di0 PPP: Phase is UP [0 sess, 0 load]
+
+!--- PPP NCP begins
+
+*Mar      1 02:36:13.611:Di0 IPCP: O CONFREQ [Closed] id 2 len      10
+*Mar      1 02:36:13.611:Di0 IPCP: Address 172.22.85.1 (0x0306AC165501)
+*Mar      1 02:36:13.611:Di0 CDPCP: O CONFREQ [Closed] id 2 len 4
+*Mar      1 02:36:13.626:      Di0 MLP: Added first link BR0:1 to bundle R1
+*Mar      1 02:36:13.626:      Di0 PPP: Treating connection as a callout
+*Mar      1 02:36:13.626:      BR0:1 IPCP: MLP bundle interface is built, process 
+packets now
+*Mar      1 02:36:13.626:      BR0:1 IPCP: Redirect packet to Di0
+*Mar      1 02:36:13.627:      Di0 IPCP: I CONFREQ [REQsent] id 2 len 10
+*Mar      1 02:36:13.627:      Di0 IPCP: Address 172.22.85.2 (0x0306AC165502)
+*Mar      1 02:36:13.631:      Di0 IPCP: O CONFACK [REQsent] id 2 len 10
+*Mar      1 02:36:13.631:      Di0 IPCP: Address 172.22.85.2 (0x0306AC165502)
+*Mar      1 02:36:13.634:      BR0:1 CDPCP: MLP bundle interface is built, process 
+packets now
+*Mar      1 02:36:13.634:      BR0:1 CDPCP: Redirect packet to Di0
+*Mar      1 02:36:13.635:      Di0 CDPCP: I CONFREQ [REQsent] id 2 len 4
+*Mar      1 02:36:13.635:      Di0 CDPCP: O CONFACK [REQsent] id 2 len 4
+*Mar      1 02:36:13.639:      Di0 IPCP: I CONFACK [ACKsent] id 2 len 10
+*Mar      1 02:36:13.639:      Di0 IPCP: Address 172.22.85.1 (0x0306AC165501)
+*Mar      1 02:36:13.639:      Di0 IPCP: State is Open
+*Mar      1 02:36:13.639:      Di0 CDPCP: I CONFACK [ACKsent] id 2 len 4
+*Mar      1 02:36:13.639:      Di0 CDPCP: State is Open
+*Mar      1 02:36:13.643:      Di0 IPCP: Install route to 172.22.85.2
+*Mar      1 02:36:14.607:      %LINEPROTO-5-UPDOWN: Line protocol on Interface BRI0:1, 
+ changed state to up
+*Mar      1 02:36:19.019:      %ISDN-6-CONNECT: Interface BRI0:1 is now connected to 
+ 6661000 R1
+While the call is still active:
+R3#show dialer
+BRI0 - dialer type = ISDN 
+Dial String Successes      Failures Last DNIS Last status
+     0 incoming call(s) have been screened.
+     0 incoming call(s) rejected for callback.
+BRI0:1 - dialer type = ISDN
+     Idle timer (120 secs), Fast idle timer (20 secs)
+     Wait for carrier (30 secs), Re-enable (15 secs)
+     Dialer state is data link layer up
+     Interface bound to profile Di0
+     Current call connected 00:00:47
+     Connected to 6661000 (R1)
+
+!--- Call is connected to interface BRI 1/0: first B channel
+
+BRI0:2 - dialer type      = ISDN
+     Idle timer (120 secs), Fast idle timer (20 secs)
+     Wait for carrier (30 secs), Re-enable (15 secs)
+     Dialer state is idle
+Di0 - dialer type      = DIALER PROFILE
+     Load threshold for dialing additional calls is 128
+     Idle timer (120 secs), Fast idle timer (20 secs)
+     Wait for carrier (30 secs), Re-enable (15 secs)
+     Dialer state is data link layer up
+     Number of active calls = 1 (R1)
+
+!--- Interface Dialer0 is active and connected to R1.
+
+
+Dial String      Successes     Failures     Last DNIS     Last status
+6661000                 0             0      never                 - Default
+Di1 - dialer type      = DIALER PROFILE
+     Idle timer (120 secs), Fast idle timer (20 secs)
+     Wait for carrier (30 secs), Re-enable (15 secs)
+     Dialer state is idle
+     Number of active calls = 0
+
+Dial String      Successes     Failures     Last DNIS     Last status
+6662000                 0             0      never                 - Default
+This configuration demonstrates how you can dynamically bind logical entities called dialer profiles to physical interfaces on a per call basis. By using dialer profiles, the network is able to connect to remote locations with greater flexibility. Additionally, you can use dialer profiles to better utilize available resources. You can therefore use dialer profiles to overcome many of the shortcomings of legacy DDR.
+Related Information
+Dial Technology Support Pages
+Configuring and Troubleshooting Dialer Profiles
+Configuring Peer-to-Peer DDR with Dialer Profiles
+Cisco IOS Release 12.0 Dial Solutions Command Reference
+Deciding and Preparing to Configure DDR
+Designing DDR Internetworks
+Technical Support - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+04-Feb-2010
+Initial Release
+Contributed by
+npanicke
+harkisin
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Dial-on-Demand Routing (DDR)
+Integrated Services Digital Networks (ISDN), Channel-Associated Signaling (CAS)

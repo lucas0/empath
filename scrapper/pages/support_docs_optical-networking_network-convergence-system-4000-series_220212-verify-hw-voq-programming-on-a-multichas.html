@@ -1,0 +1,88 @@
+Troubleshooting TechNotes
+Verify HW VoQ Programming on a Multichassis NCS4K
+Save
+Translations
+Download
+Print
+
+
+
+Updated:February 9, 2023
+Document ID:220212
+Bias-Free Language
+Contents
+Introduction
+Procedure
+Recovery Method
+Introduction
+This document describes the procedure to verify Hardware (HW) Virtual Output Queueing (VoQ) programming on a multichassis NCS4K.
+Procedure
+This is a step-by-step approach to verify HW VoQ programming on NCS4K nodes.
+Multichassis nodes in 6.5.26 release are potentially affected by Cisco bug ID CSCvz41459, where VoQ is misprogrammed on the ingress Line Card (LC) Virtual Machine (VM).
+Step 1. First, you need to check the ingress and egress interface for the traffic flow.
+In this example, the ingress interface is TenGigE1/3/0/0/1.4001 (rack 1), and the egress interface is Hu0/9/0/11/2.4001(rack 0). So, ingress and egress interfaces are on different racks, and you could potentially be affected by Distributed Defect Tracking System (DDTS) Cisco bug ID CSCvz41459
+For example, see tunnel 117:
+#show mpls forwarding tunnels 117
+Wed Nov  9 13:15:47.159 UTC
+Tunnel        Outgoing    Outgoing     Next Hop        Bytes
+Name          Label       Interface                    Switched
+------------- ----------- ------------ --------------- ------------
+tt117             24764       Hu0/9/0/11/2.4001 172.16.13.170   0
+Step 2. Check active LC VM in rack 0 and rack 1:
+#show redundancy summary
+Wed Nov  9 13:16:59.309 UTC
+    Active Node    Standby Node
+    -----------    ------------
+          1/LC0           1/LC1 (Node Ready, NSR:Not Configured)
+          0/RP1           1/RP0 (Node Ready, NSR:Ready)
+          0/RP0           1/RP1 (Node Ready, NSR:Not Configured)
+          0/LC0           0/LC1 (Node Ready, NSR:Not Configured)
+In this example, 0/LC0 is an active VM in rack 0 and 1/LC0 is in rack 1.
+Step 3. As a next step, check SysPort number for the egress interface in egress LC VM:
+#show controllers npu voq-usage interface HundredGigE 0/9/0/11/2.4001 instance all location 0/lc0
+Wed Nov  9 13:16:45.149 UTC
+
+-------------------------------------------------------------------
+Node ID: 0/LC0
+Intf         Intf     NPU NPU  PP   Sys   VOQ   Flow   VOQ    Port
+name         handle    #  core Port Port  base  base   port   speed
+             (hex)                                     type
+----------------------------------------------------------------------
+Hu0/9/0/11/2.4001 8000bd4  18   1  448 24655   1336   5152 local   100G
+Hu0/9/0/11/2.4001 8000bd4   0   0    0 24655   1144      0 remote    0M
+In this case, SysPort is 24655 and VoQ base is 1336.
+Step 4. Check the same SysPort on the ingress line card and ingress VM.
+The command is:
+show controllers fia diagshell <ingress Line card number> "dump IRR_DESTINATION_TABLE <SysPort>" location <ingress LC VM>
+For example:
+#show controllers fia diagshell 3 "dump IRR_DESTINATION_TABLE 24655" location 1/lc0
+Wed Nov  9 13:18:00.684 UTC
+
+Node ID: 1/LC0
+IRR_DESTINATION_TABLE.IRR0[24655]: <VALID_1=1,VALID_0=1,TC_PROFILE=0,QUEUE_NUMBER=0x538,ECC=0>
+In this example, QUEUE_NUMBER is 0x538 in HEX, that is matching to your VoQ base 1336 (dec) from the previous output.
+If you hit  Cisco bug ID CSCvz41459 the QUEUE_NUMBER is 0x1ffff.
+For example:
+#show controllers fia diagshell 3 "dump IRR_DESTINATION_TABLE 24655" location 1/LC0
+Wed Nov  9 12:44:54.270 UTC
+ 
+Node ID: 1/LC0
+IRR_DESTINATION_TABLE.IRR0[24655]: <VALID_1=0,VALID_0=0,TC_PROFILE=0,QUEUE_NUMBER=0x1ffff,ECC=0>
+Recovery Method
+The recovery method for this issue is to remove the affected egress subinterface, and re-apply it back.
+Do not forget to check the flow path in the reverse direction as well.
+Revision History
+Revision Publish Date Comments
+1.0
+09-Feb-2023
+Initial Release
+Contributed by Cisco Engineers
+Ivan Mushenko
+High Touch Engineering Technical Leader
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Network Convergence System 4000 Series

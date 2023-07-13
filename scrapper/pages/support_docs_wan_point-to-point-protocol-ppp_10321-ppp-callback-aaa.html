@@ -1,0 +1,737 @@
+Configuration Examples and TechNotes
+Configuring PPP Callback over ISDN with an AAA Provided Callback String
+Save
+Translations
+Download
+Print
+
+Updated:February 4, 2010
+Document ID:10321
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Conventions
+Background Information
+Configure
+Network Diagram
+Configurations
+Verify
+Troubleshoot
+Troubleshooting Commands (Optional)
+Sample Debug Output
+Related Information
+Introduction
+This document provides a sample configuration for PPP callback between two Cisco routers.
+Prerequisites
+Requirements
+There are no specific requirements for this document.
+Components Used
+The information in this document is based on these software and hardware versions:
+Cisco IOS® Software Release 12.0(3)T or later.
+Note: To configure PPP callback with the help of an AAA server assigned callback string, you need to use the dialer aaa command, which is available in Cisco IOS Software Release 12.0(3)T or later. However in Cisco IOS versions 12.1(4)T, 12.2(1)T, and later, this command is not required for PPP callback with an AAA server assigned callback string.
+Note: The dialer aaa command is only supported with Legacy DDR (as shown in figure1).
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Conventions
+For more information on document conventions, refer to Cisco Technical Tips Conventions.
+Background Information
+The TACACS+ (AAA server) is used to supply the callback dialstring to the callback server. However, you can also use RADIUS to supply the callback string. To configure PPP callback with local authentication, authorization, and accounting (AAA), see Configuring PPP Callback Over ISDN.
+In this sample configuration, callback uses PPP and the facilities specified in RFC 1570. The PPP callback across the ISDN circuit is completed in this order:
+The callback client initiates and brings up an ISDN connection to the callback server router.
+The callback client and callback server negotiate PPP link control protocol (LCP). In LCP negotiation, callback is requested, negotiated, and agreed upon.
+The callback client and callback server authenticate each other with PPP Password Authentication Protocol (PAP) or Challenge Handshake Authentication Protocol (CHAP). However, you can configure the callback client not to authenticate the callback server, through the ppp authentication chap callin command.
+The Callback server obtains the necessary callback attributes, such as the callback dialstring (the phone number of the client) from the AAA server.
+Both routers drop the ISDN connection.
+The callback server initiates the callback to the client. When the call connects, the routers authenticate each other, and the link is established.
+Configure
+In this section, you are presented with the information to configure the features described in this document.
+Note: To find additional information on the commands used in this document, use the Command Lookup Tool (registered customers only) .
+Network Diagram
+This document uses this network setup:
+Figure 1 – Network Diagram
+Configurations
+This document uses these configurations:
+Freeware TACACS+ Configuration
+RADIUS Configuration
+Alternate RADIUS Configuration
+Tnt-buster (Callback Server) Configuration
+Tremens (Callback Client) Configuration
+Freeware TACACS+ Configuration
+user = tremens {
+  default service = permit
+  login = cleartext "cisco"
+  chap = cleartext "cisco"
+  
+!--- CHAP password.
+
+  service = ppp protocol = lcp {
+  callback-dialstring = "6083"
+
+ !--- Number to callback.
+
+  send-secret = "cisco"
+  }
+  }
+You can also use RADIUS as your AAA server to supply the callback attributes instead of TACACS+. An example of the RADIUS configuration is provided here:
+RADIUS Configuration
+tremens         Auth-Type = Local, Password = "cisco"
+                Service-Type = Framed-User,
+
+ !--- Service-Type(6) is Framed User(4).
+
+                Cisco-AVPair = "lcp:callback-dialstring=6083", 
+                Cisco-AVPair = "lcp:send-secret=cisco"
+Note: In the RADIUS configuration shown above, the Cisco AVPair lcp:send-secret=cisco is needed at the time of authentication of the callback. If you do not include this AVPair, you must configure the CHAP username and password of the remote router locally on the callback server.
+Note: This document deals primarily with TACACS+. The debugs provided in this document do not show a RADIUS-initiated callback.
+Note: From Cisco IOS version 12.1(7), it is possible to use the Internet Engineering Task Force (IETF) RADIUS attribute 19 for ISDN and Analog Microsoft callback. In such a case, it is unnecessary to use the Cisco AVPairs, shown in the previous configuration. Refer to the alternate RADIUS configuration example shown here:
+Alternate RADIUS Configuration
+tremens         Auth-Type = Local, Password = "cisco"
+                Service-Type = callback framed
+                
+!--- Service-Type (6) is callback framed (4).
+
+                
+!--- Callback framed is also known as !--- Dialback-Framed-User.
+
+                Callback =6083
+                
+!--- IETF RADIUS Callback attribute (19) with the phone !--- number for the callback.
+Note: The RADIUS debugs will show the IETF RADIUS attribute 19 returned to the callback server.
+The configurations for the two routers used in this example are shown here:
+Tnt-buster (Callback Server)
+version 12.1
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no service password-encryption
+!
+hostname Tnt-buster
+!
+boot system flash flash:c5300-i-mz.121-4
+logging buffered 1000000 debugging
+aaa new-model
+aaa authentication login none none
+aaa authentication ppp default group tacacs+ local
+
+!--- AAA methods for PPP authentication.
+
+aaa authorization network default group tacacs+
+
+!--- AAA authorization methods for RADIUS implementation. !--- Replace TACACS+ with RADIUS in the statements above.
+
+!
+spe 1/0 1/23
+ firmware location system:/ucode/microcom_firmware
+!
+resource-pool disable
+!
+ip subnet-zero
+no ip domain-lookup
+!
+isdn switch-type primary-net5
+!
+controller E1 0
+
+!--- E1 interface that accepts the initial call and performs the callback.
+
+ clock source line primary
+ pri-group timeslots 1-31
+!
+! 
+ !--- irrelevant output has been omitted.
+
+!
+interface Loopback0
+ ip address 2.2.2.2 255.255.255.255
+!
+interface Ethernet0
+ ip address 10.200.20.42 255.255.255.0
+!
+interface Serial0:15
+
+!--- D-channel for controller E1 0.
+
+ no ip address
+ encapsulation ppp
+ dialer rotary-group 1
+
+!--- Assign E1 0 to rotary-group 1 (which is necessary for dialout). !--- Rotary-group properties are defined in interface Dialer 1.
+
+ isdn switch-type primary-net5
+ no cdp enable
+!
+! 
+
+!--- irrelevant output has been omitted.
+
+!
+!
+interface Dialer1
+
+!--- This is the interface for the dialer rotary-group 1 configuration.
+
+ ip unnumbered Loopback0
+ encapsulation ppp
+ dialer in-band
+ dialer aaa
+
+!--- This allows AAA to retrieve the callback dial string via AAA servers.
+
+
+!--- This command is required for callback attributes to be obtained !--- from the AAA server.
+
+ dialer idle-timeout 60
+ dialer enable-timeout 5
+
+!--- The time (in seconds) between initial call disconnect and callback !--- initiation.
+
+ dialer hold-queue 20
+
+!--- This holds 20 packets destined for the remote destination until the !--- connection is made.
+
+ dialer-group 1
+ no peer default ip address
+
+!--- The peer is not given an IP address from a pool. !--- IP pool can be defined if necessary.
+
+ ppp callback accept
+
+!--- Allows the interface to accept a callback request from a remote host.
+
+ ppp authentication chap callin
+!
+ip route 0.0.0.0 0.0.0.0 10.200.20.1
+no ip http server
+!
+dialer-list 1 protocol ip permit
+tacacs-server host 10.200.20.134 key cisco
+
+!--- The IP address and key of the TACACS+ server.
+
+!
+line con 0
+ exec-timeout 0 0
+ length 30
+ transport input none
+line 1 24
+line aux 0
+line vty 0 4
+ no exec-banner
+ exec-timeout 0 0
+ login authentication none
+!
+end
+Tremens (Callback Client)
+version 12.1
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no service password-encryption
+!
+hostname tremens
+!
+username tnt-buster password 0 cisco
+
+!--- Username and shared secret password used for CHAP authentication. !--- The AAA server must have this router hostname (tnt-buster) and !--- shared secret (cisco) configured.
+
+!
+ip subnet-zero
+no ip finger
+no ip domain-lookup
+!
+isdn switch-type basic-net3
+!
+interface Loopback0
+ ip address 3.3.3.3 255.255.255.255
+!
+interface Ethernet0
+ ip address 10.200.16.54 255.255.255.0
+!
+interface BRI0
+
+!--- The interface used for dialin and dialout.
+
+ no ip address
+ encapsulation ppp
+ dialer pool-member 1
+
+!--- Assign BRI0 as member of dialer pool 1. !--- Dialer pool 1 is specified in interface Dialer 1.
+
+ isdn switch-type basic-net3
+ ppp authentication chap
+!
+interface Dialer1
+ ip unnumbered Loopback0
+ encapsulation ppp
+ dialer pool 1
+
+!--- Defines dialer pool 1. !--- BRI 0 is a member of this pool.
+
+ dialer idle-timeout 60
+ dialer string 8211
+
+!--- The number to dial when dialing out for the initial call.
+
+ dialer hold-queue 20
+
+!--- This holds 20 packets destined for the remote destination until the !--- connection is made.
+
+ dialer-group 1
+ no peer default ip address
+ no fair-queue
+ no cdp enable
+ ppp callback request
+
+!--- Request PPP callback from the server.
+
+ ppp authentication chap
+!
+ip route 2.2.2.2 255.255.255.255 Dialer1
+
+!--- IP route for the dialer interface.
+
+no ip http server
+!
+dialer-list 1 protocol ip permit
+!
+line con 0
+ exec-timeout 0 0
+ transport input none
+line aux 0
+line vty 0 4
+ exec-timeout 0 0
+ login
+!
+end
+Verify
+This section provides information you can use to confirm your configuration is working properly.
+Certain show commands are supported by the Output Interpreter Tool (registered customers only) , which allows you to view an analysis of show command output.
+show dialer interface type number —displays general diagnostic information for interfaces configured for dial-on-demand routing (DDR). The source and destination addresses of the packet that initiated the dialing are shown in the dial reason line. This command also displays the connection timers.
+show isdn status—enables you to ensure that the router communicates properly with the ISDN switch. In the output, verify that Layer 1 Status is ACTIVE, and that the Layer 2 Status state = MULTIPLE_FRAME_ESTABLISHED appears. This command also displays the number of active calls.
+Troubleshoot
+This section provides information you can use to troubleshoot your configuration.
+Refer to Cisco IOS Release 12.0 Debug Command Reference for more information on debug commands.
+Troubleshooting Commands (Optional)
+Certain show commands are supported by the Output Interpreter Tool (registered customers only) , which allows you to view an analysis of show command output.
+Note: Before issuing debug commands, refer to Important Information on Debug Commands.
+debug isdn q931—shows call setup and tear down of the ISDN network connection (Layer 3).
+debug dialer [ events | packets ]—displays DDR debugging information about the packets received on a dialer interface.
+debug aaa authentication—displays information on AAA authentication.
+debug aaa authorization—displays information on AAA authorization.
+debug tacacs—displays detailed debugging information associated with TACACS+.
+debug ppp negotiation—displays information on PPP traffic and exchanges while negotiation of the PPP components is in progress, including Link Control Protocol (LCP), Authentication, and NCP. A successful PPP negotiation will first open the LCP state, then Authenticate, and finally negotiate NCP.
+debug ppp authentication—displays the PPP authentication protocol messages, including Challenge Authentication Protocol (CHAP) packet exchanges and Password Authentication Protocol (PAP) exchanges. If you observe a failure verify whether the CHAP username and password are configured correctly.
+debug callback—displays callback events when the router uses a modem and a chat script to call back on a terminal line. As this command is for modems and chat scripts, it is not used in this configuration.
+Sample Debug Output
+tnt-buster#show debug
+General OS:
+  TACACS access control debugging is on
+  AAA Authentication debugging is on
+  AAA Authorization debugging is on
+Dial on demand:
+  Dial on demand events debugging is on
+PPP:
+  PPP protocol negotiation debugging is on
+ISDN:
+  ISDN Q931 packets debugging is on
+  ISDN Q931 packets debug DSLs. (On/Off/No DSL:1/0/-)
+  DSL  0 --> 7
+  1 - - - - - - -  
+tnt-buster#
+*Oct 16 08:59:26.403: ISDN Se0:15: RX <-  SETUP pd = 8  callref = 0x4880
+
+!--- incoming ISDN call setup message.
+
+*Oct 16 08:59:26.403:   Sending Complete
+*Oct 16 08:59:26.403:   Bearer Capability i = 0x8890
+*Oct 16 08:59:26.403:   Channel ID i = 0xA1839A
+*Oct 16 08:59:26.403:   Calling Party Number i = 0xA1, '6083', Plan:ISDN,
+ Type:National
+
+!--- Calling Party Number is configured in the callback string on !--- the AAA server.
+ 
+*Oct 16 08:59:26.403:   Called Party Number i = 0x81, '211', Plan:ISDN,
+ Type:Unknown
+*Oct 16 08:59:26.407:   Locking Shift to Codeset 6
+*Oct 16 08:59:26.407:   Codeset 6 IE 0x28  i = 'ISDN-EDU-4'
+*Oct 16 08:59:26.407:   ISDN Se0:15: TX ->  CALL_PROC pd = 8  callref = 0xC880
+*Oct 16 08:59:26.411:   Channel ID i = 0xA9839A
+*Oct 16 08:59:26.415: %LINK-3-UPDOWN: Interface Serial0:25, changed state to up
+*Oct 16 08:59:26.419: Se0:25 PPP: Treating connection as a callin
+*Oct 16 08:59:26.419: Se0:25 PPP: Phase is ESTABLISHING, Passive Open
+*Oct 16 08:59:26.419: Se0:25 LCP: State is Listen
+*Oct 16 08:59:26.419: ISDN Se0:15: TX ->  CONNECT pd = 8  callref = 0xC880
+*Oct 16 08:59:26.419: Channel ID i = 0xA9839A
+*Oct 16 08:59:26.459: ISDN Se0:15: RX <-  CONNECT_ACK pd = 8  callref = 0x4880
+*Oct 16 08:59:26.463: ISDN Se0:15: CALL_PROGRESS: CALL_CONNECTED call id 0x28,
+ bchan 25, dsl 0
+*Oct 16 08:59:26.551: Se0:25 LCP: I CONFREQ [Listen] id 126 len 18
+
+!--- PPP LCP negotiation begins.
+
+*Oct 16 08:59:26.555: Se0:25 LCP:    AuthProto CHAP (0x0305C22305)
+*Oct 16 08:59:26.555: Se0:25 LCP:    MagicNumber 0x3E7BCBD2 (0x05063E7BCBD2)
+*Oct 16 08:59:26.555: Se0:25 LCP:    Callback 0  (0x0D0300)
+*Oct 16 08:59:26.555: Se0:25 AAA/AUTHOR/FSM: (0): LCP succeeds trivially
+*Oct 16 08:59:26.555: Se0:25 LCP: O CONFREQ [Listen] id 1 len 15
+*Oct 16 08:59:26.555: Se0:25 LCP:    AuthProto CHAP (0x0305C22305)
+*Oct 16 08:59:26.555: Se0:25 LCP:    MagicNumber 0xE06953E4 (0x0506E06953E4)
+*Oct 16 08:59:26.555: Se0:25 LCP: O CONFACK [Listen] id 126 len 18
+*Oct 16 08:59:26.555: Se0:25 LCP:    AuthProto CHAP (0x0305C22305)
+*Oct 16 08:59:26.555: Se0:25 LCP:    MagicNumber 0x3E7BCBD2 (0x05063E7BCBD2)
+*Oct 16 08:59:26.555: Se0:25 LCP:    Callback 0  (0x0D0300)
+
+!--- Callback option is acknowledged (CONFACKed).
+
+*Oct 16 08:59:26.587: Se0:25 LCP: I CONFACK [ACKsent] id 1 len 15
+*Oct 16 08:59:26.587: Se0:25 LCP:    AuthProto CHAP (0x0305C22305)
+*Oct 16 08:59:26.587: Se0:25 LCP:    MagicNumber 0xE06953E4 (0x0506E06953E4)
+*Oct 16 08:59:26.587: Se0:25 LCP: State is Open
+*Oct 16 08:59:26.587: Se0:25 PPP: Phase is AUTHENTICATING, by both
+
+!--- PPP Authentication begins.
+
+*Oct 16 08:59:26.587: Se0:25 CHAP: O CHALLENGE id 1 len 31 from "tnt-buster"
+*Oct 16 08:59:26.611: Se0:25 CHAP: I CHALLENGE id 93 len 28 from "tremens"
+*Oct 16 08:59:26.611: Se0:25 CHAP: Waiting for peer to authenticate first
+*Oct 16 08:59:26.623: Se0:25 CHAP: I RESPONSE id 1 len 28 from "tremens"
+*Oct 16 08:59:26.623: AAA: parse name=Serial0:25 idb type=13 tty=-1
+*Oct 16 08:59:26.623: AAA: name=Serial0:25 flags=0x51 type=1 shelf=0 slot=0
+ adapter=0 port=0 channel=25
+*Oct 16 08:59:26.623: AAA: parse name= idb type=-1 tty=-1
+*Oct 16 08:59:26.623: AAA/MEMORY: create_user (0x6126C0AC) user='tremens'
+ ruser='' port='Serial0:25' rem_addr='6083/211' authen_type=CHAP service=PPP
+ priv=1
+*Oct 16 08:59:26.623: AAA/AUTHEN/START (199889519): port='Serial0:25' list=''
+ action=LOGIN service=PPP
+*Oct 16 08:59:26.623: AAA/AUTHEN/START (199889519): using "default" list
+*Oct 16 08:59:26.623: AAA/AUTHEN/START (199889519): Method=tacacs+ (tacacs+)
+
+!--- Use TACACS+ as AAA method for the default list.
+ 
+*Oct 16 08:59:26.623: TAC+: send AUTHEN/START packet ver=193 id=199889519
+*Oct 16 08:59:26.623: TAC+: Using default tacacs server-group "tacacs+" list.
+*Oct 16 08:59:26.623: TAC+: Opening TCP/IP to 10.200.20.134/49 timeout=5
+*Oct 16 08:59:26.627: TAC+: Opened TCP/IP handle 0x610C4D40 to 10.200.20.134/49
+*Oct 16 08:59:26.627: TAC+: 10.200.20.134 (199889519) AUTHEN/START/LOGIN/CHAP
+ queued
+*Oct 16 08:59:26.827: TAC+: (199889519) AUTHEN/START/LOGIN/CHAP processed
+*Oct 16 08:59:26.827: TAC+: ver=193 id=199889519 received AUTHEN status = PASS
+*Oct 16 08:59:26.827: AAA/AUTHEN (199889519): status = PASS
+
+!--- AAA authentication succeeds.
+
+*Oct 16 08:59:26.827: TAC+: Closing TCP/IP 0x610C4D40 connection to
+ 10.200.20.134/49
+*Oct 16 08:59:26.827: Se0:25 AAA/AUTHOR/LCP: Authorize LCP
+*Oct 16 08:59:26.827: Se0:25 AAA/AUTHOR/LCP (4028243213): Port='Serial0:25'
+ list='' service=NET
+*Oct 16 08:59:26.827: AAA/AUTHOR/LCP: Se0:25 (4028243213) user='tremens'
+*Oct 16 08:59:26.827: Se0:25 AAA/AUTHOR/LCP (4028243213): send AV service=ppp
+*Oct 16 08:59:26.827: Se0:25 AAA/AUTHOR/LCP (4028243213): send AV protocol=lcp
+*Oct 16 08:59:26.827: Se0:25 AAA/AUTHOR/LCP (4028243213): found list "default"
+*Oct 16 08:59:26.827: Se0:25 AAA/AUTHOR/LCP (4028243213): Method=tacacs+ 
+(tacacs+)
+*Oct 16 08:59:26.827: AAA/AUTHOR/TAC+: (4028243213): user=tremens
+*Oct 16 08:59:26.827: AAA/AUTHOR/TAC+: (4028243213): send AV service=ppp
+*Oct 16 08:59:26.827: AAA/AUTHOR/TAC+: (4028243213): send AV protocol=lcp
+*Oct 16 08:59:26.827: TAC+: using previously set server 10.200.20.134 from
+ group tacacs+
+*Oct 16 08:59:26.827: TAC+: Opening TCP/IP to 10.200.20.134/49 timeout=5
+*Oct 16 08:59:26.831: TAC+: Opened TCP/IP handle 0x61269588 to 10.200.20.134/49
+*Oct 16 08:59:26.831: TAC+: Opened 10.200.20.134 index=1
+*Oct 16 08:59:26.831: TAC+: 10.200.20.134 (4028243213) AUTHOR/START queued
+*Oct 16 08:59:27.031: TAC+: (4028243213) AUTHOR/START processed
+*Oct 16 08:59:27.031: TAC+: (4028243213): received author response status =
+ PASS_ADD
+*Oct 16 08:59:27.031: TAC+: Closing TCP/IP 0x61269588 connection to
+ 10.200.20.134/49
+*Oct 16 08:59:27.031: Se0:25 AAA/AUTHOR (4028243213): Post authorization
+ status = PASS_ADD
+*Oct 16 08:59:27.031: Se0:25 AAA/AUTHOR/LCP: Processing AV service=ppp
+*Oct 16 08:59:27.031: Se0:25 AAA/AUTHOR/LCP: Processing AV protocol=lcp
+*Oct 16 08:59:27.031: Se0:25 AAA/AUTHOR/LCP: Processing AV callback-dialstring=
+6083
+
+!--- Callback dial string sent from the AAA server.
+
+*Oct 16 08:59:27.031: Se0:25 AAA/AUTHOR/LCP: Processing AV send-secret=cisco
+*Oct 16 08:59:27.031: Se0:25 CHAP: O SUCCESS id 1 len 4
+*Oct 16 08:59:27.031: Se0:25 CHAP: Processing saved Challenge, id 93
+*Oct 16 08:59:27.031: Se0:25 DDR: Authenticated host tremens with no matching
+ dialer map
+*Oct 16 08:59:27.031: AAA: parse name=Serial0:25 idb type=13 tty=-1
+*Oct 16 08:59:27.031: AAA: name=Serial0:25 flags=0x51 type=1 shelf=0 slot=0
+ adapter=0
+ port=0 channel=25
+*Oct 16 08:59:27.031: AAA: parse name= idb type=-1 tty=-1
+*Oct 16 08:59:27.031: AAA/MEMORY: create_user (0x610DD96C) user='tremens'
+ ruser='' port='Serial0:25' rem_addr='6083/211' authen_type=CHAP service=PPP
+ priv=1
+*Oct 16 08:59:27.035: AAA/AUTHEN/START (4099567767): port='Serial0:25'
+ list='' action=SENDAUTH service=PPP
+*Oct 16 08:59:27.035: AAA/AUTHEN/START (4099567767): using "default" list
+*Oct 16 08:59:27.035: AAA/AUTHEN/START (4099567767): Method=tacacs+ (tacacs+)
+*Oct 16 08:59:27.035: TAC+: Look for cached secret first for sendauth
+*Oct 16 08:59:27.035: AAA/AUTHEN/SENDAUTH (4099567767): found cached secret
+ for tremens
+*Oct 16 08:59:27.035: AAA/AUTHEN (4099567767): status = PASS
+*Oct 16 08:59:27.035: AAA/MEMORY: free_user (0x610DD96C) user='tremens'
+ ruser='' port='Serial0:25' rem_addr='6083/211' authen_type=CHAP service=PPP
+ priv=1
+*Oct 16 08:59:27.035: Se0:25 CHAP: O RESPONSE id 93 len 31 from "tnt-buster"
+*Oct 16 08:59:27.055: Se0:25 CHAP: I SUCCESS id 93 len 4
+
+!--- CHAP is successful.
+
+*Oct 16 08:59:27.055: FA0: Same state, 0
+*Oct 16 08:59:27.055: DSES FA0: Session create
+*Oct 16 08:59:27.055: AAA/MEMORY: dup_user (0x61069398) user='tremens'
+ ruser='' port='Serial0:25' rem_addr='6083/211' authen_type=CHAP service=PPP
+ priv=1 source='create callback'
+*Oct 16 08:59:27.055: Se0:25 DDR: PPP callback Callback server starting to
+ tremens 6083
+
+!--- DDR starts PPP calback procedures.
+
+*Oct 16 08:59:27.055: Se0:25 DDR: disconnecting call
+
+!--- Call is disconnected.
+
+*Oct 16 08:59:27.059: ISDN Se0:15: TX ->  DISCONNECT pd = 8  callref = 0xC880
+*Oct 16 08:59:27.059:         Cause i = 0x8090 - Normal call clearing
+*Oct 16 08:59:27.071: Se0:25 IPCP: PPP phase is AUTHENTICATING,
+ discarding packet
+*Oct 16 08:59:27.091: ISDN Se0:15: RX <-  RELEASE pd = 8  callref = 0x4880
+*Oct 16 08:59:27.091: ISDN Se0:15: TX ->  RELEASE_COMP pd = 8 
+ callref = 0xC880
+*Oct 16 08:59:27.103: %LINK-3-UPDOWN: Interface Serial0:25,
+ changed state to down
+*Oct 16 08:59:27.103: Se0:25 PPP: Phase is TERMINATING
+*Oct 16 08:59:27.103: Se0:25 LCP: State is Closed
+*Oct 16 08:59:27.103: Se0:25 PPP: Phase is DOWN
+*Oct 16 08:59:27.103: Se0:25 DDR: disconnecting call
+*Oct 16 08:59:32.055: DDR: Callback timer expired
+
+!--- Callback timer (5 seconds) expires.
+
+
+!--- This is configured through the dialer enable-timeout 5 command.
+
+*Oct 16 08:59:32.055: Di1 DDR: beginning callback to tremens 6083
+*Oct 16 08:59:32.055: Se0:15 DDR: rotor dialout [priority]
+*Oct 16 08:59:32.055: Se0:15 DDR: Dialing cause dialer session 0xFA0
+*Oct 16 08:59:32.055: Se0:15 DDR: Attempting to dial 6083
+
+!--- Callback number dialed.
+
+*Oct 16 08:59:32.055: ISDN Se0:15: TX ->  SETUP pd = 8  callref = 0x0005
+*Oct 16 08:59:32.055:         Bearer Capability i = 0x8890
+*Oct 16 08:59:32.055:         Channel ID i = 0xA9839F
+*Oct 16 08:59:32.055:         Called Party Number i = 0x81, '6083', Plan:ISDN,
+ Type:Unknown
+*Oct 16 08:59:32.095: ISDN Se0:15: RX <-  CALL_PROC pd = 8  callref = 0x8005
+*Oct 16 08:59:32.095:         Channel ID i = 0xA9839F
+*Oct 16 08:59:32.311: ISDN Se0:15: RX <-  CONNECT pd = 8  callref = 0x8005
+
+!--- Call is connected.
+
+*Oct 16 08:59:32.311:         Connected Number i = 0xA136303833
+*Oct 16 08:59:32.315:         Locking Shift to Codeset 6
+*Oct 16 08:59:32.315:         Codeset 6 IE 0x28  i = 'ISDN-EDU-4'
+*Oct 16 08:59:32.323: %LINK-3-UPDOWN: Interface Serial0:30, changed state to up
+*Oct 16 08:59:32.323: AAA/MEMORY: dup_user (0x612B7F70) user='tremens' ruser=''
+ port='Serial0:25' rem_addr='6083/211' authen_type=CHAP service=PPP priv=1
+ source='callback dialout'
+*Oct 16 08:59:32.323: DDR: Freeing callback to tremens 6083
+*Oct 16 08:59:32.323: DDR: removing callback, 0 packets unqueued and discarded
+*Oct 16 08:59:32.323: AAA/MEMORY: free_user (0x61069398) user='tremens'
+ ruser='' port='Serial0:25' rem_addr='6083/211' authen_type=CHAP service=PPP
+ priv=1
+*Oct 16 08:59:32.323: Se0:30 PPP: Treating connection as a callout
+
+!--- PPP negotiation begins.
+
+*Oct 16 08:59:32.323: Se0:30 PPP: Phase is ESTABLISHING, Active Open
+*Oct 16 08:59:32.323: Se0:30 PPP: No remote authentication for callback
+*Oct 16 08:59:32.327: Se0:30 AAA/AUTHOR/FSM: (0): LCP succeeds trivially
+*Oct 16 08:59:32.327: Se0:30 LCP: O CONFREQ [Closed] id 5 len 10
+*Oct 16 08:59:32.327: Se0:30 LCP:    MagicNumber 0xE0696A6F (0x0506E0696A6F)
+*Oct 16 08:59:32.327: ISDN Se0:15: TX ->  CONNECT_ACK pd = 8  callref = 0x0005
+*Oct 16 08:59:32.351: Se0:30 LCP: I CONFREQ [REQsent] id 127 len 15
+*Oct 16 08:59:32.351: Se0:30 LCP:    AuthProto CHAP (0x0305C22305)
+*Oct 16 08:59:32.351: Se0:30 LCP:    MagicNumber 0x3E7BE27C (0x05063E7BE27C)
+*Oct 16 08:59:32.355: Se0:30 LCP: O CONFACK [REQsent] id 127 len 15
+*Oct 16 08:59:32.355: Se0:30 LCP:    AuthProto CHAP (0x0305C22305)
+*Oct 16 08:59:32.355: Se0:30 LCP:    MagicNumber 0x3E7BE27C (0x05063E7BE27C)
+*Oct 16 08:59:32.359: Se0:30 LCP: I CONFACK [ACKsent] id 5 len 10
+*Oct 16 08:59:32.359: Se0:30 LCP:    MagicNumber 0xE0696A6F (0x0506E0696A6F)
+*Oct 16 08:59:32.359: Se0:30 LCP: State is Open
+*Oct 16 08:59:32.359: Se0:30 PPP: Phase is AUTHENTICATING, by the peer
+
+!--- Authentication begins.
+
+*Oct 16 08:59:32.359: Se0:30 AAA/AUTHOR/LCP: Authorize LCP
+*Oct 16 08:59:32.359: Se0:30 AAA/AUTHOR/LCP (190918816): Port='Serial0:25'
+ list='' service=NET
+*Oct 16 08:59:32.359: AAA/AUTHOR/LCP: Se0:30 (190918816) user='tremens'
+*Oct 16 08:59:32.359: Se0:30 AAA/AUTHOR/LCP (190918816): send AV service=ppp
+*Oct 16 08:59:32.359: Se0:30 AAA/AUTHOR/LCP (190918816): send AV protocol=lcp
+*Oct 16 08:59:32.359: Se0:30 AAA/AUTHOR/LCP (190918816): found list "default"
+*Oct 16 08:59:32.359: Se0:30 AAA/AUTHOR/LCP (190918816): Method=tacacs+
+ (tacacs+)
+*Oct 16 08:59:32.363: AAA/AUTHOR/TAC+: (190918816): user=tremens
+*Oct 16 08:59:32.363: AAA/AUTHOR/TAC+: (190918816): send AV service=ppp
+*Oct 16 08:59:32.363: AAA/AUTHOR/TAC+: (190918816): send AV protocol=lcp
+*Oct 16 08:59:32.363: TAC+: using previously set server 10.200.20.134 from
+ group tacacs+
+*Oct 16 08:59:32.363: TAC+: Opening TCP/IP to 10.200.20.134/49 timeout=5
+*Oct 16 08:59:32.363: TAC+: Opened TCP/IP handle 0x612B6A1C to 10.200.20.134/49
+*Oct 16 08:59:32.363: TAC+: Opened 10.200.20.134 index=1
+*Oct 16 08:59:32.363: TAC+: 10.200.20.134 (190918816) AUTHOR/START queued
+*Oct 16 08:59:32.563: TAC+: (190918816) AUTHOR/START processed
+*Oct 16 08:59:32.563: TAC+: (190918816): received author response status =
+ PASS_ADD
+*Oct 16 08:59:32.563: TAC+: Closing TCP/IP 0x612B6A1C connection to
+ 10.200.20.134/49
+*Oct 16 08:59:32.563: Se0:30 AAA/AUTHOR (190918816): Post authorization
+ status = PASS_ADD
+*Oct 16 08:59:32.563: Se0:30 AAA/AUTHOR/LCP: Processing AV service=ppp
+*Oct 16 08:59:32.563: Se0:30 AAA/AUTHOR/LCP: Processing AV protocol=lcp
+*Oct 16 08:59:32.563: Se0:30 AAA/AUTHOR/LCP: Processing AV callback-dialstring=
+6083
+*Oct 16 08:59:32.563: Se0:30 AAA/AUTHOR/LCP: Processing AV send-secret=cisco
+*Oct 16 08:59:32.563: Se0:30 CHAP: I CHALLENGE id 94 len 28 from "tremens"
+
+!--- An incoming CHAP challenge is received.
+
+*Oct 16 08:59:32.563: AAA: parse name=Serial0:30 idb type=13 tty=-1
+*Oct 16 08:59:32.563: AAA: name=Serial0:30 flags=0x51 type=1 shelf=0 slot=0
+ adapter=0 port=0 channel=30
+*Oct 16 08:59:32.563: AAA: parse name= idb type=-1 tty=-1
+*Oct 16 08:59:32.563: AAA/MEMORY: create_user (0x612B8098) user='tremens'
+ ruser='' port='Serial0:30' rem_addr='6083/6083' authen_type=CHAP service=PPP
+ priv=1
+*Oct 16 08:59:32.567: AAA/AUTHEN/START (763006247): port='Serial0:30' list=''
+ action=SENDAUTH service=PPP
+*Oct 16 08:59:32.567: AAA/AUTHEN/START (763006247): using "default" list
+*Oct 16 08:59:32.567: AAA/AUTHEN/START (763006247): Method=tacacs+ (tacacs+)
+*Oct 16 08:59:32.567: TAC+: Look for cached secret first for sendauth
+*Oct 16 08:59:32.567: AAA/AUTHEN/SENDAUTH (763006247): found cached secret for
+ tremens
+*Oct 16 08:59:32.567: AAA/AUTHEN (763006247): status = PASS
+*Oct 16 08:59:32.567: AAA/MEMORY: free_user (0x612B8098) user='tremens'
+ ruser='' port='Serial0:30' rem_addr='6083/6083' authen_type=CHAP service=PPP
+ priv=1
+*Oct 16 08:59:32.567: Se0:30 CHAP: O RESPONSE id 94 len 31 from "tnt-buster"
+*Oct 16 08:59:32.587: Se0:30 CHAP: I SUCCESS id 94 len 4
+
+!--- Authentication is successful.
+
+*Oct 16 08:59:32.587: Se0:30 PPP: Phase is UP
+*Oct 16 08:59:32.587: Se0:30 AAA/AUTHOR/FSM: (0): Can we start IPCP?
+*Oct 16 08:59:32.587: Se0:30 AAA/AUTHOR/FSM (3211893880): Port='Serial0:25'
+ list='' service=NET
+*Oct 16 08:59:32.587: AAA/AUTHOR/FSM: Se0:30 (3211893880) user='tremens'
+*Oct 16 08:59:32.587: Se0:30 AAA/AUTHOR/FSM (3211893880): send AV service=ppp
+*Oct 16 08:59:32.587: Se0:30 AAA/AUTHOR/FSM (3211893880): send AV protocol=ip
+*Oct 16 08:59:32.587: Se0:30 AAA/AUTHOR/FSM (3211893880): found list "default"
+*Oct 16 08:59:32.587: Se0:30 AAA/AUTHOR/FSM (3211893880): Method=tacacs+
+ (tacacs+)
+*Oct 16 08:59:32.587: AAA/AUTHOR/TAC+: (3211893880): user=tremens
+*Oct 16 08:59:32.587: AAA/AUTHOR/TAC+: (3211893880): send AV service=ppp
+*Oct 16 08:59:32.587: AAA/AUTHOR/TAC+: (3211893880): send AV protocol=ip
+*Oct 16 08:59:32.587: TAC+: using previously set server 10.200.20.134 from group
+ tacacs+
+*Oct 16 08:59:32.587: TAC+: Opening TCP/IP to 10.200.20.134/49 timeout=5
+*Oct 16 08:59:32.591: TAC+: Opened TCP/IP handle 0x612B6C80 to 10.200.20.134/49
+*Oct 16 08:59:32.591: TAC+: Opened 10.200.20.134 index=1
+*Oct 16 08:59:32.591: TAC+: 10.200.20.134 (3211893880) AUTHOR/START queued
+*Oct 16 08:59:32.791: TAC+: (3211893880) AUTHOR/START processed
+*Oct 16 08:59:32.791: TAC+: (3211893880): received author response status =
+ PASS_ADD
+*Oct 16 08:59:32.791: TAC+: Closing TCP/IP 0x612B6C80 connection to
+ 10.200.20.134/49
+*Oct 16 08:59:32.791: Se0:30 AAA/AUTHOR (3211893880): Post authorization
+ status = PASS_ADD
+*Oct 16 08:59:32.791: Se0:30 AAA/AUTHOR/FSM: We can start IPCP
+
+!--- IPCP negotiation begins.
+
+*Oct 16 08:59:32.791: Se0:30 IPCP: O CONFREQ [Closed] id 5 len 10
+*Oct 16 08:59:32.791: Se0:30 IPCP:    Address 2.2.2.2 (0x030602020202)
+*Oct 16 08:59:32.791: Se0:30 IPCP: I CONFREQ [REQsent] id 111 len 10
+*Oct 16 08:59:32.791: Se0:30 IPCP:    Address 3.3.3.3 (0x030603030303)
+*Oct 16 08:59:32.791: Se0:30 AAA/AUTHOR/IPCP: Start.  Her address 3.3.3.3,
+ we want 0.0.0.0
+*Oct 16 08:59:32.791: Se0:30 AAA/AUTHOR/IPCP (3713413027): Port='Serial0:25'
+ list='' service=NET
+*Oct 16 08:59:32.791: AAA/AUTHOR/IPCP: Se0:30 (3713413027) user='tremens'
+*Oct 16 08:59:32.791: Se0:30 AAA/AUTHOR/IPCP (3713413027): send AV service=ppp
+*Oct 16 08:59:32.791: Se0:30 AAA/AUTHOR/IPCP (3713413027): send AV protocol=ip
+*Oct 16 08:59:32.791: Se0:30 AAA/AUTHOR/IPCP (3713413027): send AV addr*3.3.3.3
+*Oct 16 08:59:32.791: Se0:30 AAA/AUTHOR/IPCP (3713413027): found list "default"
+*Oct 16 08:59:32.791: Se0:30 AAA/AUTHOR/IPCP (3713413027): Method=tacacs+
+ (tacacs+)
+*Oct 16 08:59:32.795: AAA/AUTHOR/TAC+: (3713413027): user=tremens
+*Oct 16 08:59:32.795: AAA/AUTHOR/TAC+: (3713413027): send AV service=ppp
+*Oct 16 08:59:32.795: AAA/AUTHOR/TAC+: (3713413027): send AV protocol=ip
+*Oct 16 08:59:32.795: AAA/AUTHOR/TAC+: (3713413027): send AV addr*3.3.3.3
+
+!--- AAA Attribute Value Pairs.
+
+*Oct 16 08:59:32.795: TAC+: using previously set server 10.200.20.134 from group
+ tacacs+
+*Oct 16 08:59:32.795: TAC+: Opening TCP/IP to 10.200.20.134/49 timeout=5
+*Oct 16 08:59:32.795: TAC+: Opened TCP/IP handle 0x61269588 to 10.200.20.134/49
+*Oct 16 08:59:32.795: TAC+: Opened 10.200.20.134 index=1
+*Oct 16 08:59:32.795: TAC+: 10.200.20.134 (3713413027) AUTHOR/START queued
+*Oct 16 08:59:32.995: TAC+: (3713413027) AUTHOR/START processed
+*Oct 16 08:59:32.995: TAC+: (3713413027): received author response status =
+ PASS_ADD
+*Oct 16 08:59:32.995: TAC+: Closing TCP/IP 0x61269588 connection to
+ 10.200.20.134/49
+*Oct 16 08:59:32.995: Se0:30 AAA/AUTHOR (3713413027): Post authorization
+ status = PASS_ADD
+*Oct 16 08:59:32.995: Se0:30 AAA/AUTHOR/IPCP: Processing AV service=ppp
+*Oct 16 08:59:32.995: Se0:30 AAA/AUTHOR/IPCP: Processing AV protocol=ip
+*Oct 16 08:59:32.995: Se0:30 AAA/AUTHOR/IPCP: Processing AV addr*3.3.3.3
+*Oct 16 08:59:32.995: Se0:30 AAA/AUTHOR/IPCP: Authorization succeeded
+*Oct 16 08:59:32.995: Se0:30 AAA/AUTHOR/IPCP: Done.  Her address 3.3.3.3,
+ we want 3.3.3.3
+*Oct 16 08:59:32.995: Se0:30 IPCP: O CONFACK [REQsent] id 111 len 10
+*Oct 16 08:59:32.995: Se0:30 IPCP:    Address 3.3.3.3 (0x030603030303)
+*Oct 16 08:59:32.995: Se0:30 IPCP: I CONFACK [ACKsent] id 5 len 10
+*Oct 16 08:59:32.995: Se0:30 IPCP:    Address 2.2.2.2 (0x030602020202)
+*Oct 16 08:59:32.995: Se0:30 IPCP: State is Open
+*Oct 16 08:59:32.999: Se0:30 DDR: dialer protocol up
+*Oct 16 08:59:32.999: Se0:30: Call connected, 0 packets unqueued, 0 transmitted,
+ 0 discarded
+*Oct 16 08:59:32.999: Di1 IPCP: Install route to 3.3.3.3
+
+!--- Route is installed to remote device.
+
+*Oct 16 08:59:33.587: %LINEPROTO-5-UPDOWN: Line protocol on Interface Serial0:30,
+ changed state to up
+*Oct 16 08:59:38.323: %ISDN-6-CONNECT: Interface Serial0:30 is now connected
+ to 6083 unknown
+
+!--- Call is Connected.
+Related Information
+Dial and Access Technology Support Page
+Technical Support & Documentation - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+04-Feb-2010
+Initial Release
+Contributed by
+jveyne
+sloos
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Point-to-Point Protocol (PPP)

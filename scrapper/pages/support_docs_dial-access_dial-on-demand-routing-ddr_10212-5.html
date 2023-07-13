@@ -1,0 +1,343 @@
+Configuration Examples and TechNotes
+Sample Configuration: Using Floating Static Routes and Dial-on-Demand Routing
+Save
+Translations
+Download
+Print
+
+Updated:September 15, 2005
+Document ID:10212
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Conventions
+Configure
+Network Diagram
+Configurations
+Verify
+Troubleshoot
+Related Information
+Introduction
+The goal of this document is to configure an ISDN Basic Rate Interface (BRI) to dial and carry traffic to a remote site in the event of a logical failure of the Frame Relay circuit.
+Enhanced Interior Gateway Routing Protocol (EIGRP) is not running on the BRIs. Instead, the example in this document uses floating static routes to redirect traffic over the BRI only if normal routes learned through EIGRP over the Frame Relay circuit are lost.
+In all routers, ensure that ip classless is enabled.
+Prerequisites
+Requirements
+There are no specific requirements for this document.
+Components Used
+This document is not restricted to specific software and hardware versions.
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Conventions
+For more information on document conventions, refer to Cisco Technical Tips Conventions.
+Configure
+These configurations are snippets of the complete configurations.
+In this section, you are presented with the information to configure the features described in this document.
+Note: To find additional information on the commands used in this document, use the Command Lookup Tool (registered customers only) .
+Network Diagram
+This document uses this network setup:
+Figure 1 – Network Diagram
+Configurations
+This document uses these configurations:
+Distribution Layer Router #1
+Distribution Layer Router #2
+Access Layer Router
+Remote Site Router
+Router C194u is one of the two distribution layer routers. In this example, Router C194u has the BRI to the remote site. The other distribution layer router, C194n, has the companion serial interface to the remote site.
+Distribution Layer Router #1
+hostname c194u                                                    
+!   
+
+!--- Create a username for the router at the remote site. 
+
+username c194s password 7 XXXXXXXX                                            
+!                                                                               
+ip subnet-zero                                                                  
+isdn switch-type basic-dms100                                                   
+!                                                                               
+interface Loopback0                                                             
+ ip address 192.168.11.141 255.255.255.252                                      
+!                                                                               
+interface Ethernet0                                                             
+ ip address 163.241.222.93 255.255.255.0                                        
+ media-type 10BaseT                                                             
+!                                                                               
+interface BRI0                                                                  
+ description to Remote Site c194s, (this end 08358662 08358664)                 
+ ip address 192.168.11.138 255.255.255.252                                      
+ no ip mroute-cache                                                             
+ encapsulation ppp                                                              
+ no ip route-cache                                                              
+ isdn spid1 0835866201                                                          
+ isdn spid2 0835866401                                                          
+ dialer idle-timeout 600                                                        
+ dialer wait-for-carrier-time 10                                                
+ dialer map ip 192.168.11.137 name c194s broadcast 8358661                      
+ dialer map ip 192.168.11.137 name c194s broadcast 8358663                      
+ dialer hold-queue 5                                                            
+ dialer load-threshold 128  outbound                                            
+ dialer-group 1                                                                 
+ no fair-queue                                                                  
+ ppp authentication chap                                                        
+ ppp multilink                                                                  
+!                                                                               
+router eigrp 65535
+
+!--- We redistribute the static routes listed below, so if the Frame Relay !--- network fails, the other routers in this autonomous system (AS) will !--- begin to see the remote networks advertised from this router. !--- Normally these routes are learned through EIGRP across the Frame Relay link. !--- Make the BRI interfaces passive. An alternative is to use a dialer-list !--- to identify EIGRP packets as "uninteresting" packets. 
+
+redistribute static                                              
+ passive-interface BRI0                                           
+ network 192.168.11.0                                                           
+ network 163.241.0.0                                                            
+ default-metric 64 200 255 1 1500                                               
+ no auto-summary                                                                
+ eigrp log-neighbor-changes                                                     
+!                                                                               
+ip classless
+
+!--- Both distribution layer routers have a default route to their Null !--- interfaces so that they advertise the 0/0 network to all other routers !--- in the AS. 
+
+ip route 0.0.0.0 0.0.0.0 Null0
+
+!--- There must be a static route for each network behind the C194s !--- router at the remote site. Use the IP address of the BRI interface !--- of router C194s, and ensure that the administrative distance is 240. !--- Note: Summarize these routes if your addressing scheme lends itself !--- to summarization. If the Frame Relay network fails, this will force !--- packets destined to the remote site out the BRI interface, and will cause !--- it to dial and restore connectivity. 
+
+ip route 192.168.11.0 255.255.255.224 192.168.11.137 240          
+ip route 192.168.11.32 255.255.255.224 192.168.11.137 240         
+ip route 192.168.11.64 255.255.255.224 192.168.11.137 240         
+ip route 192.168.11.132 255.255.255.252 192.168.11.137 240        
+!                                                                               
+access-list 100 deny   icmp any any                                             
+access-list 100 permit ip any any                                            
+dialer-list 1 protocol ip list 100                                              
+!                                                                               
+end
+Here is a sample show dialer command output for Router C194u:
+Distribution Layer Router #1
+c194u#show dialer                                                                
+                                                                                
+BRI0 - dialer type = ISDN
+
+Dial String      Successes   Failures    Last called   Last status
+8358663                  4       1311    01:32:08           failed
+8358661               1874       1315    00:02:07       successful
+0 incoming call(s) have been screened. 
+                                                                                
+BRI0:1 - dialer type = ISDN
+Idle timer (600 secs), Fast idle timer (20 secs)
+Wait for carrier (5 secs), Re-enable (15 secs)
+Dialer state is physical layer up
+Dial reason: ip (s=192.168.11.138, d=192.168.11.137)
+The next router, C194n, is the second distribution layer router because. In this illustration, it is the frame link router. It does not have any special configuration. It only has the default route redistributed into EIGRP.
+Distribution Layer Router #2
+hostname c194n                                                    
+!                                                                                
+!                                                                               
+interface Ethernet0                                                             
+ ip address 163.241.222.98 255.255.255.0                                        
+!                                                                               
+interface Serial1                                                               
+ no ip address                                                                  
+ bandwidth 1544                                                                 
+ no ip mroute-cache                                                             
+ encapsulation frame-relay                                                      
+ no fair-queue                                                                  
+!                                                                               
+interface Serial1.301 point-to-point                                            
+ ip address 192.168.11.130 255.255.255.252                                      
+ bandwidth 32                                                                   
+ frame-relay interface-dlci 301                                                 
+!                                                                               
+router eigrp 65535                                                              
+ redistribute static                                              
+ network 192.168.11.0                                                           
+ network 163.241.0.0                                                            
+ default-metric 64 200 255 1 1500                                               
+ no auto-summary                                                                
+ eigrp log-neighbor-changes                                                     
+!                                                                               
+ip classless                                                                    
+ip route 0.0.0.0 0.0.0.0 Null0                                    
+!
+The next router, C194s, is the remote site router, the access layer router. It connects the remote network to the backbone via the distribution layer router.
+Access Layer Router
+!                                                                               
+hostname c194s                                                    
+!
+
+!--- Create a username for the distribution layer router.
+
+username c194u password 7 XXXXXXXXX                                            
+!                                                                               
+isdn switch-type basic-dms100                                                   
+!                                                                               
+interface Loopback0                                                             
+ ip address 192.168.11.133 255.255.255.252                                      
+!                                                                               
+interface Ethernet0                                                             
+ ip address 192.168.11.2 255.255.255.224                                        
+!                                                                               
+interface Serial0                                                               
+ no ip address                                                                  
+ bandwidth 64                                                                   
+ encapsulation frame-relay                                                      
+!                                                                               
+interface Serial0.300 point-to-point                                            
+ ip address 192.168.11.129 255.255.255.252                                      
+ bandwidth 32                                                                   
+ frame-relay interface-dlci 300                                                 
+!                                                                               
+interface BRI0                                                                  
+ description to Hub Site c194u, (this end 08358661 08358663)                    
+ ip address 192.168.11.137 255.255.255.252                                      
+ no ip mroute-cache                                                             
+ encapsulation ppp                                                              
+ no ip route-cache                                                              
+ isdn spid1 0835866101                                                          
+ isdn spid2 0835866301                                                          
+ dialer idle-timeout 600                                                        
+ dialer wait-for-carrier-time 10                                                
+ dialer map ip 192.168.11.138 name c194u broadcast 8358662                      
+ dialer map ip 192.168.11.138 name c194u broadcast 8358664                      
+ dialer hold-queue 5                                                            
+ dialer load-threshold 128                                                      
+ dialer-group 1                                                                 
+ no fair-queue                                                                  
+ ppp multilink                                                                  
+ ppp authentication chap                                                        
+!                                                                               
+router eigrp 65535
+
+!--- Redistribute the static route, so any routers which you could have attached !--- to the Ethernet network 192.168.11.0/27 will see this router as their way !--- out to the remainder of the network. However, do not allow this default !--- route back into your distribution layer routers. Use a distribute list !--- to block the advertisement.
+
+redistribute static                                              
+ passive-interface BRI0                                           
+ network 192.168.11.0                                                           
+ default-metric 64 200 255 1 1500
+ distribute-list 2 out Serial0.300                                              
+ no auto-summary                                                                
+ eigrp log-neighbor-changes                                                     
+!                                                                               
+ip classless
+
+!--- Use the IP address of the BRI interface of the distribution layer router to !--- Add a default route. When the frame network goes down, this will !--- push your traffic out the BRI interface, and cause it to dial and !--- restore connectivity. 
+
+ip route 0.0.0.0 0.0.0.0 192.168.11.138 240                       
+!                                                                               
+access-list 1 permit any                                                        
+!           
+access-list 2 deny   0.0.0.0
+access-list 2 permit any  
+!                                                                    
+dialer-list 1 protocol ip list 1                                                
+!                                                                               
+end                                                                             
+!
+The next router represents the remote site network. Nothing special needs be done here, other than to participate in the IGP dynamic routing protocol, EIGRP, of the access-layer router.
+Remote Site Router
+hostname c194ec                                                   
+!                                                                                
+!                                                                               
+interface Loopback0                                                             
+ ip address 192.168.11.65 255.255.255.224                                       
+!                                                                               
+interface Ethernet0                                                             
+ ip address 192.168.11.1 255.255.255.224                                        
+!                                                                               
+interface Ethernet1                                                             
+ ip address 192.168.11.33 255.255.255.224                                       
+!                                                                               
+!                                                                               
+router eigrp 65535                                                              
+ network 192.168.11.0                                                           
+ default-metric 64 200 255 1 1500                                               
+ no auto-summary                                                                
+ eigrp log-neighbor-changes                                                     
+!                                                                               
+ip classless                                                                    
+!                                                                               
+end
+Verify
+This section provides information you can use to confirm your configuration is working properly.
+Certain show commands are supported by the Output Interpreter Tool (registered customers only) , which allows you to view an analysis of show command output.
+With the Frame Relay network down, try a traceroute from the network at the remote site. Based on the network diagram (see figure 1), the target IP address is the loopback interface of the hub site router.
+c194ec#trace                                                                    
+Target IP address: 192.168.11.141 
+Source address: 192.168.11.65 
+Tracing the route to 192.168.11.141 
+
+  1 192.168.11.2 4 msec 4 msec 4 msec 
+  2  *  *  * 
+  3  *  *  
+    192.168.11.138 24 msec
+Notice how it required several packets to get the BRI interface up. Issue the traceroute command again, before the BRI goes inactive and packets are lost:
+c194ec#traceroute 192.168.11.141 
+
+Tracing the route to 192.168.11.141 
+
+  1 192.168.11.2 4 msec 4 msec 4 msec 
+  2 192.168.11.138 20 msec *  20 msec 
+Bring the frame switch up again. With the Frame Relay network now operational, you do not use ISDN:
+c194ec#traceroute 192.168.11.141
+Tracing the route to 192.168.11.141 
+
+  1 192.168.11.2 4 msec 4 msec 4 msec 
+  2 192.168.11.130 36 msec 36 msec 32 msec 
+  3 163.241.222.93 36 msec *  32 msec
+The routing tables for the operational Frame Relay network are shown below. Notice how individual routes are learned through EIGRP for networks at the hub site. There is also a default route learned through EIGRP.
+c194ec#show ip route  
+
+Gateway of last resort is 192.168.11.2 to network 0.0.0.0 
+
+     163.241.0.0 255.255.255.0 is subnetted, 1 subnets 
+D       163.241.222.0 [90/2221056] via 192.168.11.2, 00:02:09, Ethernet0 
+     192.168.11.0 is variably subnetted, 7 subnets, 2 masks 
+C       192.168.11.64 255.255.255.224 is directly connected, Loopback0 
+C       192.168.11.32 255.255.255.224 is directly connected, Ethernet1 
+C       192.168.11.0 255.255.255.224 is directly connected, Ethernet0 
+D       192.168.11.128 255.255.255.252 
+           [90/2195456] via 192.168.11.2, 00:02:13, Ethernet0
+D       192.168.11.132 255.255.255.252
+           [90/409600] via 192.168.11.2, 01:23:14, Ethernet0 
+D       192.168.11.136 255.255.255.252 
+           [90/40537600] via 192.168.11.2, 01:23:14, Ethernet0 
+D       192.168.11.140 255.255.255.252 
+           [90/2349056] via 192.168.11.2, 00:02:10, Ethernet0 
+D*EX 0.0.0.0 0.0.0.0 [170/40614400] via 192.168.11.2, 00:02:10, Ethernet
+The routing tables for when the Frame Relay network is down are shown below. There is still a default route, but some individual routes of networks back at the hub site are lost. But because ip classless is enabled, and you have a default route, you still can get everywhere in the network.
+c194ec#show ip route 
+
+Gateway of last resort is 192.168.11.2 to network 0.0.0.0 
+
+     192.168.11.0 is variably subnetted, 5 subnets, 2 masks 
+C       192.168.11.64 255.255.255.224 is directly connected, Loopback0 
+C       192.168.11.32 255.255.255.224 is directly connected, Ethernet1 
+C       192.168.11.0 255.255.255.224 is directly connected, Ethernet0  
+D       192.168.11.132 255.255.255.252 
+           [90/409600] via 192.168.11.2, 01:25:27, Ethernet0 
+D       192.168.11.136 255.255.255.252
+           [90/40537600] via 192.168.11.2, 01:25:27, Ethernet0
+D*EX 0.0.0.0 0.0.0.0 [170/40076800] via 192.168.11.2, 00:00:15, Ethernet
+Troubleshoot
+There is currently no specific troubleshooting information available for this configuration.
+Related Information
+Technical Support - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+15-Sep-2005
+Initial Release
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Configuring and Troubleshooting Dialer Profiles
+Understanding and Troubleshooting Idle Timeouts
+Dialup Technology: Overviews and Explanations
++ Show 2 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Dial-on-Demand Routing (DDR)
+Integrated Services Digital Networks (ISDN), Channel-Associated Signaling (CAS)

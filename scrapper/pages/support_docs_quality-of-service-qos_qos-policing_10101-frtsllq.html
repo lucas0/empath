@@ -1,0 +1,190 @@
+Troubleshooting TechNotes
+Priority Queueing Options on Frame Relay Virtual Circuits
+Save
+Translations
+Print
+Updated:February 15, 2008
+Document ID:10101
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Conventions
+Per-VC Priority Queueing Commands
+frame-relay priority-group Command
+priority and Low Latency Queueing
+Restrictions
+Maximum Reservable Bandwidth
+Choosing Where to Apply a Service Policy
+frame-relay ip rtp priority Command
+Frame Relay PVC Interface Priority Configuration Task List
+set fr-de Command
+Known Issue
+Related Information
+Introduction
+This Tech Note provides a sample configuration for configuring a priority queue when implementing traffic shaping over Frame Relay. It discusses both virtual circuit (VC)-level and interface-level priority queueing mechanisms.
+This document assumes an understanding of Frame Relay technology, including Data Link Connection Identifiers (DLCIs) and traffic shaping parameters such as committed information rate (CIR) and committed burst. Refer to Configuring Frame Relay in the Cisco IOS Wide-Area Networking Configuration Guide for a technology overview.
+Prerequisites
+Requirements
+There are no specific requirements for this document.
+Components Used
+This document is not restricted to specific software and hardware versions.
+Conventions
+For more information on document conventions, refer to Cisco Technical Tips Conventions.
+Per-VC Priority Queueing Commands
+Depending on the version of Cisco IOS®, Frame Relay interfaces support three mechanisms for creating a priority queue on a VC (or subinterface):
+frame-relay priority-group - This command syntax uses Cisco's original priority queueing mechanism.
+frame-relay ip rtp priority - This command syntax reserves a strict priority queue for a set of RTP packet flows belonging to a range of UDP destination ports.
+priority - This newest syntax applies a low latency queueing feature and uses the command structure of the modular quality of service (QoS) command-line interface (CLI).
+With all of the above commands, you configure the priority queue mechanism inside a Frame Relay map class, which supports multiple commands for configuring shaping values. Shaping limits the output rate of the VC and assigns a concept of congestion to the VC. A router begins queueing packets when the number of packets that need to be transmitted out a VC exceeds the output rate of that VC. The excess packets are then queued. A queueing method can be applied to packets waiting in that queue to be transmitted.
+frame-relay priority-group Command
+Originally, Frame Relay interfaces supported Cisco's first priority queueing mechanism, configured with the priority-list and priority-group commands. Refer to Configuring Frame Relay and Frame Relay Traffic Shaping for more information.
+Use the following steps to configure traditional priority queueing on a Frame Relay VC:
+Enable Frame Relay traffic shaping (FRTS) on a serial interface with the frame-relay traffic-shaping command. All permanent VCs (PVCs) and switched VCs (SVCs) on the interface inherit default traffic shaping values and create a per-VC queue.
+R4-4K(config)# interface serial0
+ R4-4K(config-if)# frame-relay traffic-shaping
+Configure a Frame Relay map-class. Use the frame-relay priority-group command to specify legacy Cisco IOS priority queueing.
+R4-4K(config)# map-class frame-relay ?  
+  WORD  Static map class name 
+
+R4-4K(config)# map-class frame-relay priority 
+R4-4K(config-map-class)# frame-relay ? 
+  adaptive-shaping   Adaptive traffic rate adjustment, Default = none 
+  bc                 Committed burst size (Bc), Default = 56000 bits 
+  be                 Excess burst size (Be), Default = 0 bits 
+  cir                Committed Information Rate (CIR), Default = 56000 bps 
+  custom-queue-list  VC custom queueing 
+  fecn-adapt         Enable Traffic Shaping reflection of FECN as BECN 
+  mincir             Minimum acceptable CIR, Default = 56000 bps 
+  priority-group     VC priority queueing 
+  traffic-rate       VC traffic rate 
+
+R4-4K(config-map-class)# frame-relay priority-group ?
+<1-16>  Priority group number
+Configure the shaping parameters, including CIR and minCIR.
+R4-4K(config-map-class)# frame-relay traffic-rate ?
+  <600-45000000>  Committed Information Rate (CIR)
+R4-4K(config-map-class)# frame-relay traffic-rate 56000 ?
+  <0-45000000>  Peak rate (CIR + EIR)
+Create a point-to-point or multipoint subinterface and assign a DLCI number.
+R4-4K(config)# interface s0.20 multi
+R4-4K(config-subif)# frame-relay interface-dlci ?
+  <16-1007>  Define a DLCI as part of the current subinterface
+
+R4-4K(config-subif)# frame-relay interface-dlci 400
+Apply the map-class with priority queueing to the VC.
+R4-4K(config-fr-dlci)# class ?
+  WORD  map class name
+
+R4-4K(config-fr-dlci)# class priority
+Confirm your configuration settings with the show traffic-shape command.
+R4-4K# show traffic-shape
+Interface   Se0.20 
+       Access Target    Byte   Sustain   Excess    Interval  Increment Adapt 
+VC     List   Rate      Limit  bits/int  bits/int  (ms)      (bytes)   Active 
+400           56000     875    56000     0         125       875       - 
+Note: This configuration uses the frame-relay traffic-shape command to specify a CIR. With this command, the router calculates the burst values automatically. To specify the burst values, use the commands listed in Configure a Map Class, including frame-relay bc out and frame-relay be out.
+priority and Low Latency Queueing
+Cisco IOS 12.0(7)T introduced the Low Latency Queueing (LLQ) feature, which supports configuring a strict priority queue using the commands of the modular QoS CLI. Support for LLQ at the Frame Relay VC level was introduced in 12.1(2)T. Refer to Low Latency Queueing for Frame Relay Feature Module.
+Note: This feature requires FRTS.
+LLQ is considered to be a more flexible superset of the frame-relay ip rtp priority and frame-relay priority-group features. Refer to Low Latency Queueing for Frame Relay in the Congestion Management overview chapter of the Cisco IOS Configuration Guides for more information.
+Let's look at the steps for configuring LLQ for Frame Relay.
+Enable FRTS on a serial interface with the frame-relay traffic-shaping command. All PVCs and SVCs on the interface inherit default traffic shaping values and create a per-VC queue.
+Router(config)# interface serial0
+Router(config-if)# frame-relay traffic-shaping
+Configure a service-policy with the class-map and policy-map commands. Specify the priority command to create a strict priority class and specify the amount of bandwidth (in kbps or as a percentage of the PVC's bandwidth) to be assigned to the class.
+Router(config)# class-map class-map-name
+
+Router(config-cmap)# match access-group {access-group | name access-group-name}
+
+Router(config)# policy-map policy-map
+
+Router(config-pmap)# class class-name
+
+Router(config-pmap-c)# priority bandwidth-kbps
+Configure a map-class and attach the service policy to the class.
+In the following example, the name of the map-class is sample, and the name of the output service-policy is llq.
+router(config)# map-class frame-relay sample
+router(config-map-class)# service-policy output llq
+Apply the map-class to a VC with the class command in DLCI configuration mode.
+router(config)# interface serial0.5
+router(config-if)# frame-relay interface-dlci 100
+router(config-if-dlci)# class sample
+Use the following commands to confirm your settings and to monitor the results of your policy:
+show frame-relay pvc {dlci #} - Displays statistics for all VC components, including FRTS and service-policy information as well as fragmentation, number of packets in and out, and number of frames with the BECN/FECN/DE bits set.
+show policy-map interface sX/0.X dlci {#} - Displays only policy-related statistics for a specific VC.
+Restrictions
+Policies not directly related to LLQ - for example, traffic shaping, setting IP precedence, and policing - are not supported by the class-map and policy-map commands for Frame Relay VCs. You must use other configuration mechanisms, such as map class commands, to configure these policies. Only the following class map and policy map commands are supported:
+The match class-map configuration command
+The priority, bandwidth, queue-limit, random-detect, and fair-queue policy-map configuration commands
+Maximum Reservable Bandwidth
+When the bandwidth and priority commands calculate the total amount of bandwidth available on a connection, the following guidelines are invoked if the entity is a shaped Frame Relay PVC:
+If a minimum acceptable committed information rate (minCIR) is not configured, the CIR divided by two is used in the calculation. This mechanism was selected since many Frame Relay configurations use shaping rates that exceed the port speed, so the configured CIR may not be guaranteed.
+If a minCIR is configured, the minCIR setting is used in the calculation.
+Refer to How These Commands Calculate Bandwidth. The total amount of bandwidth allocated for all classes in a policy-map must not exceed the minCIR configured for the VC less any bandwidth reserved by the frame-relay voice bandwidth and frame-relay ip rtp priority commands.
+If you know how much bandwidth is required for additional overhead on a link, in circumstances when it is desirable to give voice traffic as much bandwidth as possible, you can override the 75 percent maximum allocation (for the bandwidth sum allocated to all classes or flows) by using the max-reserved-bandwidth command. If you want to override the fixed amount of bandwidth, exercise caution and make sure to allow enough remaining bandwidth to support the best-effort and control traffic that includes the Layer 2 overhead.
+Choosing Where to Apply a Service Policy
+To configure LLQ, use the commands of the modular QoS CLI (MQC) to create a traffic policy-map with multiple traffic classes and one or more QoS features. In current versions of IOS, Frame Relay interfaces support applying a policy-map with the service-policy command to interfaces, subinterfaces, and VCs. The following table lists the supported combinations of policies.
+Input Policy Output Policy
+Supported on one logical interface
+Supported on multiple logical interfaces that must be peers, such as multiple PVCs.
+Note: A main interface and a subinterface are not peer interfaces and cannot support a service-policy at the same time.
+Supported on one or two logical interfaces simultaneously
+Valid combinations
+PVC and main interface
+Subinterface and main interface
+Invalid combinations:
+PVC and subinterface
+PVC, subinterface, and main interface
+frame-relay ip rtp priority Command
+The IP Real-Time Protocol (RTP) priority feature provides a simple way to match on voice over IP (VoIP) packets by the range of UDP port numbers used with the RTP, which encapsulates the voice packets. VoIP traffic uses a well-known UDP port range, 16384-32767. While the actual ports used are dynamically negotiated between end-devices or gateways, all Cisco VoIP products utilize the same port range. Once the router recognizes the VoIP traffic, it places this traffic into a strict priority queue.
+The frame-relay ip rtp priority command extends the IP RTP priority feature to Frame Relay map classes and allows you to match on a unique range of UDP ports per PVC.
+Note that the LLQ for Frame Relay and IP RTP priority features provide complementary functions and can be configured concurrently. If traffic matches the specified range of UDP ports, it is classified as voice and queued in the LLQ priority queue and the interface priority queue. If traffic falls outside the specified RTP port range, it is classified by the service-policy.
+Here is a typical configuration example using a Frame Relay map class and the frame-relay ip rtp priority command. The table below explains the parameters of this command.
+map-class frame-relay VoIPoFR 
+  frame-relay fragment 640 
+  frame-relay ip rtp priority 16384 16383 120 
+  no frame-relay adaptive 
+  frame-relay cir 256000 
+  frame-relay bc 2500 
+  frame-relay fair-queue
+Parameter How to Set the Parameter
+16384 Starting UDP port number or the lowest port number to which the packets are sent. For VoIP, set this value to 16384.
+16383 Range of UDP destination ports. Add this value to the to yield the highest UDP port number. For VoIP, set this value to 16383.
+120 Maximum allowed bandwidth in kbps for the priority queue. Configure this number based on the number of simultaneous calls.
+The IP RTP priority feature does not require that you know the port of a voice call. Rather, the feature gives you the ability to identify a range of ports whose traffic is put into the LLQ priority queue. Moreover, you can specify the entire voice port range (16384 to 32767) to ensure that all voice traffic is given strict priority service. IP RTP priority is especially useful on links less than 1.544 Mbps.
+Frame Relay PVC Interface Priority Configuration Task List
+The priority queueing mechanisms discussed so far in this document match on packet headers and contents, and prioritize packets within a Frame Relay PVC. The purpose of the Frame Relay PVC Interface Priority Queueing (PIPQ) feature is to prioritize PVCs at the interface queueing level. In other words, when multiple PVCs are configured on an interface, they are dequeued to an interface output queue before being sent on the physical medium.
+Here are the two steps to configuring PIPQ:
+Note: Cisco IOS 12.2(6) introduces support for PIPQ on a Frame Relay main interface.
+Configure the frame-relay interface-queue priority command in the Frame Relay map class and assign the appropriate PVC priority.
+Router(config)# map-class frame-relay map-class-name
+
+Router(config-map-class)# frame-relay interface-queue priority {high | medium | normal | low}
+Enable PIPQ.
+Router(config)# interface serial number
+
+Router(config-if)# encapsulation frame-relay [cisco | ietf]
+Router(config-if)# frame-relay interface-queue priority [high-limit medium-limit normal-limit low-limit]
+set fr-de Command
+Cisco IOS 12.2(2)T introduced the set fr-de command as part of the command syntax for class-based marking. Refer to Class-Based Marking for more information.
+Known Issue
+Cisco DDTS ID CSCdt92898 resolves a problem with a router reload due to a bus error. The reload occurs when an output service-policy with LLQ is applied to a Frame Relay interface carrying voice over Frame Relay (VoFR) packets. This bug is fixed in many Cisco IOS 12.2 release trains.
+Related Information
+QoS Support Page
+VoIP over Frame Relay with Quality of Service (Fragmentation, Traffic Shaping, IP RTP Priority)
+Voice over IP - Per Call Bandwidth Consumption
+show Commands for Frame Relay Traffic Shaping
+Frame Relay Traffic Shaping - Token Bucket Flowchart
+Technical Support - Cisco Systems
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Frame Relay
+QoS Congestion Management (queueing)
+QoS Policing

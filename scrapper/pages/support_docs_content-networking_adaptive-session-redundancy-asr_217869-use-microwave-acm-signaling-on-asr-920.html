@@ -1,0 +1,173 @@
+Troubleshooting TechNotes
+Use Microwave ACM Signaling on ASR 920
+Save
+Translations
+Download
+Print
+
+
+
+Updated:May 5, 2022
+Document ID:217869
+Bias-Free Language
+Contents
+Introduction
+Keywords
+Background Information
+Prerequisites
+How to Configure ACM Signaling
+Verify ACM Signaling Is Working
+How to Configure an EEM Script for ACM Events
+Introduction
+This document describes how to use Microwave ACM signaling on ASR 920.
+Keywords
+Microwave ACM, EEM, configuration, signal degradation, ASR 920
+Background Information
+Microwave adaptive coding modulation (ACM) is an ethernet connectivity fault management feature that allows monitoring the behavior of microwave links [1]. When used together with EEM scripts, ACM allows the router to dynamically change microwave configurations to:
+Optimize routing.
+Control congestions.
+Enable loss protections.
+Suppose there is an active snowstorm and signal strength gets reduced. When ACM detects signal degradation on a microwave link, an EEM script configured on the IP/MPLS access node can trigger these actions [2]:
+Adjust the IGP metric of the microwave link to reflect the new (degraded) capacity.
+Change the QoS policies on the interface towards the microwave link to ensure expedited forwarding (EF) traffic is sent.
+Remove the degraded link from routing, consequently forcing a path recalculation for loss protection.
+Prerequisites
+For ACM signaling to work, some key prerequisites to meet are:
+ASR 920 is running Cisco IOS® XE 3S, 16 or 17.
+The microwave transceiver in the network topology must support adaptive bandwidth modulation.
+The microwave transceiver must support the Ethernet CFM extension for microwave devices as defined by Cisco.
+All devices connected directly to the microwave transceiver must support signal degradation (SD) functions.
+A full list of prerequisites can be found in section Microwave ACM Signaling Configuration and EEM Integration within [2].
+How to Configure ACM Signaling
+ACM signaling is configured in two parts. The first part is a set of global configuration commands, and the second part is configured per service instance.
+The service instance to be used with ACM signaling is configured within a physical interface or a port-channel.
+Use these commands to configure the ACM. Replace bold text with custom values or names.
+ASR920(config)#ethernet cfm ieee
+ASR920(config)#ethernet cfm global
+ASR920(config)#ethernet cfm domain MyCfmDomain level 3
+ASR920(config-ecfm)#service MyCustomerServiceInstance evc MyEvc vlan 123 direction down
+ASR920(config-ecfm-srv)#continuity-check
+ASR920(config-ecfm-srv)#continuity-check interval 10s → Only predefined options available. Use ? to see available options. This command is optional.
+ASR920(config-ecfm-srv)#exit
+ASR920(config-ecfm)#exit
+ASR920(config)#ethernet evc MyEvc
+ASR920(config-evc)#exit
+ASR920(config)#int gig 0/0/0
+ASR920(config-if)#no ip address
+ASR920(config-if)#no shutdown
+ASR920(config-if)#service instance 123 ethernet MyEvc
+ASR920(config-if-srv)#encapsulation dot1q 123
+ASR920(config-if-srv)#rewrite ingress tag pop 1 symmetric
+ASR920(config-if-srv)#bridge-domain 123
+ASR920(config-if-srv)#cfm mep domain MyCfmDomain mpid 100
+ASR920(config-if-srv)#end
+Refer to [2] and [3] for descriptions of the purpose of each command.
+For link degradation to trigger an event, hold-off timer, loss threshold, and wait-to-restore (WTR) timers can be configured. These parameters are optional settings, and are configured at the interface (physical or logical) level with these commands:
+ASR920(config)#int gig 0/0/0
+ASR920(config-if)#ethernet event microwave hold-off 10 
+ASR920(config-if)#ethernet event microwave loss-threshold 15
+ASR920(config-if)#ethernet event microwave wtr 16
+ASR920(config-if)#end
+Hold off timer refers to how long the microwave link must be in a degraded state before declaring it as degraded. The default value is 0 seconds.
+Loss threshold refers to the number of bandwidth notification messages that must be received by the ASR 920 from the transceiver to declare the link as degraded. The default value is 3 messages.
+WTR timer refers to the time the router has to wait before announcing that the signal has recovered from the degraded state. This prevents flapping due to intermittent recovery events. The default value is 10 seconds.
+A detailed explanation of the timers can be found at [2] and [3].
+Verify ACM Signaling Is Working
+Use these commands to verify if ACM is working:
+ASR920#show ethernet event microwave status [interface gig 0/0/0]
+ASR920#show ethernet event microwave statistic
+A sample output of the status command is shown here. This output is for ACM configured on three different service instances within a port-channel.
+ASR920#show ethernet event microwave status
+Microwave Bandwidth Status for Port-channel10
+  State:                    SIGNAL_DEGRADED
+  Hold Time:                10 seconds
+  Restore Time:             10 seconds
+  Loss Threshold:           2
+  Total VSM Receive Count:  64
+  Total VSM Drop Count:     0
+  Total BNM Receive Count:  0
+  Total BNM Drop Count:     0
+  Sender Address 3c4c.d0c8.4705
+    State:                           SIGNAL_DEGRADED
+    Elapsed time in this state:      00:04:11
+    Nominal Bandwidth:               598 Mbps
+    Current Bandwidth:               114 Mbps
+    Lowest Bandwidth:                114 Mbps
+    Last VSM Received:               Thu Jan 27 21:36:19.992
+    VSM Receive Count:               27
+    VSM Drop Count:                  0
+    VSM Period:                      10 second
+    Last BNM Received:               Never
+    BNM Receive Count:               0
+    BNM Drop Count:                  0
+    BNM Period:                      10 seconds
+    Hold Timer:                      Not running
+    Wait-to-Restore Timer:           Not running
+    Periodic Timer:                  23 seconds remaining
+    Transitions into degraded state: 1
+  Sender Address 3c4c.d0c8.f2c5
+    State:                           SIGNAL_DEGRADED
+    Elapsed time in this state:      00:02:53
+    Nominal Bandwidth:               598 Mbps
+    Current Bandwidth:               114 Mbps
+    Lowest Bandwidth:                114 Mbps
+    Last VSM Received:               Thu Jan 27 21:36:18.548
+    VSM Receive Count:               19
+    VSM Drop Count:                  0
+    VSM Period:                      10 second
+    Last BNM Received:               Never
+    BNM Receive Count:               0
+    BNM Drop Count:                  0
+    BNM Period:                      10 seconds
+    Hold Timer:                      Not running
+    Wait-to-Restore Timer:           Not running
+    Periodic Timer:                  21 seconds remaining
+    Transitions into degraded state: 1
+  Sender Address 3c4c.d0c8.f2c6
+    State:                           SIGNAL_DEGRADED
+    Elapsed time in this state:      00:02:43
+    Nominal Bandwidth:               598 Mbps
+    Current Bandwidth:               114 Mbps
+    Lowest Bandwidth:                114 Mbps
+    Last VSM Received:               Thu Jan 27 21:36:18.596
+    VSM Receive Count:               18
+    VSM Drop Count:                  0
+    VSM Period:                      10 second
+    Last BNM Received:               Never
+    BNM Receive Count:               0
+    BNM Drop Count:                  0
+    BNM Period:                      10 seconds
+    Hold Timer:                      Not running
+    Wait-to-Restore Timer:           Not running
+    Periodic Timer:                  21 seconds remaining
+    Transitions into degraded state: 1
+How to Configure an EEM Script for ACM Events
+When EEM scripts are used with ACM signaling, the script is triggered by two events, a signal degraded (sd) event, or a clear signal degraded (clear-sd) event.
+For the signal-degraded event, a bandwidth threshold must be configured. This threshold in the EEM script is set to the nominal bandwidth value. If this value is unknown, the Cisco configuration guide recommends a value of 1000.
+There must be one SVI/BD per physical link. Also, one EEM script is required per physical link.
+This is an example of an EEM script that triggers when the signal is degraded (sd):
+ASR920(config)#event manager applet MyEemScript_SignalDegraded
+ASR920(config-applet)#event ethernet microwave sd interface gigabitethernet 0/0/0 threshold 400
+ASR920(config-applet)#action 1 syslog msg "Any desired action to be implemented"
+ASR920(config-applet)#action 2 syslog msg "for example, adjust BW, QoS policies, shut link"
+ASR920(config-applet)#end
+This is an example of an EEM script that triggers when signal degraded state gets cleared (clear-sd):
+ASR920(config)#event manager applet MyEemScript_ClearedSignalDegraded
+ASR920(config-applet)#event ethernet microwave clear-sd interface gigabitethernet 0/0/0
+ASR920(config-applet)#action 1 syslog msg "Any desired action to be implemented"
+ASR920(config-applet)#action 2 syslog msg "for example, restore to original configuration"
+ASR920(config-applet)#end
+For additional examples refer to sample configurations on [2] and [3].
+Revision History
+Revision Publish Date Comments
+1.0
+12-May-2022
+Initial Release
+Contributed by Cisco Engineers
+gzepedag
+dfrain
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)

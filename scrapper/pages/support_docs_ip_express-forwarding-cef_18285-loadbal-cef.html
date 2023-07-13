@@ -1,0 +1,533 @@
+Troubleshooting TechNotes
+Troubleshooting Load Balancing Over Parallel Links Using Cisco Express Forwarding
+Save
+Translations
+Print
+Updated:August 10, 2005
+Document ID:18285
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Conventions
+Background Information
+What Is Load Balancing?
+Before Cisco Express Forwarding - Collecting Multiple Paths or Routes
+Configuring Cisco Express Forwarding Load Sharing
+Cisco Express Forwarding Load Balancing Internal Mechanisms
+Verifying Cisco Express Forwarding Load Balancing
+Load Sharing after a Link Change
+Load Sharing Information Due for Deletion
+Known Issues
+Hardware Support for Cisco Express Forwarding Load Balancing
+Related Information
+Related Cisco Support Community Discussions
+Introduction
+This document clarifies how Cisco IOS? Software implements Layer 3 load balancing across multiple parallel links when using Cisco Express Forwarding.
+Prerequisites
+Requirements
+This document assumes an understanding of the two data structures of Cisco Express Forwarding.
+Forwarding Information Base (FIB)
+Adjacency Table
+See the "Related Information" section of this document for a Cisco Express Forwarding overview of operation.
+Components Used
+This document is not restricted to specific software and hardware versions.
+The information presented in this document was created from devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If you are working in a live network, ensure that you understand the potential impact of any command before using it.
+Conventions
+For more information on document conventions, see the Cisco Technical Tips Conventions.
+Background Information
+IP switching is the internal mechanism used by Cisco IOS to forward packets through a router. Available mechanisms include process switching, fast switching, and Cisco Express Forwarding. Depending on which of the three mechanisms is used to switch the majority of packets, the overall system performance and load balancing is affected.
+IP switching mechanisms support two general modes, per-packet and per-destination. The following table outlines the advantages and disadvantages of both modes.
+Per-Destination Per-Packet
+IP Switching Mechanism Fast switching and Cisco Express Forwarding per-destination. Process switching and Cisco Express Forwarding per-packet.
+Advantages With fast switching, packets for a given destination are guaranteed to take the same path even if multiple paths are available. With Cisco Express Forwarding switching, packets for a given source-destination host pair are guaranteed to take the same path, even if multiple paths are available. Traffic destined for different pairs tend to take different paths. Path utilization with per-packet load balancing is good because per-packet load balancing allows the router to send successive data packets over paths without regard to individual hosts or user sessions. It uses the round-robin method to determine which path each packet takes to the destination
+Disadvantages With fast switching, per destination switching may result in unequal load sharing because packets to one destination always follow the same path. Cisco Express Forwarding switching may result in unequal distribution with a small number of source-destination pairs. Per-destination load balancing depends on the statistical distribution of traffic; load sharing becomes more effective as the number of source-destination pairs increase. Packets for a given source-destination host pair might take different paths, which could introduce reordering of packets. This is not recommended for Voice over IP (VoIP) and other flows that require in-sequence delivery.
+What Is Load Balancing?
+Load balancing describes the ability of a router to transmit packets to a destination IP address (also known as an IP prefix) over more than one path.
+When discussing load balancing, we first need to define the following terms.
+Term Definition
+Prefix Describes a destination IP network, such as 192.16.10.0/24. Cisco IOS adds a destination IP prefix to the routing table using information obtained from exchanging messages using a dynamic routing protocol or by manual configuration of static routes.
+Path Describes a valid route to reach a destination prefix. Cisco IOS assigns a cost to each path. A set of active paths to a destination prefix may have equal or unequal costs.
+Session Describes a unidirectional communication flow between two IP nodes. All packets in a session use the same source and destination IP address.
+For additional information, see How Does Load Balancing Work?
+Before Cisco Express Forwarding - Collecting Multiple Paths or Routes
+Cisco Express Forwarding uses the path information in the IP routing table to balance traffic over multiple links. For this reason, confirming proper Cisco Express Forwarding load balancing begins with confirming the contents of the IP routing table.
+In the following topology, two routers, Router A and Router B, connect back-to-back over three serial interfaces with high-level data link control (HDLC) encapsulation.
+Router A Router B
+interface Ethernet 0 
+ ip address  192.168.20.1 255.255.255.0 
+! 
+interface Serial1 
+ ip address 10.10.10.1 255.255.255.0  
+! 
+interface Serial2 
+ ip address 20.20.20.1 255.255.255.0 
+! 
+interface Serial3 
+ ip address 30.30.30.1 255.255.255.0 
+ ip ospf cost 100 
+! 
+router ospf 1 
+ network 10.10.10.0 0.0.0.255 area 0 
+ network 20.20.20.0 0.0.0.255 area 0 
+ network 30.30.30.0 0.0.0.255 area 0 
+network 192.168.20.0 0.0.0.255 area 0
+interface Serial1 
+ ip address 10.10.10.2 255.255.255.0 
+ clockrate 2000000 
+! 
+interface Serial2 
+ ip address 20.20.20.2 255.255.255.0 
+ clockrate 148000 
+! 
+interface Serial3 
+ ip address 30.30.30.2 255.255.255.0 
+ ip ospf cost 100 
+ clockrate 148000 
+router ospf 1 
+ network 10.10.10.0 0.0.0.255 area 0 
+ network 20.20.20.0 0.0.0.255 area 0 
+ network 30.30.30.0 0.0.0.255 area 0
+maximum-paths 1
+Let's look at how Router B selects one or more paths to reach Router A's Ethernet interface IP network 192.168.20.0.
+By default, Open Shortest Path First (OSPF) supports four equal cost paths to a destination. In this scenario Router B is configured with maximum-paths equal to one. Hence Router B will choose only one path amongst the possible equal paths based on which one it received first. Router B starts by selecting Serial 2 as the single path to the 192.168.20.0 network. Use the show ip cef and show ip route commands to view the current path set.
+RouterB#show ip cef  192.168.20.0
+ 
+ 192.168.20.0/24, version 59, cached adjacency to Serial2 
+0 packets, 0 bytes 
+  via 20.20.20.1, Serial2, 0 dependencies 
+    next hop 20.20.20.1, Serial2 
+    valid cached adjacency
+  
+RouterB#show ip route  192.168.20.0
+ 
+Routing entry for  192.168.20.0/24 
+  Known via "ospf 1", distance 110, metric 74, type intra area 
+  Redistributing via ospf 1 
+  Last update from 20.20.20.1 on Serial2, 00:03:58 ago 
+  Routing Descriptor Blocks: 
+  * 20.20.20.1, from 204.204.204.1, 00:03:58 ago, via Serial2 
+      Route metric is 74, traffic share count is 1
+Use the maximum-paths command under OSPF to allow more than one path to the routing table. OSPF allows only equal cost load balancing. To configure unequal cost load sharing, configure Enhanced Interior Gateway Routing Protocol/Interior Gateway Routing Protocol (EIGRP/IGRP) as your Interior Gateway Protocol (IGP). See How Does Unequal Cost Path Load Balancing (Variance) Work in IGRP and EIGRP? for further information.
+RouterB(config)#router ospf 1
+ 
+RouterB(config-router)#maximum-paths ? 
+  <1-6>  Number of paths 
+  
+RouterB(config-router)#maximum-paths 3 
+Use the show ip route command to confirm that the routing table contains two paths to 192.168.20.0.
+RouterB#show ip route  192.168.20.0
+ 
+Routing entry for  192.168.20.0/24 
+  Known via "ospf 1", distance 110, metric 74, type intra area 
+  Redistributing via ospf 1 
+  Last update from 10.10.10.1 on Serial1, 00:00:11 ago 
+  Routing Descriptor Blocks: 
+  * 20.20.20.1, from 204.204.204.1, 00:00:11 ago, via Serial2 
+      Route metric is 74, traffic share count is 1 
+         10.10.10.1, from 204.204.204.1, 00:00:11 ago, via Serial1 
+      Route metric is 74, traffic share count is 1 
+      
+!--- The route metric is 74 for both paths.
+Although we configured OSPF to support three equal cost paths, only two active paths are displayed in the output of show ip route. We can use the show ip ospf interface command to determine the reason. Serial 3 has a higher cost than Serial 1 and Serial 2, and is therefore unequal.
+RouterB#show ip ospf interface s1
+ 
+Serial1 is up, line protocol is up 
+  Internet Address 10.10.10.4/24, Area 0 
+  Process ID 1, Router ID 100.100.100.1, Network Type POINT_TO_POINT, Cost: 64 
+  
+RouterB#show ip ospf interface s2
+
+Serial2 is up, line protocol is up 
+  Internet Address 20.20.20.2/24, Area 0 
+  Process ID 1, Router ID 100.100.100.1, Network Type POINT_TO_POINT, Cost: 64 
+  
+RouterB#show ip ospf interface s3
+
+Serial3 is up, line protocol is up 
+  Internet Address 30.30.30.2/24, Area 0 
+  Process ID 1, Router ID 100.100.100.1, Network Type POINT_TO_POINT, Cost: 100
+Use the show run command to confirm whether Serial 3 is configured with the ip ospf cost 100 command. Use the no ip ospf cost 100 sub-interface command to remove it from the configuration and make the costs on all three serial links equal.
+RouterB#show run interface s3
+ 
+Building configuration...
+ 
+Current configuration: 
+! 
+interface Serial3 
+ ip address 30.30.30.2 255.255.255.0 
+ no ip directed-broadcast 
+ ip ospf cost 100 
+ ip ospf interface-retry 0
+The show ip route command now displays three equal cost paths to the 192.168.20.0 network.
+RouterB#show ip route  192.168.20.0
+ 
+Routing entry for  192.168.20.0/24 
+  Known via "ospf 1", distance 110, metric 74, type intra area 
+  Redistributing via ospf 1 
+  Last update from 10.10.10.1 on Serial1, 00:00:01 ago 
+  Routing Descriptor Blocks: 
+  * 20.20.20.1, from 204.204.204.1, 00:00:01 ago, via Serial2 
+      Route metric is 74, traffic share count is 1 
+    30.30.30.1, from 204.204.204.1, 00:00:01 ago, via Serial3 
+      Route metric is 74, traffic share count is 1 
+    10.10.10.1, from 204.204.204.1, 00:00:01 ago, via Serial1 
+      Route metric is 74, traffic share count is
+Now let's look at how Cisco Express Forwarding load balancing uses the information in the routing table to forward packets.
+Configuring Cisco Express Forwarding Load Sharing
+Cisco Express Forwarding accomplishes load balancing through use of the loadshare table. As with all other load balancing solutions on Cisco routers, the load balancing decision is made on outbound interfaces. Unlike other switching methods, Cisco Express Forwarding tracks paths based on both the source and destination address of the path. To simplify this, you could say that the path is an IP session and each session is logically identified as a unique source-destination address pair.
+In order to understand how the load balance takes place, you must first see how the tables relate. The Cisco Express Forwarding table points to 16 hash buckets (load share table), which point to the adjacency table for parallel paths. See the Cisco Express Forwarding Load Balancing Internal Mechanisms section for more details. Each packet to be switched is broken up into the source and destination address pair and checked against the loadshare table.
+Note: There are two main types of Cisco Express Forwarding switching, per-destination and per-packet. If both types are in use on a router, each type has its own loadshare table.
+Per-destination load balancing allows the router to use multiple paths to achieve load sharing. Per-destination load balancing is enabled by default when you enable Cisco Express Forwarding, and it is the load balancing method of choice for most situations. Because per-destination load balancing depends on the statistical distribution of traffic, load sharing becomes more effective as the number of source-destination pairs increase.
+Per-packet load balancing allows the router to send successive data packets over paths without regard to individual hosts or user sessions. It uses the round-robin method to determine which path each packet takes to the destination. Per-packet load balancing ensures balancing over multiple links. Path utilization with per-packet load balancing is good, but packets for a given source-destination host pair might take different paths which could cause reordering of packets. For this reason, per-packet load balancing is inappropriate for certain types of data traffic, such as VoIP, that depend on packets arriving at the destination in sequence. Use per-packet load balancing to help ensure that a path for a single source-destination pair does not become overloaded.
+Use the ip load-sharing command to change between the per-packet and per-destination methods.
+7200-1.3(config)#interface fast 0/0
+   
+7200-1.3(config-if)#ip load-sharing ? 
+  per-destination  Deterministic distribution 
+  per-packet       Random distribution 
+  
+7200-1.3(config-if)#ip load-sharing per-packet
+Use the show cef interface command to confirm your changes.
+7200-1.3#show cef interface fast 0/0 
+FastEthernet0/0 is up (if_number 3) 
+  Corresponding hwidb fast_if_number 3 
+  Corresponding hwidb firstsw->if_number 3 
+  Internet address is 172.16.81.13/24 
+  ICMP redirects are always sent 
+  Per packet load-sharing is enabled 
+  IP unicast RPF check is disabled 
+  Inbound access list is not set 
+  Outbound access list is not set 
+  IP policy routing is disabled 
+  Hardware idb is FastEthernet0/0 
+  Fast switching type 1, interface type 18 
+  IP CEF switching enabled 
+  IP Feature Fast switching turbo vector 
+  IP Feature CEF switching turbo vector 
+  Input fast flags 0x0, Output fast flags 0x0 
+  ifindex 1(1) 
+  Slot 0 Slot unit 0 VC -1 
+  Transmit limit accumulator 0x0 (0x0) 
+  IP MTU 1500
+Cisco Express Forwarding Load Balancing Internal Mechanisms
+Let's start by breaking down the internal mechanism behind Cisco Express Forwarding load balancing.
+Each session (see the table above) is assigned to an active path.
+The session-to-path assignment is done using a hash function that takes the source and destination IP addresses and, in recent releases of Cisco IOS, a unique hash ID that randomizes the assignment across the end-to-end path.
+Active paths are assigned internally to several of 16 hash buckets. The path-to-bucket assignment varies with the type of load balancing and the number of active paths.
+The result of the hash function is used to pick one of the enabled buckets, and thus which path to use for the session.
+For all sessions being forwarded by the router, each active path carries the same number of sessions.
+Let's look at an example of these Cisco Express Forwarding internals.
+Use the maximum-paths command to reduce to two the number of active paths for the destination prefix.
+RouterB(config)#router ospf 1
+RouterB(config-router)#maximum-paths 2
+Use the show ip cef {prefix} internal command to view the path-to-bucket assignment.
+RouterB#show ip cef  192.168.20.0 internal 
+ 192.168.20.0/24, version 66, per-destination sharing 
+0 packets, 0 bytes 
+  via 20.20.20.1, Serial2, 0 dependencies 
+    traffic share 1 
+    next hop 20.20.20.1, Serial2 
+    valid adjacency 
+  via 30.30.30.1, Serial3, 0 dependencies 
+    traffic share 1 
+    next hop 30.30.30.1, Serial3 
+    valid adjacency 
+  0 packets, 0 bytes switched through the prefix 
+  Load distribution: 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 (refcount 1) 
+  
+!--- The load distribution line summarizes how each path is !--- assigned to the hash buckets.
+
+  
+
+  Hash  OK  Interface                 Address         Packets 
+  1     Y   Serial2                   point2point           0 
+  2     Y   Serial3                   point2point           0 
+  3     Y   Serial2                   point2point           0 
+  4     Y   Serial3                   point2point           0 
+  5     Y   Serial2                   point2point           0 
+  6     Y   Serial3                   point2point           0 
+  7     Y   Serial2                   point2point           0 
+  8     Y   Serial3                   point2point           0 
+  9     Y   Serial2                   point2point           0 
+  10    Y   Serial3                   point2point           0 
+  11    Y   Serial2                   point2point           0 
+  12    Y   Serial3                   point2point           0 
+  13    Y   Serial2                   point2point           0 
+  14    Y   Serial3                   point2point           0 
+  15    Y   Serial2                   point2point           0 
+  16    Y   Serial3                   point2point 
+The 16 hash buckets are set up depending on the type of load balancing and the number of active paths. The simple case is for an even number of paths. The 16 buckets are evenly filled with the active paths. If 16 isn't divisible by the number of active paths, the last few buckets that represent the remainder are disabled. The following table shows how the hash buckets look for two and three active paths.
+Bucket/Paths 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+2 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1
+3 0 1 2 0 1 2 0 1 2 0 1 2 0 1 2 x
+In the following example, we have three paths to the destination. Notice how Cisco Express Forwarding has removed hash bucket 16 and how the three serial links are assigned evenly to hash buckets 1 through 15.
+RouterB#show ip cef  192.168.20.0 interface 
+ 192.168.20.0/24, version 64, per-destination sharing 
+0 packets, 0 bytes 
+  via 20.20.20.1, Serial2, 0 dependencies 
+    traffic share 1 
+    next hop 20.20.20.1, Serial2 
+    valid adjacency 
+  via 30.30.30.1, Serial3, 0 dependencies 
+    traffic share 1 
+    next hop 30.30.30.1, Serial3 
+    valid adjacency 
+  via 10.10.10.1, Serial1, 0 dependencies 
+    traffic share 1 
+    next hop 10.10.10.1, Serial1 
+    valid adjacency 
+
+  0 packets, 0 bytes switched through the prefix 
+  Load distribution: 0 1 2 0 1 2 0 1 2 0 1 2 0 1 2 (refcount 1) 
+  
+!--- The active paths are assigned to hash buckets in a !--- round-robin pattern.
+
+   
+
+  Hash  OK  Interface                 Address         Packets 
+  1     Y   Serial2                   point2point           0 
+  2     Y   Serial3                   point2point           0 
+  3     Y   Serial1                   point2point           0 
+  4     Y   Serial2                   point2point           0 
+  5     Y   Serial3                   point2point           0 
+  6     Y   Serial1                   point2point           0 
+  7     Y   Serial2                   point2point           0 
+  8     Y   Serial3                   point2point           0 
+  9     Y   Serial1                   point2point           0 
+  10    Y   Serial2                   point2point           0 
+  11    Y   Serial3                   point2point           0 
+  12    Y   Serial1                   point2point           0 
+  13    Y   Serial2                   point2point           0 
+  14    Y   Serial3                   point2point           0 
+  15    Y   Serial1                   point2point           0 
+  
+!--- Hash bucket 16 has been removed.
+ 
+Note: Although they select a single path for a destination, the Cisco Express Forwarding per-destination and fast switching mechanisms differ in how they select that path. Cisco Express Forwarding considers both the source and destination IP addresses, while fast switching considers only the destination IP address.
+Verifying Cisco Express Forwarding Load Balancing
+Use the following steps to verify Cisco Express Forwarding load balancing on your router.
+Confirm that Cisco Express Forwarding is enabled globally on the router.
+S3-4K-2#show ip cef 
+%CEF not running 
+Prefix                      Next Hop                     Interface 
+
+!--- This output shows Cisco Express Forwarding is not enabled. !--- Use ip cef command in global configuration to enable it.
+Confirm per-packet or per-destination switching is enabled on the particular outbound interfaces. The default is per-destination.
+RouterA#show cef interface s1
+ 
+Serial1 is up (if_number 3)
+  Internet address is 10.10.10.1/24 
+  ICMP redirects are always sent 
+  Per packet loadbalancing is disabled 
+  IP unicast RPF check is disabled 
+  Inbound access list is not set 
+  Outbound access list is not set 
+  Interface is marked as point to point interface 
+  Hardware idb is Serial1 
+  Fast switching type 4, interface type 40 
+  IP CEF switching enabled 
+ 
+ !--- Cisco Express Forwarding is enabled on the interface. 
+
+  IP CEF Fast switching turbo vector 
+  Input fast flags 0x0, Output fast flags 0x0 
+  ifindex 5(5)
+  
+Slot 0 Slot unit 1 VC -1 
+  
+  Transmit limit accumulator 0x0 (0x0) 
+  IP MTU 1500 
+Confirm that the routing table and the Cisco Express Forwarding table contain all parallel paths using the show ip route command.
+RouterB#show ip route 192.168.20.0 
+Routing entry for 192.168.20.0/32, 1 known subnets 
+ 
+O       192.168.20.1 [110/65] via 20.20.20.1, 00:06:54, Serial1 
+                     [110/65] via 10.10.10.1, 00:06:54, Serial2 
+                     [110/65] via 30.30.30.1, 00:06:54, Serial3 
+Check the Cisco Express Forwarding FIB using the show ip cef command.
+RouterB#show ip cef 192.168.20.0
+192.168.20.0/24, version 18, per-destination sharing
+0 packets, 0 bytes
+  via 30.30.30.1, Serial3,   0 dependencies
+    traffic share 1
+    next hop 30.30.30.1, Serial3
+    valid adjacency
+  via 20.20.20.1, Serial2, 0 dependencies
+    traffic share 1
+    next hop 20.20.20.1, Serial2
+    valid adjacency
+  via 10.10.10.1, Serial1, 0 dependencies
+    traffic share 1
+    next hop 10.10.10.1, Serial1
+    valid adjacency
+  0 packets, 0 bytes switched through the prefix
+  tmstats: external 0 packets, 0 bytes
+           internal 0 packets, 0 bytes
+
+
+RouterB#show ip cef 192.168.20.0 internal
+192.168.20.0/24, version 18, per-destination sharing
+0 packets, 0 bytes
+  via 30.30.30.1, Serial3, 0 dependencies
+    traffic share 1
+    next hop 30.30.30.1, Serial3
+    valid adjacency
+  via 20.20.20.1, Serial2, 0 dependencies
+    traffic share 1
+    next hop 20.20.20.1, Serial2
+    valid adjacency
+  via 10.10.10.1, Serial1, 0 dependencies
+    traffic share 1
+    next hop 10.10.10.1, Serial1
+    valid adjacency
+
+  0 packets, 0 bytes switched through the prefix
+  tmstats: external 0 packets, 0 bytes
+           internal 0 packets, 0 bytes
+  Load distribution: 0 1 2 0 1 2 0 1 2 0 1 2 0 1 2 (refcount 1)
+
+  Hash  OK  Interface                 Address         Packets
+  1     Y   Serial3                   point2point           0
+  2     Y   Serial2                   point2point           0
+  3     Y   Serial1                   point2point           0
+  4     Y   Serial3                   point2point           0
+  5     Y   Serial2                   point2point           0
+  6     Y   Serial1                   point2point           0
+  7     Y   Serial3                   point2point           0
+  8     Y   Serial2                   point2point           0
+  9     Y   Serial1                   point2point           0
+  10    Y   Serial3                   point2point           0
+  11    Y   Serial2                   point2point           0
+  12    Y   Serial1                   point2point           0
+  13    Y   Serial3                   point2point           0
+  14    Y   Serial2                   point2point           0
+  15    Y   Serial1                   point2point           0
+Note: The loadshare table above shows load distribution 0 1 2 0 1 2 . . . , and traffic share is 1 for each route. This means an equal cost per-destination load sharing among three equal cost routes.
+Check Cisco Express Forwarding adjacencies.
+RouterB#show adjacency detail
+Protocol Interface                 Address
+IP       Serial1                   point2point(11)
+                                   0 packets, 0 bytes
+                                   0F000800
+                                   CEF   expires: 00:02:31
+                                         refresh: 00:00:31
+IP       Serial2                   point2point(11)
+                                   0 packets, 0 bytes
+                                   0F000800
+                                   CEF   expires: 00:02:31
+                                         refresh: 00:00:31
+IP       Serial3                   point2point(11)
+                                   0 packets, 0 bytes
+                                   0F000800
+                                   CEF   expires: 00:02:31
+                                         refresh: 00:00:31
+Confirm the expected Cisco Express Forwarding load-balancing mechanism is configured on all the outbound interfaces.
+RouterB#show ip cef  192.168.20.0
+
+ 192.168.20.0/24, version 89, per-destination sharing 
+0 packets, 0 bytes 
+  via 10.10.10.1, Serial1, 0 dependencies 
+    traffic share 1 
+    next hop 10.10.10.1, Serial1 
+    valid adjacency 
+  [output omitted]
+Enable hash bucket accounting to collect statistics to better understand Cisco Express Forwarding patterns in your network. For example, you might want to collect information such as the number of packets and bytes switched to a destination or the number of packets switched through a destination. Use the following command:
+router(config)# ip cef accounting load-balance-hash
+Verify the packet flow by observing the values under the Packet field.
+RouterB#show ip cef 192.168.20.0 internal
+[...]
+
+  Load distribution: 0 1 2 0 1 2 0 1 2 0 1 2 0 1 2 (refcount 1)
+
+  Hash  OK  Interface                 Address         Packets
+  1     Y   Serial                    point2point           0
+  2     Y   Serial2                   point2point           0
+  3     Y   Serial1                   point2point           0
+  4     Y   Serial3                   point2point           0
+  5     Y   Serial2                   point2point          35
+  6     Y   Serial1                   point2point           0
+  7     Y   Serial3                   point2point           0
+  8     Y   Serial2                   point2point          60
+  9     Y   Serial1                   point2point           0
+  10    Y   Serial3                   point2point           0
+  11    Y   Serial2                   point2point           0
+  12    Y   Serial1                   point2point           0
+  13    Y   Serial3                   point2point           0
+  14    Y   Serial2                   point2point          30
+  15    Y   Serial1                   point2point           0
+125 packets flowed through Serial 2. If you use ping to generate traffic, ensure that ping packets must transit the Cisco Express Forwarding-switched router. In other words, ping packets must enter from one Cisco Express Forwarding-switched interface, be Cisco Express Forwarding-switched and leave from another Cisco Express Forwarding-switched interface.
+Note: Per-destination load sharing becomes more effective as the number of source-destination pairs increases.
+While sending traffic to the prefix, capture several outputs of the show interface command. Analyze the "txload" and "rxload" values. (Some interfaces display a single "load" value, which considers both transmit and receive). Although per-packet load balancing provides an even distribution in the number of packets, parallel links may exhibit a slightly uneven rate depending on the packet size.
+Serial1/0:0 is up, line protocol is up
+reliability 255/255, txload 10/255, rxload 3/255
+ 
+Serial1/1:0 is up, line protocol is up
+reliability 255/255, txload 18/255, rxload 3/255
+With Cisco Express Forwarding per-destination load balancing, you can determine to which path a session is assigned with the following command. Add the keyword internal to display which hash bucket is used.
+show ip cef exact-route {source-ip-address} {dest-ip-address} [internal]
+ 
+RouterB# show ip cef exact-route 50.50.50.2 192.168.20.1  internal
+50.50.50.2      -> 192.168.20.1   : Serial9/0 (next hop 20.20.20.1)
+                                    Bucket 4 from 15, total 3 paths
+RouterB# show ip cef exact-route 5.5.5.1 192.168.20.1  internal   
+5.5.5.1         ->192.168.20.1   : Serial9/0 (next hop 20.20.20.1)
+                                    Bucket 7 from 15, total 3 paths
+RouterB# show ip cef exact-route 6.6.6.1 192.168.20.1  internal
+6.6.6.1         -> 192.168.20.1   : Serial9/0 (next hop 20.20.20.1)
+                                    Bucket 7 from 15, total 3 paths
+RouterB# show ip cef exact-route 8.8.8.1 192.168.20.1  internal
+8.8.8.1         -> 192.168.20.1   : Serial9/0 (next hop 20.20.20.1)
+                                    Bucket 13 from 15, total 3 paths
+If the output appears uneven, consider the following:
+The number of unique source and destination address pairs or sessions traversing the parallel links.
+The number and size of packets in each session. Does one session have a large number of packets? Per-destination load balancing depends on the statistical distribution of traffic and becomes more effective as the number of source-destination pairs increase.
+Load Sharing after a Link Change
+When a routing table change adjusts the number of active paths to a destination, Cisco Express Forwarding updates the load balance structures seen in the output of the show ip cef {prefix} internal command. Cisco Express Forwarding then matches newly arriving packets to an adjacency and corresponding hash bucket. The selected bucket may or may not be the same as the one used previously.
+The following steps describe how Cisco Express Forwarding load-balancing information updates after a change in the number of active paths to a destination prefix.
+Assume a destination prefix is reachable through two paths. Path 1 is inactive, and path 2 is active and carrying all traffic.
+When path 1 is available again, it prompts IP routing reconvergence processes.
+Cisco Express Forwarding now balances the load across both paths and does not preserve existing flows across path 2. Doing so would leave path 1 unused. In other words, Cisco Express Forwarding does not consider that it can forward packets for a session on a valid path and may select a new path for a flow depending on which hash bucket it selects.
+Load Sharing Information Due for Deletion
+After a change in the routing table, Cisco Express Forwarding deletes and then rebuilds the load balancing structures that assign active paths to the hash buckets. During the rebuilding process, some packets may be lost, and the show ip cef {prefix} internal command indicates Load sharing information due for deletion.
+router#show ip cef 10.10.128.0 int 
+ 10.10.128.0/28, version 63, per-destination sharing 
+ 0 packets, 0 bytes 
+   via 10.8.0.31, 0 dependencies, recursive 
+     next hop 10.8.2.49, POS0/0/0 
+     valid adjacency 
+   Load sharing information due for deletion 
+Changes implemented through Cisco bug ID CSCdm87127 minimize packet loss during a change in the number of active paths for the default 0.0.0.0 route. Specifically, Cisco Express Forwarding now allocates an FIB entry with space for the maximum possible active paths for this route.
+Known Issues
+Cisco Express Forwarding load balancing is not equal on four paths. For further details, refer to CSCdm87756 (registered customers only) .
+In Cisco IOS versions earlier than 12.0(16)S, entering the show ip cef exact-route command may cause the Route Processor (RP) in a Cisco 12000 series Internet router or a Cisco 7500/RSP series router to reload. This situation occurs when the destination prefix is recursive and the router is load-sharing to the next hop. For further details refer to CSCdt80914 (registered customers only) , which resolves this issue.
+In 6500 series platform CEF per-packet load-balancing is not supported. This is due to the hardware limitation and it is only possible to have per-destination load balancing currently. Therefore the only option is to use Distributed Multilink Point-to-Point Protocol (dMLPPP) or Layer 4 flow load-sharing.
+Hardware Support for Cisco Express Forwarding Load Balancing
+Cisco Express Forwarding per-packet load balancing originally was supported in platforms that use software-based forwarding. Such platforms include the 2600, 3600, and 7200 series. Per-packet load balancing is now supported in hardware using Parallel Express Forwarding (PXF) on the 7200 series with a NSE-1, and 10000 series. On the Catalyst 6000 series, the Cisco IOS Cisco Express Forwarding ip load-sharing per-packet, ip cef accounting per-prefix, and ip cef accounting non-recursive commands on the MSFC2 apply only to traffic that is Cisco Express Forwarding-switched in software on the MSFC2. The commands do not affect traffic that is hardware Layer 3-switched on the PFC2 or on DFC-equipped switching modules. See Configuring IP Unicast Layer 3 Switching on Supervisor Engine 2 for more information.
+Note: A Cisco 7300 router with an NSE-100 processor card does not support CEF per-packet load balancing in PXF. The PXF only supports per destination load balancing. However, it appeared that they have support because the configuration commands were available in the CLI of the router. This is corrected and recorded in Cisco bug ID CSCdx63389.
+On the 12000 series, per-packet load balancing is available on all Layer 3 forwarding engines except engines 3 and 4. Each line card makes independent forwarding decisions. To view the exact route for each IP flow, use the exec slot X show ip hardware-cef exact-route src dst command on line cards which use hardware-based Cisco Express Forwarding tables.
+Related Information
+Cisco Express Forwarding
+Load Balancing with Cisco Express Forwarding
+IP Routing Support
+Technical Support & Documentation - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+10-Aug-2005
+Initial Release
+Contributed by
+vbaveja
+branwils
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Understand how Load Balancing Works
+Understand Cisco Express Forwarding
+Troubleshooting Incomplete Adjacencies with CEF
++ Show 3 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)

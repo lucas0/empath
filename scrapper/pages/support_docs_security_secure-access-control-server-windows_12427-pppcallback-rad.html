@@ -1,0 +1,902 @@
+Configuration Examples and TechNotes
+Configuring PPP Callback with RADIUS
+Save
+Translations
+Download
+Print
+
+Updated:February 26, 2008
+Document ID:12427
+Bias-Free Language
+Contents
+Introduction
+Before You Begin
+Conventions
+Prerequisites
+Components Used
+Configure
+Network Diagram
+Server Setup - CiscoSecure NT
+Server Setup - CiscoSecure UNIX
+Server Setup - Livingston RADIUS (with Cisco av-pairs)
+Configurations
+Verify
+Troubleshoot
+Troubleshooting Commands
+Sample Debug Output
+PPP Callback with User-Specified Number
+Server Configurations
+Server Setup - CiscoSecure NT
+Server Setup - CiscoSecure UNIX
+Server Setup - Livingston RADIUS
+Sample Debug Output
+Related Information
+Introduction
+This document shows examples of configuring the router and server to do Point-to-Point Protocol (PPP) callback with RADIUS.
+Before You Begin
+Conventions
+For more information on document conventions, see the Cisco Technical Tips Conventions.
+Prerequisites
+To make this work:
+Do initial testing with local authentication and callback (that is, remove the aaa new-model command). If callback does not work with local authentication, it will not work with RADIUS. See this example of using local authentication.
+Do further PPP authentication testing with RADIUS without callback. If users FAIL authentication and/or authorization without callback, authentication and authorization will not work with callback.
+Once local authentication for callback and PPP authentication with RADIUS work, add the information from the local user on the router (such as callback dial-string) to the user's profile on the server.
+Note: The client in these tests was an NT 4.0 server, DUN, set up as usual for a PPP connection, but with Enable PPP/LCP extensions checked under Server to allow Microsoft callback. Microsoft callback is supported in Cisco IOS® Software Releases 11.3.2.T and later. For specific information on how to setup your Microsoft Windows PC for Callback, refer to the Microsoft website.
+Components Used
+This configuration was developed and tested using the software versions below.
+Cisco IOS Software Release 11.3.2.T and later
+CiscoSecure ACS UNIX 2.x or CiscoSecure ACS for Windows 2.x or higher
+Configure
+In this section, you are presented with the information to configure the features described in this document.
+Note: To find additional information on the commands used in this document, use the Command Lookup Tool (registered customers only) .
+Network Diagram
+This document uses the network setup shown in the diagram below.
+Server Setup - CiscoSecure NT
+User gets password and confirm password.
+In Group Settings: attribute 006 Service-Type = Framed attribute 007 Framed-Protocol = PPP
+In the last box on the screen, Cisco RADIUS Attributes, check [009\001 - AV-Pair] and underneath, enter: lcp:callback-dialstring=20367
+Server Setup - CiscoSecure UNIX
+rtp-berry# ./ViewProfile -p 9900 -u callback
+User Profile Information
+user = callback{
+profile_id = 34 
+profile_cycle = 1 
+radius=Cisco {
+check_items= {
+2="callback"
+} 
+reply_attributes= {
+6=2
+7=1
+9,1="lcp:callback-dialstring=20367"
+} 
+} 
+
+}
+Server Setup - Livingston RADIUS (with Cisco av-pairs)
+callback2 Password = "callback2"
+User-Service-Type = Framed-User,
+Framed-Protocol = PPP,
+cisco-avpair = "lcp:callback-dialstring=20367"
+Configurations
+Router Configuration
+rtpkrb#show run
+Building configuration...
+
+Current configuration:
+!
+version 11.3
+service timestamps debug uptime
+service timestamps log uptime
+no service password-encryption
+service udp-small-servers
+service tcp-small-servers
+!
+hostname rtpkrb
+!
+
+!--- AAA configuration.
+
+aaa new-model
+aaa authentication login default radius none
+aaa authentication ppp default radius none
+aaa authorization exec default radius none
+aaa authorization network default radius none
+enable secret 5 $1$pkX.$JdAySRE1SbdbDe7bj0wyt0
+enable password ww
+!
+ip host rtpkrb 10.31.1.5
+ip domain-name RTP.CISCO.COM
+ip name-server 171.68.118.103
+
+!--- Chat-scripts to be used for the dialout.
+
+chat-script offhook "" "ATH1" OK
+chat-script callback ABORT ERROR ABORT BUSY "" "ATZ" OK "ATDT \T" 
+   TIMEOUT 30 CONNECT \c
+!
+interface Loopback0
+ip address 1.1.1.1 255.255.255.0
+!
+interface Ethernet0
+ip address 10.31.1.5 255.255.0.0
+!
+interface Serial0
+no ip address
+no ip mroute-cache
+shutdown
+!
+interface Serial1
+no ip address
+shutdown
+!
+interface Async1
+ip unnumbered Ethernet0
+encapsulation ppp
+async mode dedicated
+peer default ip address pool async
+no cdp enable
+ppp max-bad-auth 3
+ppp callback accept
+ppp authentication pap
+!
+ip local pool async 15.15.15.15
+ip classless
+ip route 0.0.0.0 0.0.0.0 10.31.1.1
+snmp-server community public RW
+snmp-server host 171.68.118.100 traps public
+radius-server host 171.68.118.101 auth-port 1645 acct-port 1646
+radius-server key cisco
+!
+line con 0
+line 1
+session-timeout 20 
+exec-timeout 20 0
+password ww
+autoselect ppp
+script modem-off-hook offhook
+script callback callback
+modem InOut
+transport input all
+stopbits 1
+speed 38400
+flowcontrol hardware
+line 2
+modem InOut
+speed 38400
+flowcontrol hardware
+line 3 16
+line aux 0
+line vty 0 4
+exec-timeout 0 0
+timeout login response 100
+password ww
+!
+end
+Verify
+There is currently no verification procedure available for this configuration.
+Troubleshoot
+This section provides information you can use to troubleshoot your configuration.
+Troubleshooting Commands
+Note: Before issuing debug commands, please see Important Information on Debug Commands.
+debug aaa authenticationDisplay information on AAA authentication.
+debug aaa authorization - Display information on AAA authorization.
+debug callback - Display callback events when the router is using a modem and a chat script to call back on a terminal line.
+debug chat - Display characters sent between the Network Access Server (NAS) and the PC. A chat-script is a set of expect-send string pairs that define the handshaking between data terminal equipment (DTE)-DTE or DTE-data communications equipment (DCE) devices.
+debug modem - Observe modem line activity on an access server.
+debug ppp negotiation - Display PPP packets transmitted during PPP startup, where PPP options are negotiated.
+debug ppp authentication - Display authentication protocol messages, including Challenge Authentication Protocol (CHAP) packet exchanges and Password Authentication Protocol (PAP) exchanges.
+debug radius - Display detailed debugging information associated with RADIUS.
+Sample Debug Output
+General OS:
+Modem control/process activation debugging is on
+AAA Authentication debugging is on
+AAA Authorization debugging is on
+PPP:
+PPP protocol negotiation debugging is on
+Chat Scripts:
+Chat scripts activity debugging is on
+Callback:
+Callback activity debugging is on
+Radius protocol debugging is on
+rtpkrb#
+04:04:42: TTY1: DSR came up
+04:04:42: tty1: Modem: IDLE->READY
+04:04:42: TTY1: Autoselect started
+04:04:44: TTY1: Autoselect sample 7E
+04:04:44: TTY1: Autoselect sample 7EFF
+04:04:44: TTY1: Autoselect sample 7EFF7D
+04:04:44: TTY1: Autoselect sample 7EFF7D23
+04:04:44: TTY1 Autoselect cmd: ppp negotiate
+04:04:44: TTY1: EXEC creation
+04:04:46: %LINK-3-UPDOWN: Interface Async1, changed state to up
+04:04:46: As1 PPP: Treating connection as a dedicated line
+04:04:46: As1 PPP: Phase is ESTABLISHING, Active Open
+04:04:46: As1 LCP: O CONFREQ [Closed] id 224 len 24
+04:04:46: As1 LCP: ACCM 0x000A0000 (0x0206000A0000)
+04:04:46: As1 LCP: AuthProto PAP (0x0304C023)
+04:04:46: As1 LCP: MagicNumber 0xE0FE5C09 (0x0506E0FE5C09)
+04:04:46: As1 LCP: PFC (0x0702)
+04:04:46: As1 LCP: ACFC (0x0802)
+04:04:46: As1 LCP: I CONFACK [REQsent] id 224 len 24
+04:04:46: As1 LCP: ACCM 0x000A0000 (0x0206000A0000)
+04:04:46: As1 LCP: AuthProto PAP (0x0304C023)
+04:04:46: As1 LCP: MagicNumber 0xE0FE5C09 (0x0506E0FE5C09)
+04:04:46: As1 LCP: PFC (0x0702)
+04:04:46: As1 LCP: ACFC (0x0802)
+04:04:47: As1 LCP: I CONFREQ [ACKrcvd] id 0 len 23
+04:04:47: As1 LCP: ACCM 0x00000000 (0x020600000000)
+04:04:47: As1 LCP: MagicNumber 0x00006CCD (0x050600006CCD)
+04:04:47: As1 LCP: PFC (0x0702)
+04:04:47: As1 LCP: ACFC (0x0802)
+04:04:47: As1 LCP: Callback 6 (0x0D0306)
+04:04:47: As1 LCP: O CONFACK [ACKrcvd] id 0 len 23
+04:04:47: As1 LCP: ACCM 0x00000000 (0x020600000000)
+04:04:47: As1 LCP: MagicNumber 0x00006CCD (0x050600006CCD)
+04:04:47: As1 LCP: PFC (0x0702)
+04:04:47: As1 LCP: ACFC (0x0802)
+04:04:47: As1 LCP: Callback 6 (0x0D0306)
+04:04:47: As1 LCP: State is Open
+04:04:47: As1 PPP: Phase is AUTHENTICATING, by this end
+04:04:47: As1 LCP: I IDENTIFY [Open] id 1 len 18 magic 
+   0x00006CCD MSRASV4.00
+04:04:47: As1 LCP: I IDENTIFY [Open] id 2 len 21 magic 
+   0x00006CCD MSRAS-1-ZEKIE
+04:04:47: As1 PAP: I AUTH-REQ id 15 len 24 from "callback2"
+04:04:47: As1 PAP: Authenticating peer callback2
+04:04:47: AAA/AUTHEN: create_user (0x14B1CC) user='callback2' ruser='' 
+   port='Async1' rem_addr='async' authen_type=PAP service=PPP priv=1
+04:04:47: AAA/AUTHEN/START (3229557248): port='Async1' list='' 
+   action=LOGIN service=PPP
+04:04:47: AAA/AUTHEN/START (3229557248): using "default" list
+04:04:47: AAA/AUTHEN/START (3229557248): Method=RADIUS
+04:04:47: RADIUS: Computed extended port value 0:1:
+04:04:47: RADIUS: Initial Transmit id 156 171.68.118.101:1645, 
+   Access-Request, len 79
+04:04:47: Attribute 4 6 0A1F0105
+04:04:47: Attribute 5 6 00000001
+04:04:47: Attribute 61 6 00000000
+04:04:47: Attribute 1 11 63616C6C
+04:04:47: Attribute 2 18 47E86FBC
+04:04:47: Attribute 6 6 00000002
+04:04:47: Attribute 7 6 00000001
+04:04:47: RADIUS: Received from id 156 171.68.118.101:1645, 
+   Access-Accept, len 69
+04:04:47: Attribute 6 6 00000002
+04:04:47: Attribute 7 6 00000001
+04:04:47: Attribute 26 37 00000009011F6C63
+04:04:47: RADIUS: saved authorization data for user 14B1CC at 14A684
+04:04:47: AAA/AUTHEN (3229557248): status = PASS
+04:04:47: AAA/AUTHOR/LCP As1: Authorize LCP
+04:04:47: AAA/AUTHOR/LCP As1 (101984404): Port='Async1' 
+   list='' service=NET
+04:04:47: AAA/AUTHOR/LCP: As1 (101984404) user='callback2'
+04:04:47: AAA/AUTHOR/LCP: As1 (101984404) send AV service=ppp
+04:04:47: AAA/AUTHOR/LCP: As1 (101984404) send AV protocol=lcp
+04:04:47: AAA/AUTHOR/LCP (101984404) found list "default"
+04:04:47: AAA/AUTHOR/LCP: As1 (101984404) Method=RADIUS
+
+!--- Callback number is obtained from the RADIUS server.
+
+04:04:47: RADIUS: cisco AVPair "lcp:callback-dialstring=20367"
+04:04:47: AAA/AUTHOR (101984404): Post authorization status = PASS_REPL
+04:04:47: AAA/AUTHOR/LCP As1: Processing AV service=ppp
+04:04:47: AAA/AUTHOR/LCP As1: Processing AV callback-dialstring=20367
+04:04:47: As1 PAP: O AUTH-ACK id 15 len 5
+04:04:47: As1 MCB: User callback2 Callback Number - Server 20367
+04:04:47: Async1 PPP: O MCB Request(1) id 47 len 7
+04:04:47: Async1 MCB: O 1 2F 0 7 3 3 0 
+04:04:47: As1 MCB: O Request Id 47 Callback Type Server-Num delay 0
+04:04:47: Async1 PPP: I MCB Response(2) id 47 len 7
+04:04:47: Async1 MCB: I 2 2F 0 7 3 3 C 
+04:04:47: As1 MCB: Received response
+04:04:47: As1 MCB: Response CBK-Server-Num 3 3 12
+04:04:47: Async1 PPP: O MCB Ack(3) id 48 len 7
+04:04:47: Async1 MCB: O 3 30 0 7 3 3 C 
+04:04:47: As1 MCB: O Ack Id 48 Callback Type Server-Num delay 12
+04:04:47: As1 MCB: Negotiated MCB with peer
+04:04:47: %LINEPROTO-5-UPDOWN: Line protocol on Interface Async1, 
+   changed state to up
+04:04:47: As1 LCP: I TERMREQ [Open] id 3 len 8 (0x00000000)
+04:04:47: As1 LCP: O TERMACK [Open] id 3 len 4
+04:04:47: As1 MCB: Peer terminating the link
+04:04:47: As1 PPP: Phase is TERMINATING
+04:04:47: As1 MCB: Link terminated by peer, Callback Needed
+
+!--- Callback is initiated.
+
+04:04:47: As1 MCB: Initiate Callback for callback2 at 20367 using Async
+04:04:47: As1 MCB: Async-callback in progress
+04:04:47: TTY1 Callback PPP process creation
+04:04:47: As1 AAA/ACCT: Using PPP accounting list ""
+04:04:47: TTY1 Callback process initiated, user: dialstring 20367
+04:04:48: %LINEPROTO-5-UPDOWN: Line protocol on Interface Async1, 
+   changed state to down
+04:04:48: TTY1: Async Int reset: Dropping DTR
+04:04:49: As1 LCP: TIMEout: Time 0xE02574 State TERMsent
+04:04:49: As1 LCP: State is Closed
+04:04:49: As1 PPP: Phase is DOWN
+04:04:49: As1 PPP: Phase is ESTABLISHING, Passive Open
+04:04:49: As1 LCP: State is Listen
+04:04:50: %LINK-5-CHANGED: Interface Async1, changed state to reset
+04:04:50: As1 LCP: State is Closed
+04:04:50: As1 PPP: Phase is DOWN
+04:04:50: As1 IPCP: Remove route to 15.15.15.15
+04:04:53: AAA/AUTHEN: free_user (0x14B1CC) user='callback2' ruser='' 
+   port='Async1' rem_addr='async' authen_type=PAP service=PPP priv=1
+04:04:53: TTY1 Callback forced wait = 4 seconds
+04:04:55: %LINK-3-UPDOWN: Interface Async1, changed state to down
+04:04:55: As1 LCP: State is Closed
+04:04:55: As1 PPP: Phase is DOWN
+04:04:57: CHAT1: Matched chat script offhook to string offhook
+04:04:57: CHAT1: Asserting DTR
+04:04:57: CHAT1: Chat script offhook started
+04:04:57: CHAT1: Sending string: ATH1
+04:04:57: CHAT1: Expecting string: OK
+04:04:57: CHAT1: Completed match for expect: OK
+04:04:57: CHAT1: Chat script offhook finished, status = Success
+04:04:57: CHAT1: Matched chat script callback to string callback
+04:04:57: CHAT1: Asserting DTR
+04:04:57: CHAT1: Chat script callback started
+04:04:57: CHAT1: Sending string: ATZ
+04:04:57: CHAT1: Expecting string: OK
+04:04:57: CHAT1: Completed match for expect: OK
+04:04:57: CHAT1: Sending string: ATDT \T<20367>
+04:04:57: CHAT1: Expecting string: CONNECT
+04:05:14: CHAT1: Completed match for expect: CONNECT
+04:05:14: CHAT1: Sending string: \c
+04:05:14: CHAT1: Chat script callback finished, status = Success
+04:05:14: TTY1 PPP Callback Successful - await exec/autoselect pickup
+04:05:16: TTY1: DSR came up
+04:05:16: TTY1: Callback in effect
+04:05:16: tty1: Modem: IDLE->READY
+04:05:16: TTY1: Autoselect started
+04:05:16: As1 LCP: I CONFREQ [Closed] id 0 len 20
+04:05:16: As1 LCP: ACCM 0x00000000 (0x020600000000)
+04:05:16: As1 LCP: MagicNumber 0x000007A0 (0x0506000007A0)
+04:05:16: As1 LCP: PFC (0x0702)
+04:05:16: As1 LCP: ACFC (0x0802)
+04:05:16: As1 LCP: Lower layer not up, discarding packet
+04:05:18: %LINK-3-UPDOWN: Interface Async1, changed state to up
+04:05:18: As1 PPP: Treating connection as a dedicated line
+04:05:18: As1 PPP: Phase is ESTABLISHING, Active Open
+04:05:18: As1 LCP: O CONFREQ [Closed] id 225 len 24
+04:05:18: As1 LCP: ACCM 0x000A0000 (0x0206000A0000)
+04:05:18: As1 LCP: AuthProto PAP (0x0304C023)
+04:05:18: As1 LCP: MagicNumber 0xE0FED8A0 (0x0506E0FED8A0)
+04:05:18: As1 LCP: PFC (0x0702)
+04:05:18: As1 LCP: ACFC (0x0802)
+04:05:18: As1 LCP: I CONFACK [REQsent] id 225 len 24
+04:05:18: As1 LCP: ACCM 0x000A0000 (0x0206000A0000)
+04:05:18: As1 LCP: AuthProto PAP (0x0304C023)
+04:05:18: As1 LCP: MagicNumber 0xE0FED8A0 (0x0506E0FED8A0)
+04:05:18: As1 LCP: PFC (0x0702)
+04:05:18: As1 LCP: ACFC (0x0802)
+04:05:19: As1 LCP: I CONFREQ [ACKrcvd] id 0 len 20
+04:05:19: As1 LCP: ACCM 0x00000000 (0x020600000000)
+04:05:19: As1 LCP: MagicNumber 0x000007A0 (0x0506000007A0)
+04:05:19: As1 LCP: PFC (0x0702)
+04:05:19: As1 LCP: ACFC (0x0802)
+04:05:19: As1 LCP: O CONFACK [ACKrcvd] id 0 len 20
+04:05:19: As1 LCP: ACCM 0x00000000 (0x020600000000)
+04:05:19: As1 LCP: MagicNumber 0x000007A0 (0x0506000007A0)
+04:05:19: As1 LCP: PFC (0x0702)
+04:05:19: As1 LCP: ACFC (0x0802)
+04:05:19: As1 LCP: State is Open
+04:05:19: As1 PPP: Phase is AUTHENTICATING, by this end
+04:05:19: As1 LCP: I IDENTIFY [Open] id 1 len 18 magic 
+   0x000007A0 MSRASV4.00
+04:05:19: As1 LCP: I IDENTIFY [Open] id 2 len 21 magic 
+   0x000007A0 MSRAS-1-ZEKIE
+04:05:19: As1 PAP: I AUTH-REQ id 16 len 24 from "callback2"
+04:05:19: As1 PAP: Authenticating peer callback2
+04:05:19: AAA/AUTHEN: create_user (0x14A640) user='callback2' ruser='' 
+   port='Async1' rem_addr='async' authen_type=PAP service=PPP priv=1
+04:05:19: AAA/AUTHEN/START (1256800753): port='Async1' list='' 
+   action=LOGIN service=PPP
+04:05:19: AAA/AUTHEN/START (1256800753): using "default" list
+04:05:19: AAA/AUTHEN/START (1256800753): Method=RADIUS
+04:05:19: RADIUS: Computed extended port value 0:1:
+04:05:19: RADIUS: Initial Transmit id 157 171.68.118.101:1645, 
+   Access-Request, len 79
+04:05:19: Attribute 4 6 0A1F0105
+04:05:19: Attribute 5 6 00000001
+04:05:19: Attribute 61 6 00000000
+04:05:19: Attribute 1 11 63616C6C
+04:05:19: Attribute 2 18 C29C6276
+04:05:19: Attribute 6 6 00000002
+04:05:19: Attribute 7 6 00000001
+04:05:19: RADIUS: Received from id 157 171.68.118.101:1645, 
+   Access-Accept, len 69
+04:05:19: Attribute 6 6 00000002
+04:05:19: Attribute 7 6 00000001
+04:05:19: Attribute 26 37 00000009011F6C63
+04:05:19: RADIUS: saved authorization data for user 14A640 at 14B1CC
+04:05:19: AAA/AUTHEN (1256800753): status = PASS
+04:05:19: AAA/AUTHOR/LCP As1: Authorize LCP
+04:05:19: AAA/AUTHOR/LCP As1 (1783017574): Port='Async1' 
+   list='' service=NET
+04:05:19: AAA/AUTHOR/LCP: As1 (1783017574) user='callback2'
+04:05:19: AAA/AUTHOR/LCP: As1 (1783017574) send AV service=ppp
+04:05:19: AAA/AUTHOR/LCP: As1 (1783017574) send AV protocol=lcp
+04:05:19: AAA/AUTHOR/LCP (1783017574) found list "default"
+04:05:19: AAA/AUTHOR/LCP: As1 (1783017574) Method=RADIUS
+04:05:19: RADIUS: cisco AVPair "lcp:callback-dialstring=20367"
+04:05:19: AAA/AUTHOR (1783017574): Post authorization status = PASS_REPL
+04:05:19: AAA/AUTHOR/LCP As1: Processing AV service=ppp
+04:05:19: AAA/AUTHOR/LCP As1: Processing AV callback-dialstring=20367
+04:05:19: As1 PAP: O AUTH-ACK id 16 len 5
+04:05:19: As1 PPP: Phase is UP
+04:05:19: AAA/AUTHOR/FSM As1: (0): Can we start IPCP?
+04:05:19: AAA/AUTHOR/FSM As1 (1621572650): Port='Async1' 
+   list='' service=NET
+04:05:19: AAA/AUTHOR/FSM: As1 (1621572650) user='callback2'
+04:05:19: AAA/AUTHOR/FSM: As1 (1621572650) send AV service=ppp
+04:05:19: AAA/AUTHOR/FSM: As1 (1621572650) send AV protocol=ip
+04:05:19: AAA/AUTHOR/FSM (1621572650) found list "default"
+04:05:19: AAA/AUTHOR/FSM: As1 (1621572650) Method=RADIUS
+04:05:19: RADIUS: cisco AVPair "lcp:callback-dialstring=20367" 
+   not applied for ip
+04:05:19: AAA/AUTHOR (1621572650): Post authorization status = PASS_REPL
+04:05:19: AAA/AUTHOR/FSM As1: We can start IPCP
+04:05:19: As1 IPCP: O CONFREQ [Closed] id 24 len 10
+04:05:19: As1 IPCP: Address 10.31.1.5 (0x03060A1F0105)
+04:05:19: As1 IPCP: I CONFREQ [REQsent] id 3 len 40
+04:05:19: As1 IPCP: CompressType VJ 15 slots CompressSlotID (0x0206002D0F01)
+04:05:19: As1 IPCP: Address 0.0.0.0 (0x030600000000)
+04:05:19: As1 IPCP: PrimaryDNS 0.0.0.0 (0x810600000000)
+04:05:19: As1 IPCP: PrimaryWINS 0.0.0.0 (0x820600000000)
+04:05:19: As1 IPCP: SecondaryDNS 0.0.0.0 (0x830600000000)
+04:05:19: As1 IPCP: SecondaryWINS 0.0.0.0 (0x840600000000)
+04:05:19: AAA/AUTHOR/IPCP As1: Start. Her address 0.0.0.0, we want 0.0.0.0
+04:05:19: AAA/AUTHOR/IPCP As1: Processing AV service=ppp
+04:05:19: AAA/AUTHOR/IPCP As1: Authorization succeeded
+04:05:19: AAA/AUTHOR/IPCP As1: Done. Her address 0.0.0.0, we want 0.0.0.0
+04:05:19: As1 IPCP: Using pool 'async'
+04:05:19: As1 IPCP: Pool returned 15.15.15.15
+04:05:19: As1 IPCP: O CONFREJ [REQsent] id 3 len 28
+04:05:19: As1 IPCP: CompressType VJ 15 slots CompressSlotID (0x0206002D0F01)
+04:05:19: As1 IPCP: PrimaryWINS 0.0.0.0 (0x820600000000)
+04:05:19: As1 IPCP: SecondaryDNS 0.0.0.0 (0x830600000000)
+04:05:19: As1 IPCP: SecondaryWINS 0.0.0.0 (0x840600000000)
+04:05:19: As1 IPCP: I CONFACK [REQsent] id 24 len 10
+04:05:19: As1 IPCP: Address 10.31.1.5 (0x03060A1F0105)
+04:05:19: As1 IPCP: I CONFREQ [ACKrcvd] id 4 len 16
+04:05:19: As1 IPCP: Address 0.0.0.0 (0x030600000000)
+04:05:19: As1 IPCP: PrimaryDNS 0.0.0.0 (0x810600000000)
+04:05:19: AAA/AUTHOR/IPCP As1: Start. Her address 0.0.0.0, 
+   we want 15.15.15.15
+04:05:19: AAA/AUTHOR/IPCP As1: Processing AV service=ppp
+04:05:19: AAA/AUTHOR/IPCP As1: Authorization succeeded
+04:05:19: AAA/AUTHOR/IPCP As1: Done. Her address 0.0.0.0, 
+   we want 15.15.15.15
+04:05:19: As1 IPCP: O CONFNAK [ACKrcvd] id 4 len 16
+04:05:19: As1 IPCP: Address 15.15.15.15 (0x03060F0F0F0F)
+04:05:19: As1 IPCP: PrimaryDNS 171.68.118.103 (0x8106AB447667)
+04:05:20: As1 IPCP: I CONFREQ [ACKrcvd] id 5 len 16
+04:05:20: As1 IPCP: Address 15.15.15.15 (0x03060F0F0F0F)
+04:05:20: As1 IPCP: PrimaryDNS 171.68.118.103 (0x8106AB447667)
+04:05:20: AAA/AUTHOR/IPCP As1: Start. Her address 15.15.15.15, 
+   we want 15.15.15.15
+04:05:20: AAA/AUTHOR/IPCP As1 (2922034935): Port='Async1' 
+   list='' service=NET
+04:05:20: AAA/AUTHOR/IPCP: As1 (2922034935) user='callback2'
+04:05:20: AAA/AUTHOR/IPCP: As1 (2922034935) send AV service=ppp
+04:05:20: AAA/AUTHOR/IPCP: As1 (2922034935) send AV protocol=ip
+04:05:20: AAA/AUTHOR/IPCP: As1 (2922034935) send AV addr*15.15.15.15
+04:05:20: AAA/AUTHOR/IPCP (2922034935) found list "default"
+04:05:20: AAA/AUTHOR/IPCP: As1 (2922034935) Method=RADIUS
+04:05:20: RADIUS: cisco AVPair "lcp:callback-dialstring=20367" 
+   not applied for ip
+04:05:20: AAA/AUTHOR (2922034935): Post authorization status = PASS_REPL
+04:05:20: AAA/AUTHOR/IPCP As1: Reject 15.15.15.15, using 15.15.15.15
+04:05:20: AAA/AUTHOR/IPCP As1: Processing AV service=ppp
+04:05:20: AAA/AUTHOR/IPCP As1: Processing AV addr*15.15.15.15
+04:05:20: AAA/AUTHOR/IPCP As1: Authorization succeeded
+04:05:20: AAA/AUTHOR/IPCP As1: Done. Her address 15.15.15.15, 
+   we want 15.15.15.15
+04:05:20: As1 IPCP: O CONFACK [ACKrcvd] id 5 len 16
+04:05:20: As1 IPCP: Address 15.15.15.15 (0x03060F0F0F0F)
+04:05:20: As1 IPCP: PrimaryDNS 171.68.118.103 (0x8106AB447667)
+04:05:20: As1 IPCP: State is Open
+04:05:20: As1 IPCP: Install route to 15.15.15.15
+04:05:20: %LINEPROTO-5-UPDOWN: Line protocol on Interface Async1, 
+   changed state to up
+PPP Callback with User-Specified Number
+The previous examples were of callback at a predefined number (specified in the server). Callback may also be done at a user-specified numbe; that is, the callback number is specified as null in the authentication server. This causes the router to ask the user for a callback number. Again, initial testing should be done with local callback specified. If local callback and a null callback string does not work (that is, remove the aaa new-model command), RADIUS callback will not work! To specify a null callback string local to the router:
+username callback callback-dialstring "" password 0 callback
+On the PC, under Dial-Up-Networking (Windows NT server), User Preferences, check the Callback - maybe ask me during redial if server offers box. Once the user is authenticated, a window is displayed on the PC that says "Callback - You have entered "Set by caller," followed by the rest of the message, and then "Enter modem phone number."
+Server Configurations
+Server Setup - CiscoSecure NT
+User gets password and confirm password.
+In Group Settings: attribute 006 Service-Type = Framed attribute 007 Framed-Protocol = PPP
+In the last box on the screen, Cisco RADIUS Attributes, check [009\001 - AV-Pair] and underneath, enter: lcp:callback-dialstring=
+Server Setup - CiscoSecure UNIX
+rtp-berry# ./ViewProfile -p 9900 -u callback
+User Profile Information
+user = callback{
+profile_id = 34 
+profile_cycle = 1 
+radius=Cisco {
+check_items= {
+2="callback"
+} 
+reply_attributes= {
+6=2
+7=1
+9,1="lcp:callback-dialstring="
+} 
+} 
+
+}
+Server Setup - Livingston RADIUS
+callback2 Password = "callback2"
+User-Service-Type = Framed-User,
+Framed-Protocol = PPP,
+cisco-avpair = "lcp:callback-dialstring="
+Sample Debug Output
+koala#show debug
+General OS:
+Modem control/process activation debugging is on
+AAA Authentication debugging is on
+AAA Authorization debugging is on
+Dial on demand:
+Dial on demand events debugging is on
+PPP:
+PPP authentication debugging is on
+PPP protocol negotiation debugging is on
+Chat Scripts:
+Chat scripts activity debugging is on
+Callback:
+Callback activity debugging is on
+Radius protocol debugging is on
+koala#
+02:23:01: TTY1: DSR came up
+02:23:01: tty1: Modem: IDLE->READY
+02:23:01: TTY1: Autoselect started
+02:23:03: TTY1: Autoselect sample 7E
+02:23:03: TTY1: Autoselect sample 7EFF
+02:23:03: TTY1: Autoselect sample 7EFF7D
+02:23:03: TTY1: Autoselect sample 7EFF7D23
+02:23:03: TTY1 Autoselect cmd: ppp negotiate
+02:23:03: TTY1: EXEC creation
+02:23:05: %LINK-3-UPDOWN: Interface Async1, changed state to up
+02:23:05: As1 PPP: Treating connection as a dedicated line
+02:23:05: As1 PPP: Phase is ESTABLISHING, Active Open
+02:23:05: As1 LCP: O CONFREQ [Closed] id 27 len 24
+02:23:05: As1 LCP: ACCM 0x000A0000 (0x0206000A0000)
+02:23:05: As1 LCP: AuthProto PAP (0x0304C023)
+02:23:05: As1 LCP: MagicNumber 0xE0A14386 (0x0506E0A14386)
+02:23:05: As1 LCP: PFC (0x0702)
+02:23:05: As1 LCP: ACFC (0x0802)
+02:23:05: As1 LCP: I CONFACK [REQsent] id 27 len 24
+02:23:05: As1 LCP: ACCM 0x000A0000 (0x0206000A0000)
+02:23:05: As1 LCP: AuthProto PAP (0x0304C023)
+02:23:05: As1 LCP: MagicNumber 0xE0A14386 (0x0506E0A14386)
+02:23:05: As1 LCP: PFC (0x0702)
+02:23:05: As1 LCP: ACFC (0x0802)
+02:23:06: As1 LCP: I CONFREQ [ACKrcvd] id 0 len 23
+02:23:06: As1 LCP: ACCM 0x00000000 (0x020600000000)
+02:23:06: As1 LCP: MagicNumber 0x0000152B (0x05060000152B)
+02:23:06: As1 LCP: PFC (0x0702)
+02:23:06: As1 LCP: ACFC (0x0802)
+02:23:06: As1 LCP: Callback 6 (0x0D0306)
+02:23:06: As1 LCP: O CONFACK [ACKrcvd] id 0 len 23
+02:23:06: As1 LCP: ACCM 0x00000000 (0x020600000000)
+02:23:06: As1 LCP: MagicNumber 0x0000152B (0x05060000152B)
+02:23:06: As1 LCP: PFC (0x0702)
+02:23:06: As1 LCP: ACFC (0x0802)
+02:23:06: As1 LCP: Callback 6 (0x0D0306)
+02:23:06: As1 LCP: State is Open
+02:23:06: As1 PPP: Phase is AUTHENTICATING, by this end
+02:23:06: As1 LCP: I IDENTIFY [Open] id 1 len 18 magic 
+   0x0000152B MSRASV4.00
+02:23:06: As1 LCP: I IDENTIFY [Open] id 2 len 21 magic 
+   0x0000152B MSRAS-1-ZEKIE
+02:23:06: As1 PAP: I AUTH-REQ id 64 len 22 from "userspec"
+02:23:06: As1 PAP: Authenticating peer userspec
+02:23:06: AAA/AUTHEN: create_user (0x16E284) user='userspec' ruser='' 
+   port='Async1' rem_addr='async' authen_type=PAP service=PPP priv=1
+02:23:06: AAA/AUTHEN/START (835406208): port='Async1' list='' 
+   action=LOGIN service=PPP
+02:23:06: AAA/AUTHEN/START (835406208): using "default" list
+02:23:06: AAA/AUTHEN (835406208): status = UNKNOWN
+02:23:06: AAA/AUTHEN/START (835406208): Method=RADIUS
+02:23:06: RADIUS: Computed extended port value 0:1:
+02:23:06: RADIUS: Initial Transmit id 25 171.68.120.194:1645, 
+   Access-Request, len 78
+02:23:06: Attribute 4 6 0A1F0105
+02:23:06: Attribute 5 6 00000001
+02:23:06: Attribute 61 6 00000000
+02:23:06: Attribute 1 10 75736572
+02:23:06: Attribute 2 18 E1377DA0
+02:23:06: Attribute 6 6 00000002
+02:23:06: Attribute 7 6 00000001
+02:23:06: RADIUS: Received from id 25 171.68.120.194:1645, 
+   Access-Accept, len 64
+02:23:06: Attribute 6 6 00000002
+02:23:06: Attribute 7 6 00000001
+02:23:06: Attribute 26 32 00000009011A6C63
+02:23:06: RADIUS: saved authorization data for user 16E284 at A1B44
+02:23:06: AAA/AUTHEN (835406208): status = PASS
+02:23:06: AAA/AUTHOR/LCP As1: Authorize LCP
+02:23:06: AAA/AUTHOR/LCP As1 (2812925385): Port='Async1' 
+   list='' service=NET
+02:23:06: AAA/AUTHOR/LCP: As1 (2812925385) user='userspec'
+02:23:06: AAA/AUTHOR/LCP: As1 (2812925385) send AV service=ppp
+02:23:06: AAA/AUTHOR/LCP: As1 (2812925385) send AV protocol=lcp
+02:23:06: AAA/AUTHOR/LCP (2812925385) found list "default"
+02:23:06: AAA/AUTHOR/LCP: As1 (2812925385) Method=RADIUS
+
+!--- Callback dialstring is empty (null).
+
+02:23:06: RADIUS: cisco AVPair "lcp:callback-dialstring="
+02:23:06: AAA/AUTHOR (2812925385): Post authorization status = PASS_REPL
+02:23:06: AAA/AUTHOR/LCP As1: Processing AV service=ppp
+02:23:06: AAA/AUTHOR/LCP As1: Processing AV callback-dialstring=
+02:23:06: As1 PAP: O AUTH-ACK id 64 len 5
+
+!--- Router recognizes that it is to receive number from client !--- and starts sending requests to PC.
+
+02:23:06: As1 MCB: User userspec Callback Number - Client ANY
+02:23:06: Async1 PPP: O MCB Request(1) id 92 len 9
+02:23:06: Async1 MCB: O 1 5C 0 9 2 5 0 1 0 
+02:23:06: As1 MCB: O Request Id 92 Callback Type Client-Num delay 0
+02:23:07: %LINEPROTO-5-UPDOWN: Line protocol on Interface Async1, 
+   changed state to up
+
+!--- Router receives response from PC.
+
+02:23:09: Async1 PPP: I MCB Response(2) id 92 len 14
+02:23:09: Async1 MCB: I 2 5C 0 E 2 A C 1 32 30 33 36 37 0 
+02:23:09: As1 MCB: Received response
+
+!--- Received callback number from the client.
+
+02:23:09: As1 MCB: Response CBK-Client-Num 2 10 12, addr 1-20367
+02:23:09: Async1 PPP: O MCB Ack(3) id 93 len 14
+02:23:09: Async1 MCB: O 3 5D 0 E 2 A C 1 32 30 33 36 37 0 
+02:23:09: As1 MCB: O Ack Id 93 Callback Type Client-Num delay 12
+02:23:09: As1 MCB: Negotiated MCB with peer
+02:23:09: As1 LCP: I TERMREQ [Open] id 3 len 8 (0x00000000)
+02:23:09: As1 LCP: O TERMACK [Open] id 3 len 4
+02:23:09: As1 MCB: Peer terminating the link
+02:23:09: As1 PPP: Phase is TERMINATING
+02:23:09: As1 MCB: Link terminated by peer, Callback Needed
+
+!--- Callback is initiated.
+
+02:23:09: As1 MCB: Initiate Callback for userspec at 20367 using Async
+02:23:09: TTY1 Callback user dialstring 20367 from PPP negotiation
+02:23:09: As1 MCB: Async-callback in progress
+02:23:09: TTY1 Callback PPP process creation
+02:23:09: As1 AAA/ACCT: Using PPP accounting list ""
+02:23:09: TTY1 Callback process initiated, user: dialstring 20367
+02:23:09: %LINEPROTO-5-UPDOWN: Line protocol on Interface Async1, 
+   changed state to down
+02:23:10: TTY1: Async Int reset: Dropping DTR
+02:23:11: As1 LCP: TIMEout: Time 0x831824 State TERMsent
+02:23:11: As1 LCP: State is Closed
+02:23:11: As1 PPP: Phase is DOWN
+02:23:11: As1 VP: Cleaning already proceeding
+02:23:11: As1 PPP: Phase is ESTABLISHING, Passive Open
+02:23:11: AAA/AUTHEN: dup_user (0x16E558) user='userspec' ruser='' 
+   port='Async1' rem_addr='async' authen_type=PAP service=PPP 
+   priv=1 source='AAA dup lcp_reset'
+02:23:11: AAA/AUTHEN: Method=IF-NEEDED: no authentication needed. 
+   user='userspec' port='Async1' rem_addr='async'
+02:23:11: As1 LCP: State is Listen
+02:23:11: AAA/AUTHEN: free_user (0x16E284) user='userspec' ruser='' 
+   port='Async1' rem_addr='async' authen_type=PAP service=PPP priv=1
+02:23:12: %LINK-5-CHANGED: Interface Async1, changed state to reset
+02:23:12: As1 LCP: State is Closed
+02:23:12: As1 PPP: Phase is DOWN
+02:23:12: As1 VP: Cleaning already proceeding
+02:23:12: As1 IPCP: Remove route to 15.15.15.15
+02:23:15: AAA/AUTHEN: free_user (0x16E558) user='userspec' ruser='' 
+   port='Async1' rem_addr='async' authen_type=PAP service=PPP priv=1
+02:23:15: TTY1 Callback forced wait = 4 seconds
+02:23:17: %LINK-3-UPDOWN: Interface Async1, changed state to down
+02:23:17: As1 LCP: State is Closed
+02:23:17: As1 PPP: Phase is DOWN
+02:23:17: As1 VP: Cleaning already proceeding
+02:23:19: CHAT1: Matched chat script offhook to string offhook
+02:23:19: CHAT1: Asserting DTR
+02:23:19: CHAT1: Chat script offhook started
+02:23:19: CHAT1: Sending string: ATH1
+02:23:19: CHAT1: Expecting string: OK
+02:23:19: CHAT1: Completed match for expect: OK
+02:23:19: CHAT1: Chat script offhook finished, status = Success
+02:23:19: CHAT1: Matched chat script callback to string callback
+02:23:19: CHAT1: Asserting DTR
+02:23:19: CHAT1: Chat script callback started
+02:23:19: CHAT1: Sending string: ATZ
+02:23:19: CHAT1: Expecting string: OK
+02:23:19: CHAT1: Completed match for expect: OK
+02:23:19: CHAT1: Sending string: ATDT \T<20367>
+02:23:19: CHAT1: Expecting string: CONNECT
+02:23:35: CHAT1: Completed match for expect: CONNECT
+02:23:35: CHAT1: Sending string: \c
+02:23:35: CHAT1: Chat script callback finished, status = Success
+02:23:35: TTY1 PPP Callback Successful - await exec/autoselect pickup
+02:23:37: TTY1: DSR came up
+02:23:37: TTY1: Callback in effect
+02:23:37: tty1: Modem: IDLE->READY
+02:23:37: TTY1: Autoselect started
+02:23:37: As1 LCP: I CONFREQ [Closed] id 0 len 20
+02:23:37: As1 LCP: ACCM 0x00000000 (0x020600000000)
+02:23:37: As1 LCP: MagicNumber 0x00005156 (0x050600005156)
+02:23:37: As1 LCP: PFC (0x0702)
+02:23:37: As1 LCP: ACFC (0x0802)
+02:23:37: As1 LCP: Lower layer not up, discarding packet
+02:23:39: %LINK-3-UPDOWN: Interface Async1, changed state to up
+02:23:39: As1 PPP: Treating connection as a dedicated line
+02:23:39: As1 PPP: Phase is ESTABLISHING, Active Open
+02:23:39: As1 LCP: O CONFREQ [Closed] id 28 len 24
+02:23:39: As1 LCP: ACCM 0x000A0000 (0x0206000A0000)
+02:23:39: As1 LCP: AuthProto PAP (0x0304C023)
+02:23:39: As1 LCP: MagicNumber 0xE0A1CAB2 (0x0506E0A1CAB2)
+02:23:39: As1 LCP: PFC (0x0702)
+02:23:39: As1 LCP: ACFC (0x0802)
+02:23:40: As1 LCP: I CONFACK [REQsent] id 28 len 24
+02:23:40: As1 LCP: ACCM 0x000A0000 (0x0206000A0000)
+02:23:40: As1 LCP: AuthProto PAP (0x0304C023)
+02:23:40: As1 LCP: MagicNumber 0xE0A1CAB2 (0x0506E0A1CAB2)
+02:23:40: As1 LCP: PFC (0x0702)
+02:23:40: As1 LCP: ACFC (0x0802)
+02:23:40: As1 LCP: I CONFREQ [ACKrcvd] id 0 len 20
+02:23:40: As1 LCP: ACCM 0x00000000 (0x020600000000)
+02:23:40: As1 LCP: MagicNumber 0x00005156 (0x050600005156)
+02:23:40: As1 LCP: PFC (0x0702)
+02:23:40: As1 LCP: ACFC (0x0802)
+02:23:40: As1 LCP: O CONFACK [ACKrcvd] id 0 len 20
+02:23:40: As1 LCP: ACCM 0x00000000 (0x020600000000)
+02:23:40: As1 LCP: MagicNumber 0x00005156 (0x050600005156)
+02:23:40: As1 LCP: PFC (0x0702)
+02:23:40: As1 LCP: ACFC (0x0802)
+02:23:40: As1 LCP: State is Open
+02:23:40: As1 PPP: Phase is AUTHENTICATING, by this end
+02:23:41: As1 LCP: I IDENTIFY [Open] id 1 len 18 magic 
+   0x00005156 MSRASV4.00
+02:23:41: As1 LCP: I IDENTIFY [Open] id 2 len 21 magic 
+   0x00005156 MSRAS-1-ZEKIE
+02:23:41: As1 PAP: I AUTH-REQ id 65 len 22 from "userspec"
+02:23:41: As1 PAP: Authenticating peer userspec
+02:23:41: AAA/AUTHEN: create_user (0x16E284) user='userspec' ruser='' 
+   port='Async1' rem_addr='async' authen_type=PAP service=PPP priv=1
+02:23:41: AAA/AUTHEN/START (2883652190): port='Async1' 
+   list='' action=LOGIN service=PPP
+02:23:41: AAA/AUTHEN/START (2883652190): using "default" list
+02:23:41: AAA/AUTHEN (2883652190): status = UNKNOWN
+02:23:41: AAA/AUTHEN/START (2883652190): Method=RADIUS
+02:23:41: RADIUS: Computed extended port value 0:1:
+02:23:41: RADIUS: Initial Transmit id 26 171.68.120.194:1645, 
+   Access-Request, len 78
+02:23:41: Attribute 4 6 0A1F0105
+02:23:41: Attribute 5 6 00000001
+02:23:41: Attribute 61 6 00000000
+02:23:41: Attribute 1 10 75736572
+02:23:41: Attribute 2 18 8150DA02
+02:23:41: Attribute 6 6 00000002
+02:23:41: Attribute 7 6 00000001
+02:23:41: RADIUS: Received from id 26 171.68.120.194:1645, 
+   Access-Accept, len 64
+02:23:41: Attribute 6 6 00000002
+02:23:41: Attribute 7 6 00000001
+02:23:41: Attribute 26 32 00000009011A6C63
+02:23:41: RADIUS: saved authorization data for user 16E284 at A1B44
+02:23:41: AAA/AUTHEN (2883652190): status = PASS
+02:23:41: AAA/AUTHOR/LCP As1: Authorize LCP
+02:23:41: AAA/AUTHOR/LCP As1 (3660077691): Port='Async1' 
+   list='' service=NET
+02:23:41: AAA/AUTHOR/LCP: As1 (3660077691) user='userspec'
+02:23:41: AAA/AUTHOR/LCP: As1 (3660077691) send AV service=ppp
+02:23:41: AAA/AUTHOR/LCP: As1 (3660077691) send AV protocol=lcp
+02:23:41: AAA/AUTHOR/LCP (3660077691) found list "default"
+02:23:41: AAA/AUTHOR/LCP: As1 (3660077691) Method=RADIUS
+02:23:41: RADIUS: cisco AVPair "lcp:callback-dialstring="
+02:23:41: AAA/AUTHOR (3660077691): Post authorization status = PASS_REPL
+02:23:41: AAA/AUTHOR/LCP As1: Processing AV service=ppp
+02:23:41: AAA/AUTHOR/LCP As1: Processing AV callback-dialstring=
+02:23:41: As1 PAP: O AUTH-ACK id 65 len 5
+02:23:41: As1 PPP: Phase is UP
+02:23:41: AAA/AUTHOR/FSM As1: (0): Can we start IPCP?
+02:23:41: AAA/AUTHOR/FSM As1 (2418882911): Port='Async1' 
+   list='' service=NET
+02:23:41: AAA/AUTHOR/FSM: As1 (2418882911) user='userspec'
+02:23:41: AAA/AUTHOR/FSM: As1 (2418882911) send AV service=ppp
+02:23:41: AAA/AUTHOR/FSM: As1 (2418882911) send AV protocol=ip
+02:23:41: AAA/AUTHOR/FSM (2418882911) found list "default"
+02:23:41: AAA/AUTHOR/FSM: As1 (2418882911) Method=RADIUS
+02:23:41: RADIUS: cisco AVPair "lcp:callback-dialstring=" 
+   not applied for ip
+02:23:41: AAA/AUTHOR (2418882911): Post authorization 
+   status = PASS_REPL
+02:23:41: AAA/AUTHOR/FSM As1: We can start IPCP
+02:23:41: As1 IPCP: O CONFREQ [Closed] id 12 len 10
+02:23:41: As1 IPCP: Address 10.31.1.5 (0x03060A1F0105)
+02:23:41: As1 IPCP: I CONFREQ [REQsent] id 3 len 40
+02:23:41: As1 IPCP: CompressType VJ 15 slots 
+   CompressSlotID (0x0206002D0F01)
+02:23:41: As1 IPCP: Address 0.0.0.0 (0x030600000000)
+02:23:41: As1 IPCP: PrimaryDNS 0.0.0.0 (0x810600000000)
+02:23:41: As1 IPCP: PrimaryWINS 0.0.0.0 (0x820600000000)
+02:23:41: As1 IPCP: SecondaryDNS 0.0.0.0 (0x830600000000)
+02:23:41: As1 IPCP: SecondaryWINS 0.0.0.0 (0x840600000000)
+02:23:41: AAA/AUTHOR/IPCP As1: Start. Her address 0.0.0.0,
+   we want 0.0.0.0
+02:23:41: AAA/AUTHOR/IPCP As1: Processing AV service=ppp
+02:23:41: AAA/AUTHOR/IPCP As1: Authorization succeeded
+02:23:41: AAA/AUTHOR/IPCP As1: Done. Her address 0.0.0.0, 
+   we want 0.0.0.0
+02:23:41: As1 IPCP: Using pool 'async'
+02:23:41: As1 IPCP: Pool returned 15.15.15.15
+02:23:41: As1 IPCP: O CONFREJ [REQsent] id 3 len 28
+02:23:41: As1 IPCP: CompressType VJ 15 slots 
+   CompressSlotID (0x0206002D0F01)
+02:23:41: As1 IPCP: PrimaryWINS 0.0.0.0 (0x820600000000)
+02:23:41: As1 IPCP: SecondaryDNS 0.0.0.0 (0x830600000000)
+02:23:41: As1 IPCP: SecondaryWINS 0.0.0.0 (0x840600000000)
+02:23:41: As1 IPCP: I CONFACK [REQsent] id 12 len 10
+02:23:41: As1 IPCP: Address 10.31.1.5 (0x03060A1F0105)
+02:23:41: As1 IPCP: I CONFREQ [ACKrcvd] id 4 len 16
+02:23:41: As1 IPCP: Address 0.0.0.0 (0x030600000000)
+02:23:41: As1 IPCP: PrimaryDNS 0.0.0.0 (0x810600000000)
+02:23:41: AAA/AUTHOR/IPCP As1: Start. Her address 0.0.0.0, 
+   we want 15.15.15.15
+02:23:41: AAA/AUTHOR/IPCP As1: Processing AV service=ppp
+02:23:41: AAA/AUTHOR/IPCP As1: Authorization succeeded
+02:23:41: AAA/AUTHOR/IPCP As1: Done. Her address 0.0.0.0, 
+   we want 15.15.15.15
+02:23:41: As1 IPCP: O CONFNAK [ACKrcvd] id 4 len 16
+02:23:41: As1 IPCP: Address 15.15.15.15 (0x03060F0F0F0F)
+02:23:41: As1 IPCP: PrimaryDNS 171.68.118.103 (0x8106AB447667)
+02:23:41: As1 IPCP: I CONFREQ [ACKrcvd] id 5 len 16
+02:23:41: As1 IPCP: Address 15.15.15.15 (0x03060F0F0F0F)
+02:23:41: As1 IPCP: PrimaryDNS 171.68.118.103 (0x8106AB447667)
+02:23:41: AAA/AUTHOR/IPCP As1: Start. Her address 15.15.15.15, 
+   we want 15.15.15.15
+02:23:41: AAA/AUTHOR/IPCP As1 (2792483333): Port='Async1' 
+   list='' service=NET
+02:23:41: AAA/AUTHOR/IPCP: As1 (2792483333) user='userspec'
+02:23:41: AAA/AUTHOR/IPCP: As1 (2792483333) send AV service=ppp
+02:23:41: AAA/AUTHOR/IPCP: As1 (2792483333) send AV protocol=ip
+02:23:41: AAA/AUTHOR/IPCP: As1 (2792483333) send AV addr*15.15.15.15
+02:23:41: AAA/AUTHOR/IPCP (2792483333) found list "default"
+02:23:41: AAA/AUTHOR/IPCP: As1 (2792483333) Method=RADIUS
+02:23:41: RADIUS: cisco AVPair "lcp:callback-dialstring=" 
+   not applied for ip
+02:23:41: AAA/AUTHOR (2792483333): Post authorization status = PASS_REPL
+02:23:41: AAA/AUTHOR/IPCP As1: Reject 15.15.15.15, using 15.15.15.15
+02:23:41: AAA/AUTHOR/IPCP As1: Processing AV service=ppp
+02:23:41: AAA/AUTHOR/IPCP As1: Processing AV addr*15.15.15.15
+02:23:41: AAA/AUTHOR/IPCP As1: Authorization succeeded
+02:23:41: AAA/AUTHOR/IPCP As1: Done. Her address 15.15.15.15, 
+   we want 15.15.15.15
+02:23:41: As1 IPCP: O CONFACK [ACKrcvd] id 5 len 16
+02:23:41: As1 IPCP: Address 15.15.15.15 (0x03060F0F0F0F)
+02:23:41: As1 IPCP: PrimaryDNS 171.68.118.103 (0x8106AB447667)
+02:23:41: As1 IPCP: State is Open
+02:23:41: dialer Protocol up for As1
+02:23:41: As1 IPCP: Install route to 15.15.15.15
+02:23:42: %LINEPROTO-5-UPDOWN: Line protocol on Interface Async1, 
+   changed state to up
+Related Information
+RADIUS Support Page
+Cisco Secure ACS for Windows Support Page
+Cisco Secure ACS for UNIX Support Page
+Requests for Comments (RFCs)
+Technical Support & Documentation - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+26-Feb-2008
+Initial Release
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Dial-on-Demand Routing (DDR)
+Point-to-Point Protocol (PPP)

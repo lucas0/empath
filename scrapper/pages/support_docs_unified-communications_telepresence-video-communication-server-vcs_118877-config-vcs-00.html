@@ -1,0 +1,123 @@
+Troubleshooting TechNotes
+Secure RTP between CUCM and VCS or Expressway Configuration Example
+Save
+Translations
+Print
+Updated:April 1, 2015
+Document ID:118877
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Background Information
+Conditions
+Description
+Trunk-side and Line-side Examples
+Mitigation Strategy
+Configure
+Line-side Configuration
+Trunk-side Configuration
+Media Encryption Options
+None
+Mandatory
+Best Effort
+Verify
+Troubleshoot
+Related Information
+Related Reading
+Related RFCs
+Introduction
+This document describes how to set up a secure Real-time Transport Protocol (RTP) between the Cisco Video Communication Server (VCS) and Cisco Unified Communication Manager (CUCM).
+Prerequisites
+Requirements
+Cisco recommends that you have knowledge of these topics:
+CUCM
+Cisco VCS or Cisco Expressway
+Components Used
+The information in this document is based on these software and hardware versions:
+CUCM
+Cisco VCS or Cisco Expressway
+Note: This article uses the Cisco Expressway products for purposes of explanation (except where stated), but the information also applies if your deployment uses the Cisco VCS.
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Background Information
+Conditions
+Session Initiation Protocol (SIP) calls routed between CUCM and Expressway
+Media encryption is best-effort / optional between Expressway-C and CUCM
+Description
+There have been difficulties reported for the configuration of best effort media encryption for SIP calls that are routed between CUCM and VCS/Expressway. A common misconfiguration affects the signaling of encrypted media, via Secure Real-time Transport Protocol (SRTP), which causes failure of best-effort encrypted calls when the transport between CUCM and Expressway is not secure.
+If the transport is not secure, then the media encryption signaling could be read by an eavesdropper. In this case, the media encryption signaling information is stripped from the Session Description Protocol (SDP). However, it is possible to configure CUCM to send (and expect to receive) media encryption signaling over an unsecured connection. You can work around this misconfiguration in one of two ways, dependent upon whether the calls are routed trunk-side or line-side to CUCM.
+Trunk-side and Line-side Examples
+Trunk-side: A SIP trunk is configured on CUCM towards Expressway. A corresponding neighbor zone is configured on the Expressway towards CUCM. You would need a trunk if you wanted VCS-registered (Expressway is not a registrar, but VCS is) endpoints to call CUCM-registered endpoints. Another example would be to enable H.323 interworking in your deployment.
+Line-side: Line-side calls go directly to CUCM, not via a trunk. If all registration and call control is provided by CUCM, your deployment might not require a trunk to Expressway. For example, if Expressway is deployed purely for Mobile and Remote Access (MRA), it proxies the line-side calls from external endpoints to CUCM.
+Mitigation Strategy
+If there is a SIP trunk between CUCM and Expressway, a normalization script on the CUCM rewrites the SDP appropriately so that the best-effort encryption call is not rejected. This script is automatically installed with later releases of CUCM, but if you have best-effort encrypted calls rejected, Cisco recommends that you download and install the latest vcs-interop script for your version of CUCM.
+If the call goes line-side to CUCM, then CUCM expects to see the x-cisco-srtp-fallback header if the media encryption is optional. If CUCM does not see this header, it considers the call to be encryption-mandatory. Support for this header was added to Expressway in version X8.2, so Cisco recommends X8.2 or later for MRA (collaboration edge).
+Configure
+Line-side Configuration
+[CUCM]<--best-effort-->[Expressway-C]<--mandatory-->[Expressway-E]<--mandatory-->[Endpoint]
+In order to enable best-effort encryption of line-side calls from Expressway-C to CUCM:
+Use a supported deployment / solution (for example, MRA)
+Use Mixed Mode security on CUCM
+Ensure that Expressway and CUCM trust each other (the Certificate Authority (CA) that signs each party's certificates must be trusted by the other party)
+Use version X8.2 or later of Expressway
+Use secure phone profiles on CUCM, with Device Security Mode set to Authenticated or Encrypted - for these modes the transport type is Transport Layer Security (TLS)
+Trunk-side Configuration
+Use a supported deployment / solution
+Use Mixed Mode security on CUCM
+Ensure that Expressway and CUCM trust each other (the CA that signs each party's certificates must be trusted by the other party)
+Choose best effort as the encryption mode and TLS as the transport on the neighbor zone from Expressway to CUCM (these values are automatically prepopulated in the line-side case)
+Select TLS as the inbound and outbound transport on the SIP trunk security profile
+Check SRTP Allowed (see the Caution statement) on the SIP trunk from CUCM to Expressway
+Check for, and apply if necessary, the correct normalization script for your versions of CUCM and Expressway
+Caution: If you check the SRTP Allowed check box, Cisco strongly recommends that you use an encrypted TLS profile so that keys and other security-related information does not get exposed during call negotiations. If you use a non-secure profile, SRTP will still work. However, the keys will be exposed in signaling and traces. In that case, you must ensure the security of the network between CUCM and the destination side of the trunk.
+Media Encryption Options
+None
+Encryption is not allowed. Calls that require encryption should fail because they cannot be secure. CUCM and Expressway are consistent in signaling for this case.
+CUCM and Expressway both use m=RTP/AVP in order to describe the media in the SDP. There are no crypto attributes (no a=crypto... lines in the media sections of the SDP).
+Mandatory
+Media encryption is required. Unencrypted calls should always fail; no fallback is allowed. CUCM and Expressway are consistent in signaling for this case.
+CUCM and Expressway both use m=RTP/SAVP in order to describe the media in the SDP. The SDP has crypto attributes (a=crypto... lines in the media sections of the SDP).
+Best Effort
+Calls that can be encrypted are encrypted. If encryption cannot be established, calls might and should fall back to unencrypted media. CUCM and Expressway are inconsistent in this case.
+Expressway always refuses encryption if the transport is Transmission Control Protocol (TCP) or User Datagram Protocol (UDP). You must secure the transport between CUCM and Expressway if you want media encryption.
+SDP (as CUCM writes it): Encrypted media is described as m=RTP/SAVP and a=crypto lines are written into the SDP. This is the correct signaling for media encryption, but the crypto lines are readable if the transport is not secure.
+If CUCM sees the x-cisco-srtp-fallback header, it allows the call to fall back to unencrypted. If this header is absent, CUCM assumes the call requires encryption (does not allow fallback).
+As of X8.2, Expressway does best effort the same way as CUCM does in the line-side case.
+SDP (as Expressway writes trunk-side): Encrypted media is described as m=RTP/AVP and a=crypto lines are written into the SDP.
+However, there are two reasons that the a=crypto lines could be absent:
+When a transport hop to or from the SIP proxy on the Expressway is not secure, the proxy strips the crypto lines in order to prevent them from exposure on the unsecure hop.
+The answering party strips out the crypto lines in order to signal that it cannot or will not do encryption.
+Use of the correct SIP normalization script on CUCM mitigates this issue.
+Verify
+There is currently no verification procedure available for this configuration.
+Troubleshoot
+There is currently no specific troubleshooting information available for this configuration.
+Related Information
+Related Reading
+Cisco Unified Communications Manager Security Guide, Release 10.0(1)
+Optimized Conferencing for Cisco Unified Communications Manager and Cisco VCS Solution Guide (Release 2.0)
+Cisco Unified Communications Manager with Cisco Expressway (SIP Trunk) Deployment Guide (For Cisco Expressway X8.2 and Unified CM 8.6x and 9.x)
+Cisco Unified Communications Manager with Cisco VCS (SIP Trunk) Deployment Guide (For Cisco VCS X8.2 and Unified CM 8.6.x and 9.x)
+Unified Communications Mobile and Remote Access via Cisco VCS Deployment Guide (For Cisco VCS X8.2 and Cisco Unified CM 9.1(2)SU1 or later)
+Unified Communications Mobile and Remote Access via Cisco Expressway Deployment Guide (For Cisco Expressway X8.2 and Cisco Unified CM 9.1(2)SU1 or later)
+Technical Support & Documentation - Cisco Systems
+Related RFCs
+RFC 3261 SIP: Session Initiation Protocol
+RFC 4566 SDP: Session Description Protocol
+RFC 4568 SDP: Security Descriptions
+Contributed by Cisco Engineers
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+VCS Series or Expressway Series Xconfig and Xstatus Output Collection with PuTTY
+Dial IP Addresses from Endpoints Registered to CUCM with VCS / Expressway Configuration Example
+VCS Traversal and Non-Traversal Call License Usage
++ Show 2 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+TelePresence Video Communication Server (VCS)
+Unified Communications Manager (CallManager)

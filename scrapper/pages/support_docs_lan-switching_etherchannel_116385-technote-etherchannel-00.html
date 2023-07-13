@@ -1,0 +1,168 @@
+Troubleshooting TechNotes
+Catalyst 6500, 4500, and 3750 Series Switches EtherChannel Load-Balancing
+Save
+Translations
+Print
+Updated:July 25, 2013
+Document ID:116385
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Background Information
+Catalyst 6500 Series Switches
+Catalyst 4500 Series Switches
+Catalyst 3750 Series Switches
+Potential Problems
+Introduction
+This document describes how to identify the EtherChannel member link used by a particular traffic flow on Cisco Catalyst 6500, 4500, and 3750 Series Switches.
+Prerequisites
+Requirements
+Cisco recommends that you have basic knowledge of EtherChannels.
+Components Used
+The information in this document is based on these platforms: Cisco Catalyst 6500, 4500, 2960, 3750, 3750G, 3750X, and 3560 Series Switches.
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Background Information
+The way EtherChannel load-balancing works is the switch assigns a hash result from 0-7 based on the configured hash method (load-balancing algorithm) for the type of traffic. This hash result is commonly called a Result Bundle Hash (RBH).
+Notice the number of flows are dependent on the configured load-balancing algorithm. Here is an example.
+Source 192.168.1.1 (mac a.a.a ) sending a tcp stream to 172.16.1.1 ( mac b.b.b )
+with a source tcp port of 50 and destination port 2000
+
+Source 192.168.1.1 (mac a.a.a ) sending a tcp stream to 209.165.201.1 ( mac c.c.c )
+with a source tcp port of 60 and destination 2000.
+
+If configured load balancing algorithm is SRC_MAC
+Then no of flows = 1
+
+If configured load balancing algorithm is DST_MAC
+Then no of flows = 2
+
+If configured load balancing algorithm is DST_PORT
+Then no of flows= 1
+Catalyst 6500 Series Switches
+Check the operational load-balancing algorithm.
+From the switch processor (SP), enter show etherchannel load-balance.
+6500#remote login sw
+Trying Switch ...
+Entering CONSOLE for Switch
+Type "^C^C^C" to end this session
+
+6500-sp#show etherchannel load-balance 
+EtherChannel Load-Balancing Configuration:
+        src-dst-ip
+        mpls label-ip
+Find the RBH value chosen for the packet between the desired flow.
+6500-sp#test etherchannel load-balance interface port-channel 
+<port-channel #><mac/ip> <source address> <destination address>
+In this example, the flow is between 192.168.1.1 to 172.16.1.1, and the port channel in question is port-channel 1. Choose the attributes of the command based on the output of step 1. If the configured load-balancing algorithm is src_ip, give the src-ip of the packet 192.168.1.1. Since this example has the src-dst ip configured load-balancing algorithm, the command needs to include both 192.168.1.1 to 172.16.1.1.
+6500-sp#test etherchannel load-balance int port-channel 1 ip 192.168.1.1 172.16.1.1
+
+Computed RBH: 0x5
+Would select Gi3/2 of Po1
+Find the physical port mapped to the RBH value. (optional)
+In certain versions of Cisco IOS®, the output of the command does not give the physical interface that is chosen. Perform this step only when the egress interface information is not generated in Step 2.
+6500-sp#test etherchannel load-balance int port-channel 1 ip 192.168.1.1 172.16.1.1
+Computed RBH: 0x5
+Switch to the route processor console and enter the command show interface port-channel <num> etherchannel. Look at the Load column output that corresponds to a physical interface. Convert the Load value into binary (refer to this example).
+6500-sp#exit
+
+[Connection to Switch closed by foreign host]
+
+6500#show interface port-channel 1 etherchannel 
+
+Port-channel1   (Primary aggregator)
+Age of the Port-channel   = 0d:01h:05m:54s 
+Logical slot/port   = 14/1          Number of ports = 2 
+HotStandBy port = null 
+Port state          = Port-channel Ag-Inuse 
+Protocol            =   LACP 
+Fast-switchover     = disabled
+
+Ports in the Port-channel: 
+Index   Load   Port     EC state        No of bits
+
+------+------+------+------------------+-----------
+
+  0     55     Gi3/1    Active    4 
+  1     AA     Gi3/2    Active    4
+
+Here the load value for gi3/2 is AA and for gi3/1 is 55.
+              7654 3210
+gig3/2 - AA - 1010 1010
+              ---- ---- 
+               |      | 
+               A      A
+
+gi3/1 -  55 - 0101 0101
+              ---- ---- 
+               |      |
+               5      5
+For gi3/2 bits 1,3,5 and 7 are set. So RBH value of 1,3,5,and 7 chooses gi3/2.
+For gi3/1 bits 0,2,4 and 6 are set. So RBH value of 0,2,4,and 6 chooses gi3/1.
+The outputs illustrate that four bits are set for each of the two interfaces. Hence, when there are two links in the EtherChannel, each link has an equal probability of getting used.
+However, when there are three links in the EtherChannel, the test EtherChannel's output looks similar to this:
+6500#show interface port-channel 1 etherchannel 
+Port-channel1   (Primary aggregator) 
+Age of the Port-channel   = 0d:01h:05m:54s
+Logical slot/port   = 14/1          Number of ports = 2 
+HotStandBy port = null 
+Port state          = Port-channel Ag-Inuse 
+Protocol            =   LACP 
+Fast-switchover     = disabled 
+Ports in the Port-channel: 
+
+Index   Load   Port     EC state        No of bits
+
+------+------+------+------------------+-----------
+
+  0     49     Gi3/1    Active    3 
+  1     92     Gi3/2    Active    3 
+  2     24     Gi3/3    Active    2
+Here, the bit sharing ratio is 3:3:2. So, the two links have a higher probability of getting used as compared to the third link (more in the additional section at the end).
+Catalyst 4500 Series Switches
+Check the configured load-balancing algorithm with the show etherchannel load-balancecommand.
+Use the show platform software etherchannel port-channel 1 map command to find the egress interface.
+4500#show platform software etherchannel port-channel 1 map ip 192.168.1.1 
+172.16.1.1
+
+Map port for IP 192.168.1.1, 172.16.1.1 is Gi3/1(Po1)
+NOTE: Software forwarded traffic uses Gi3/1(Po1)
+Catalyst 3750 Series Switches
+On Catalyst 3750 Series Switches, a similar 8-bit hashing algorithm is used. Here, traffic distribution is more even when the number of links in the EtherChannel is 2, 4 or 8. The command to check the interface in the port-channel:
+test etherchannel load-balance interface port-channel <port-channel #><mac/ip>
+<source address> <destination address>
+Assume that the port-channel load-balancing algorithm is configured as src-dst ip on the 3750 (non-default). This example shows how to identify the link used by traffic from 192.168.1.1 to 172.16.1.1.
+3750(config)#port-channel load-balance src-dst-ip 
+
+3750#show etherchannel load-balance 
+EtherChannel Load-Balancing Configuration:
+        src-dst-ip
+
+3750#test etherchannel load-balance interface port-channel 1 ip 192.168.1.1 172.16.1.1 
+Would select Gi3/1 of Po1
+If the load-balancing algorithm is MAC address-based, the previous command can be used if you provide the source and destination MAC addresses of the packet.
+Potential Problems
+Here are a few scenarios that can cause unequal distribution of traffic on EtherChannel member interfaces, and the steps needed to take in order to optimize load-balancing.
+Scenario: If there are two flows and two physical interfaces in the EtherChannel, it is possible that one flow is more talkative than the other. If there are five flows and one is most talkative, this flow can overwhelm the others. Whichever physical interface this flow chooses has a relatively higher utilization than the others.
+Resolution: Flow control the super talker. You need to look at it from the host side.
+
+Scenario: A common problem is that you do not have enough flows and most of the small number of flows are hashed to the same physical interface.
+Resolution: Increase the number of flows. Attempt to change the hashing algorithm to one most appropriate to the traffic.
+
+Scenario: When there are 3, 5, 6 or 7 physical links in the EtherChannel, a few links have a higher probability of taking the traffic than the other (based on the number of hashing bits assigned to each physical interface), which leads to the possibility that the traffic is unequally distributed.
+Resolution: Use 2, 4, or 8 numbers of links in the EtherChannel.
+Contributed by Cisco Engineers
+Souvik Ghosh, Kristopher Gabrielsen, and Shashank Singh
+Cisco TAC Engineers.
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Understand EtherChannel Load Balance and Redundancy on Catalyst Switches
+Catalyst Express 500 Series Switches Configuration Example
+Configuring EtherChannel and 802.1Q Trunking Between Catalyst L2 Fixed Configuration Switches and Catalyst Switches Running CatOS
++ Show 3 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)

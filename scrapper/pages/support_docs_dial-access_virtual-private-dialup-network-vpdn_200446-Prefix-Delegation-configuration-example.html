@@ -1,0 +1,206 @@
+Configuration Examples and TechNotes
+Configure Prefix Delegation in VPDN Scenario
+Save
+Translations
+Download
+Print
+
+
+
+Updated:May 6, 2016
+Document ID:200446
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Configure
+Network Diagram
+Configurations
+Verify
+Troubleshoot on Client
+Related Information
+Introduction
+This document describes Prefix Delegation configuration example in scenarios where Layer 2 Tunnelling Protocol Network Server (LNS)  delegates an IPv6 prefix to the Client router over Virtual Private Dialup Network (VPDN) Tunnel built between the Layer 2 Tunnelling Protocol Access Concentrator (LAC) and LNS.
+Prerequisites
+Requirements
+Cisco recommends that you have knowledge of End-to-End Layer 1 connectivity that is UP
+Components Used
+This document is not restricted to specific software and hardware versions.
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Configure
+Note: Use the Command Lookup Tool (registered customers only) in order to obtain more information on the commands used in this section.
+Network Diagram
+This document uses this network setup:
+Configurations
+Client Configuration:
+An example of the configuration on the Client router is shown here:
+ipv6 unicast-routing
+!
+interface Ethernet0/0
+ no ip address
+ pppoe enable group global
+ pppoe-client dial-pool-number 1
+end
+ 
+interface Dialer1
+ ip address negotiated
+ encapsulation ppp
+ dialer pool 1
+ ipv6 address FE80::1234 link-local
+ ipv6 address autoconfig
+ ipv6 enable
+ no ipv6 nd ra suppress
+ ipv6 dhcp client pd my-prefix1
+ no keepalive
+ ppp chap hostname test@cisco.com
+ ppp chap password 0 cisco
+ no cdp enable
+end
+!
+interface FastEthernet0/2
+ description -  This interface is connected to the LAN segment
+ no ip address
+ ipv6 address my-prefix1 ::1/64
+ ipv6 enable
+LAC Configuration:
+An example of the configuration on the LAC  is shown here:
+hostname LAC
+!
+vpdn enable
+!
+vpdn-group 1
+ request-dialin
+  protocol l2tp
+  domain cisco.com
+ initiate-to ip 192.168.1.2
+ source-ip 192.168.1.1
+ no l2tp tunnel authentication
+!
+bba-group pppoe global
+virtual-template 1
+!
+interface Ethernet0/0
+ no ip address
+ pppoe enable group global
+!
+interface Ethernet1/0
+  ip address 192.168.1.1 255.255.255.0
+!
+interface Virtual-Template1
+ no ip address
+ ppp authentication chap
+!
+LNS Configuration:
+An example of the configuration on the LNS  is shown here:
+ipv6 unicast-routing
+!
+vpdn enable
+!
+vpdn-group 1
+accept-dialin
+protocol l2tp
+virtual-template 1
+terminate-from hostname LAC
+vpn vrf test
+lcp renegotiation on-mismatch
+no l2tp tunnel authentication
+!
+username test@cisco.com password cisco
+interface Ethernet1/0
+ ip vrf forwarding test
+ ip address 192.168.1.2 255.255.255.0
+ negotiation auto
+ cdp enable
+end
+ 
+interface Virtual-Template1
+ ip address 10.1.1.1 255.255.255.0
+ ipv6 enable
+ ipv6 dhcp server AAA
+ peer default ip address pool local
+ peer default ipv6 pool PPPOE_POOL6
+ no keepalive
+ ppp authentication chap
+!
+ipv6 dhcp pool AAA
+ prefix-delegation pool DHCPv6Pool
+!
+ipv6 local pool PPPOE_POOL6 2001:DB8:5AB:10::/60 64
+!
+ip local pool local 10.1.1.2 10.1.1.100
+!
+ipv6 local pool DHCPv6Pool 2A02:838F:F880::/42 56
+!
+Verify
+Client#show ipv6 interface brief FastEthernet0/2
+FastEthernet0/2              [up/up]
+    FE80::205:FF:FE77:2C1B
+    2A02:838F:F880::1
+ 
+Client#show ipv6 interface brief dialer1
+Dialer1                [up/up]
+    FE80::1234
+    2001:DB8:5AB:10::1234
+Troubleshoot on Client
+These debugs assist in debugging the issue:
+debug ppp negotiation
+debug ipv6 dhcp detail
+Client#show debug          
+PPP:
+  PPP protocol negotiation debugging is on
+IPv6 DHCP:
+   IPv6 DHCP debugging is on (detailed)
+This a snippet of debug ipv6 dhcp detail on the Client router after PPP Negotiation has been completed and respective Virtual-Access is UP.
+*Jun 27 15:08:53.019: %LINEPROTO-5-UPDOWN: Line protocol on Interface Virtual-Access2, changed state to up
+*Jun 27 15:09:03.711: IPv6 DHCP: detailed packet contents
+*Jun 27 15:09:03.711:   src FE80::1234
+*Jun 27 15:09:03.711:   dst FF02::1:2 (Dialer1)
+*Jun 27 15:09:03.711:   type REQUEST(3), xid 1849347
+*Jun 27 15:09:03.711:   option ELAPSED-TIME(8), len 2
+*Jun 27 15:09:03.711:     elapsed-time 3202
+*Jun 27 15:09:03.711:   option CLIENTID(1), len 10
+*Jun 27 15:09:03.711:     00030001000500772C1B
+*Jun 27 15:09:03.711:   option ORO(6), len 6
+*Jun 27 15:09:03.711:     IA-PD,DNS-SERVERS,DOMAIN-LIST
+*Jun 27 15:09:03.711:   option SERVERID(2), len 10
+*Jun 27 15:09:03.711:     000300017CAD74F9EB00
+*Jun 27 15:09:03.711:   option IA-PD(25), len 41
+*Jun 27 15:09:03.711:     IAID 0x000B0001, T1 0, T2 0
+*Jun 27 15:09:03.711:     option IAPREFIX(26), len 25
+*Jun 27 15:09:03.711:       preferred 0, valid 0, prefix 2A02:838F:F880::/56
+*Jun 27 15:09:03.711: IPv6 DHCP: Sending REQUEST to FF02::1:2 on Dialer1
+*Jun 27 15:09:03.711: IPv6 DHCP: Received REPLY from FE80::7EAD:74FF:FEF9:EB00 on Dialer1
+*Jun 27 15:09:03.711: IPv6 DHCP: detailed packet contents
+*Jun 27 15:09:03.711:   src FE80::7EAD:74FF:FEF9:EB00 (Dialer1)
+*Jun 27 15:09:03.711:   dst FE80::1234 (Dialer1)
+*Jun 27 15:09:03.711:   type REPLY(7), xid 1849347
+*Jun 27 15:09:03.711:   option SERVERID(2), len 10
+*Jun 27 15:09:03.711:     000300017CAD74F9EB00
+*Jun 27 15:09:03.711:   option CLIENTID(1), len 10
+*Jun 27 15:09:03.711:     00030001000500772C1B
+*Jun 27 15:09:03.711:   option IA-PD(25), len 41
+*Jun 27 15:09:03.711:     IAID 0x000B0001, T1 302400, T2 483840
+*Jun 27 15:09:03.711:     option IAPREFIX(26), len 25
+*Jun 27 15:09:03.711:       preferred 604800, valid 2592000, prefix 2A02:838F:F880::/56
+*Jun 27 15:09:03.711: IPv6 DHCP: Processing options
+*Jun 27 15:09:03.711: IPv6 DHCP: Adding prefix 2A02:838F:F880::/56 to my-prefix1
+*Jun 27 15:09:03.711: IPv6 DHCP: T1 set to expire in 302400 seconds
+*Jun 27 15:09:03.711: IPv6 DHCP: T2 set to expire in 483840 seconds
+*Jun 27 15:09:03.711: IPv6 DHCP: DHCPv6 changes state from REQUEST to OPEN (REPLY_RECEIVED) on Dialer1
+
+Related Information
+IPv6 Access Service: DHCPv6 Prefix Delegation
+Technical Support & Documentation - Cisco Systems
+Contributed by Cisco Engineers
+Utsav Dutt
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Point-to-Point Protocol (PPP)
+Virtual Private Dialup Network (VPDN)

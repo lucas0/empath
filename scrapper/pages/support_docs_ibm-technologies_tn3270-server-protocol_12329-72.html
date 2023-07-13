@@ -1,0 +1,209 @@
+Configuration Examples and TechNotes
+Session Switching with DLUR and DLUS Using Static Links and Dynamic PUs
+Save
+Translations
+Download
+Print
+
+Updated:September 9, 2005
+Document ID:12329
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Conventions
+Configure
+Network Diagram
+Configuration
+Verify
+Troubleshoot
+Related Information
+Introduction
+This document provides a sample configuration for a Cisco TN3270 Server that is using session switching with a Dependent Logical Unit Requester (DLUR) and a Dependent Logical Unit Server (DLUS) that is using static links and dynamic Physical Units (PUs).
+Prerequisites
+Requirements
+There are no specific requirements for this document.
+Components Used
+This document is not restricted to specific software and hardware versions.
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Conventions
+For more information on document conventions, refer to Cisco Technical Tips Conventions.
+Configure
+In this section, you are presented with the information to configure the features described in this document.
+Note: To find additional information on the commands used in this document, use the Command Lookup Tool (registered customers only) .
+Network Diagram
+This document uses this network setup:
+Configuration
+This is in place for this sample configuration:
+Two Logical Partitions (LPARs) that are running Multiple Virtual Storage (MVS) in an Enterprise System Connection (ESCON) Multiple Image Facility (EMIF) mainframe:
+LPAR #1: MVS1 System. This system should be configured as a Network Node (NN) only.
+LPAR #2: MVS2 System. This system should be configured as an NN and a primary DLUS.
+No Advanced Peer-to-Peer Networking (APPN) subsystem on the Router, except for the Cisco TN3270 Server DLUR, which is used as an end node.
+The Cisco TN3270 Server Listening IP address 172.26.19.99 connected to the DLUS (MVS2).
+Static links configured under the Cisco TN3270 Server DLUR for connection to the MVS1 and MVS2.
+MVS1 connected to MVS2 through the Channel To Channel (CTC) link.
+Control Point to Control Point (CP-CP) Connection established between MVS1 and MVS2 over the CTC link via Multi-Path Channel (MPC). (Transport Resource List [TRL] and LOCAL Major Node definitions are required in MVS1 and MVS2.)
+This document uses these configurations:
+Router Configuration
+External Communication Adapter (XCA) Major Node in MVS1: XCAMVS1
+XCA Major Node in MVS2: XCAMVS2
+Logical Unit (LU) Major Node in MVS2: LUCPCP
+Switched Network (SWNET) Major Node in MVS2: SW1TSYSP
+TRL Network Node in MVS1 for the CTC Connection: MPCM1ICN
+LOCAL Major Node in MVS1 for the CTC Connection: TRLM1ICN
+TRL Network Node in MVS2 for the CTC Connection: MPCM2NN
+LOCAL Major Node in MVS2 for the CTC Connection: TRLM2NN
+Router Configuration
+!
+version 11.2
+service udp-small-servers
+service tcp-small-servers
+!
+interface TokenRing0/0
+ ip address 172.26.7.16 255.255.255.0
+ ring-speed 16
+!
+interface Channel1/0
+ csna C010 70                      
+
+!--- This is the Cisco Systems Network Architecture (SNA) connection to MVS1.
+
+ csna C020 71                      
+
+!--- This is the Cisco SNA connection to MVS2.
+
+!
+interface Channel1/2
+ ip address 172.26.19.98 255.255.255.224
+ no keepalive
+ lan TokenRing 0
+  adapter 1 4000.1241.1000         
+
+!--- This is bound to the TN3270 server.
+
+  adapter 30 4000.aaaa.0000        
+
+!--- This is bound to the MVS1 Cisco SNA connection.
+
+  adapter 31 4000.bbbb.0000        
+
+!--- This is bound to the MVS2 Cisco SNA connection.
+
+ tn3270-server
+  dlur NETA.WALL NETA.MVS2         
+
+!--- The DLUR: NETA.WALL and the DLUS: NETA.MVS2.
+
+   lsap token-adapter 1 
+    link CPAC  lsap C0   rmac 4000.aaaa.0000 rsap 04
+    link MVS2  lsap C0   rmac 4000.bbbb.0000 rsap 04
+   pu dlurpup eeeeffff 172.26.19.99
+!
+router eigrp 109
+ network 172.26.0.0
+!
+line con 0
+ exec-timeout 0 0
+line aux 0
+line vty 0 4
+ password cisco
+ login
+!
+end
+XCA Major Node in MVS1: XCAMVS1
+MVS1870 VBUILD TYPE=XCA
+PR870   PORT   ADAPNO=30,CUADDR=870,SAPADDR=04,MEDIUM=RING,TIMER=60
+*
+GRP870  GROUP  ANSWER=ON,                                              X
+               AUTOGEN=(5,U,P),                                        X
+               CALL=INOUT,                                             X
+               DIAL=YES,                                               X
+               DYNPU=YES,                                              X
+               DYNPUFX=CN,                                             X
+               ISTATUS=ACTIVE
+XCA Major Node in MVS2: XCAMVS2
+MVS871  VBUILD TYPE=XCA
+PR871   PORT   ADAPNO=31,CUADDR=871,SAPADDR=04,MEDIUM=RING,TIMER=60
+*
+GRP871  GROUP  ANSWER=ON,                                              X
+               AUTOGEN=(5,U,P),                                        X
+               CALL=INOUT,                                             X
+               DIAL=YES,                                               X
+               DYNPU=YES,                                              X
+               DYNPUPFX=CN,                                            X
+               ISTATUS=ACTIVE
+LU Major Node in MVS2: LUCPCP
+LUGRL    VBUILD TYPE=LUGROUP
+DLUSYED  LUGROUP
+327802   LU    DLOGMOD=D4C32782,LOGAPPL=NETTESTR,                      X
+                MODETAB=ISTINCLM,USSTAB=USSL3270,SSCPFM=USS3270
+327804E  LU    DLOGMOD=D4C32784,LOGAPPL=NETTESTR,                      X
+               MODETAB=ISTINCLM,USSTAB=USSL3270,SSCPFM=USS3270
+@        LU    DLOGMOD=D4C32782,LOGAPPL=NETTMVS2,                      X
+               MODETAB=ISTINCLM,USSTAB=USSL3270,SSCPFM=USS3270
+
+!--- The NETTESTR application is on MVS1. !--- This is specified with LOGAPPL=NETTESTR.
+Switched Network (SWNET) Major Node in MVS2: SW1TSYSP
+SW1TSYS  VBUILD TYPE=SWNET
+*
+*
+TSYSPU   PU    ADDR=02,                                                X
+               IDBLK=EEE,IDNUM=EFFFF,                                  X
+               ISTATUS=ACTIVE,                                         X
+               LUGROUP=DLUSYED,LUSEED=M3270L##,                        X
+               PUTYPE=2,DLOGMOD=D4C32784,MODETAB=ISTINCLM,             X
+               SSCPFM=USS3270,PACING=8,VPACING=8
+M3270L01 LU    LOCADDR=01,LOGAPPL=TSOMVS1 
+
+!--- PU TSYSPU is used for the Cisco TN3270 Server !--- session switching connection.
+TRL Network Node in MVS1 for the CTC Connection: MPCM1ICN
+************************************************************************
+*  MVS1 READ  CUAS: A60,A70 CTC UNITAD 20,30                           *
+*  MVS2 WRITE CUAS: B20,B30 CNC UNITAD 20,30                           *
+*  MVS1 WRITE CUAS: B40,B50 CNC UNITAD 00,10                           *
+*  MVS2 READ  CUAS: A00,A10 CTC UNITAD 00,10                           *
+************************************************************************
+
+MPCM1ICN VBUILD TYPE=TRL
+MPCM1M2  TRLE  LNCTL=MPC,MAXBFRU=16,                                   X
+               READ=(A60,A70),                                         X
+               WRITE=(B40,B50)
+LOCAL Major Node in MVS1 for the CTC Connection: TRLM1ICN
+TRLM1ICN VBUILD TYPE=LOCAL
+*       XID=YES,HPR=YES FOR NN ONLY
+TRLM1PU1 PU    TRLE=MPCM1M2,                                           X
+               ISTATUS=ACTIVE,VPACING=0, *XID=YES,HPR=YES              X
+               SSCPFM=USSSCS,CONNTYPE=APPN,CPCP=YES
+TRL Network Node in MVS2 for the CTC Connection: MPCM2NN
+************************************************************************
+*  MVS1 READ  CUAS: A60,A70 CTC UNITAD 20,30                           *
+*  MVS2 WRITE CUAS: B20,B30 CNC UNITAD 20,30                           *
+*  MVS1 WRITE CUAS: B40,B50 CNC UNITAD 00,10                           *
+*  MVS2 READ  CUAS: A00,A10 CTC UNITAD 00,10                           *
+************************************************************************
+
+MPCM2NN  VBUILD TYPE=TRL
+MPCM2M1  TRLE  LNCTL=MPC,MAXBFRU=16,
+               READ=(A00,A10),
+               WRITE=(B20,B30)
+LOCAL Major Node in MVS2 for the CTC Connection: TRLM2NN
+TRLM2NN  VBUILD TYPE=LOCAL
+*******      USE XID=YES,HPR=YES  IF OTHER MVS IS NN
+TRLM2PU1 PU    TRLE=MPCM2M1,                                           X
+               ISTATUS=ACTIVE,VPACING=0,  *XID=YES,HPR=YES,            X
+                SSCPFM=USSSCS,CONNTYPE=APPN,CPCP=YES
+Verify
+There is currently no verification procedure available for this configuration.
+Troubleshoot
+There is currently no specific troubleshooting information available for this configuration.
+Related Information
+Technology Support
+Product Support
+Technical Support - Cisco Systems
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)

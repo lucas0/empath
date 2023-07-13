@@ -1,0 +1,624 @@
+Configuration Examples and TechNotes
+Async Backup with Dialer Profiles
+Save
+Translations
+Download
+Print
+
+Updated:September 14, 2005
+Document ID:5440
+Bias-Free Language
+Contents
+Introduction
+Before You Begin
+Conventions
+Prerequisites
+Components Used
+Background Theory
+Configure
+Network Diagram
+Configurations
+Verify
+Sample show Output
+Troubleshoot
+Troubleshooting Commands
+Sample debug Output
+Related Information
+Introduction
+This document describes how to configure a remote router (Cisco 3640) to dial the central site using an analog POTS line in the event that the Frame Relay connection goes down. The Cisco 3640 uses dialer profiles to provide the backup interface for the Frame Relay link. Also, a specific async interface is set aside for backup dialout. Note that this configuration can be expanded to include Multilink PPP, which would significantly increase the bandwidth available for the backup connection. See the Multilink PPP for DDR - Basic Configuration and Verification document for more information.
+This document shows how to configure a backup connection with a routing protocol running on the async link. Careful consideration is needed before implementing such a design as the bandwidth used by the routing protocol may curtail the bandwidth available for data transfer. Snapshot routing or static routes may be used across the async link, instead of a routing protocol.
+Before You Begin
+Conventions
+For more information on document conventions, see the Cisco Technical Tips Conventions.
+Prerequisites
+There are no specific prerequisites for this document.
+Components Used
+The information in this document is based on the software and hardware versions below.
+Cisco IOS Software Release 12.0(7)T
+Cisco 3640
+Cisco AS5200 Network Access Server
+Cisco 7206
+The information presented in this document was created from devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If you are working in a live network, ensure that you understand the potential impact of any command before using it.
+Background Theory
+It is common to provide redundant paths for WAN connections such as Frame Relay with dial-on-demand circuits. Asynchronous modems and circuit-switched Plain Old Telephone Service (POTS) lines are regularly used to backup WAN interfaces. Careful planning is necessary when designing dial backup scenarios. Factors such as traffic on the backup links, the number of links susceptible to failure, and port capacity planning to support backup circuits must be considered.
+Three common methods available to provide backup for a WAN link are:
+Backup interfaces
+Dialer Watches
+Floating static routes
+A backup interface remains inactive until the primary link goes down. The backup link is then activated, reestablishing the connection between the two sites. When implementing backup interfaces for Frame Relay links, point-to-point subinterfaces on the Frame Relay links are advantageous since the main or multipoint interfaces may remain in an up/up state even if primary virtual circuits (PVCs) go down, causing the backup interface to not be activated. It is also advisable to configure Frame Relay end-to-end keepalives on your network for Cisco IOS® Software release 12.05(T) or later. Refer to the Frame Relay End-to-End Keepalive document for more information.
+A Dialer Watch provides reliable connectivity without relying solely on defining interesting traffic to trigger outgoing calls at the central router. The Dialer Watch monitors certain specific routes and, if those networks are unreachable, the Dialer Watch brings up the secondary link. Refer to the Configuring DDR Backup using BRIs and Dialer Watch document for more information on dialer watches.
+Floating static routes are static routes that have an administrative distance greater than the administrative distance of dynamic routes. Administrative distances can be configured on a static route so that the static route is less desirable than a dynamic route; hence, the static route is not used when the dynamic route is available. However, if the dynamic route is lost, the static route can take over and traffic can be sent through this alternative route. Refer to the Configuring ISDN Backup for Frame Relay document for an example on how to configure backups with floating static routes.
+When designing a dial backup scenario, remember to consider factors such as traffic patterns on the backup links, the number of links that might fail, and the number of ports available at the central-site in a worst-case situation.
+Configure
+In this section, you are presented with the information to configure the features described in this document.
+Network Diagram
+This document uses the network setup shown in the diagram below.
+Configurations
+This document uses the configurations shown below.
+Note: The configurations in this document are based on Cisco IOS Software Release 12.0(7)T running on a Cisco 3640 and an AS5200 Network Access Server. The Cisco 3640 has an NM-8AM Analog Modem Network Modules Card that allows the router to place up to eight outgoing analog calls without using an external modem.
+The AS5200 has been configured as a regular Access Server capable of supporting both ISDN and async dialup users as well as the backup connection.
+The configuration of maui-rtr-06 (Cisco 7206) is irrelevant to the dial backup scenario. The Cisco 7206 is only used to terminate the incoming WAN links. The configuration is not necessary to demonstrate async backup.
+maui-nas-05 (Cisco 3640)
+maui-nas-02 (Cisco AS5200)
+maui-nas-05 (Cisco 3640)
+Current configuration:
+!
+version 12.1
+service timestamps debug datetime msec localtime show-timezone
+service timestamps log datetime msec localtime show-timezone
+service password-encryption
+!
+hostname maui-nas-05
+!
+enable secret <deleted>
+!
+username maui-nas-02 password <deleted>
+
+!--- username and password of the remote router for !--- Challenge Handshake Authentication Protocol (CHAP) authenticationip subnet-zero
+
+no ip domain-lookup
+!
+interface Loopback0
+ ip address 172.22.63.5 255.255.255.255
+!
+interface Loopback1
+ ip address 172.22.69.254 255.255.255.0
+!
+interface Ethernet0/0
+ no ip address
+ shutdown
+!
+interface Ethernet0/1
+ ip address 172.22.95.1 255.255.255.0
+!
+interface Serial3/0
+
+!--- Frame Relay interface no ip address
+
+ encapsulation frame-relay frame-relay lmi-type cisco
+!
+interface Serial3/0.1 point-to-point
+
+!--- Frame Relay subinterface backup delay 5 10 !--- Enable backup interface 5 seconds after subinterface is down !--- Disable dialer interface 10 seconds after subinterface comes back up 
+
+ backup interface Dialer1
+
+!--- Assigns dialer 1 as backup interface
+
+ip address 192.168.10.1 255.255.255.252
+ frame-relay interface-dlci 46   
+!
+interface Async33
+
+!--- Async Interface set aside for dial backup
+
+ no ip address
+ encapsulation ppp
+
+!--- Set PPP as encapsulation mechanism for interface
+
+ dialer in-band
+
+!--- Enable DDR on interface
+
+ dialer pool-member 2
+
+!--- Assign async interface to dialer pool 2
+
+ async default routing
+
+!--- Allows interface to pass routing updates over an async line
+
+ no fair-queue
+ no cdp enable
+!
+interface Dialer1
+ ip unnumbered Loopback1
+
+!--- Use IP address of Loopback 1 interface for Dialer Interface
+
+ encapsulation ppp
+
+!--- Set PPP as encapsulation mechanism for interface
+
+ dialer pool 2
+
+!--- Assign dialer interface to dialer pool 2
+
+ dialer idle-timeout 300
+
+!--- Set idle time in seconds before call is disconnected
+
+ dialer string 10001
+
+!--- Specify telephone number to be dialed (PRI on maui-nas-03)
+
+ dialer hold-queue 50
+
+!--- Number of interesting packets to hold in queue until !--- modem connection is established
+
+ dialer-group 1
+
+!--- Assign dialer interface to use dialer-list 1 to !--- determine interesting traffic 
+
+ no peer default ip address
+
+!--- Disable peer default IP address assignment to dialer interface
+
+ no cdp enable
+ ppp authentication chap
+
+!--- Enforce CHAP authentication on dialer interface
+
+ ppp chap hostname maui-backup
+
+!--- Use maui-backup for CHAP hostname instead of maui-nas-05 !--- This username and password must be configured on the AS5200 
+
+    ppp chap password <deleted>
+
+!--- Create CHAP password for user Maui-backup
+
+!
+router ospf 1
+ network 172.22.0.0 0.0.255.255 area 0
+ network 192.168.10.0 0.0.0.3 area 0
+!
+ip classless
+no ip http server
+!
+dialer-list 1 protocol ip permit
+
+!--- Permit IP on dialer group 1 as interesting packets
+
+!
+line con 0
+ transport input none
+line 33
+
+!--- Physical interface to be used for dialing !--- Matches with interface Async 33 configured above
+
+ script dialer mica.*
+
+!--- Assign default chat script for mica modems to line
+
+ modem InOut
+transport input all
+line 34 40
+ modem InOut
+ transport input all
+line aux 0
+line vty 0 4
+ login
+!
+end
+maui-nas-02 (Cisco AS5200)
+Current configuration:
+!
+version 12.0
+service timestamps debug datetime msec localtime show-timezone
+service timestamps log datetime msec localtime show-timezone
+service password-encryption
+!
+hostname maui-nas-02
+!
+no logging console guaranteed
+enable secret <deleted>
+!
+username maui-backup password <password>
+
+!--- username and password used by dialin client !--- (configured on interface dialer 1 on the Cisco 3640)spe 2/0 2/3
+
+ firmware location system:/ucode/mica_port_firmware
+!
+resource-pool disable
+!
+ip subnet-zero
+no ip domain-lookup
+!
+isdn switch-type primary-ni
+!
+controller T1 0
+
+!--- PRI used for dialin users
+
+ framing esf
+ clock source line primary
+ linecode b8zs
+ pri-group timeslots 1-24
+ description "NAS Phone Number:10001"  
+!
+controller T1 1
+ clock source line secondary
+!
+!
+interface Loopback0
+ ip address 172.22.87.2 255.255.255.255
+ no ip directed-broadcast
+!
+interface Loopback1
+
+!--- Loopback 1 summarizes addresses in the ip address pool !--- Note that Loopback 1 and the address pool are in the same subnet
+
+ ip address 172.22.83.254 255.255.255.0
+ no ip directed-broadcast
+!
+interface Ethernet0
+ ip address 172.22.80.2 255.255.255.0
+ no ip directed-broadcast
+!
+interface Serial0:23
+
+!--- D channel for T1 0
+
+ no ip address
+ no ip directed-broadcast
+ isdn switch-type primary-ni
+ isdn incoming-voice modem
+
+!--- This command is required to accept analog calls on the PRI
+ 
+fair-queue 64 256 0
+ no cdp enable
+!
+interface Group-Async1
+
+!--- Group-Async Interface for all dialin connections !--- Note that this interface does not distinguish between !--- a backup connection or a regular dialup connection
+
+ ip unnumbered Loopback1
+
+!--- Use IP address of Loopback 1 interface for Dialer Interface
+
+ no ip directed-broadcast
+ encapsulation ppp
+
+!--- Set PPP as encapsulation mechanism for interface
+
+ ip tcp header-compression passive
+ async default routing
+
+!--- Allows interface to pass routing updates over an async line
+
+ async mode interactive
+
+!--- Enable interactive mode on async interface
+
+ peer default ip address pool default
+
+!--- Assign IP addresses for incoming calls from default address pool
+
+ no fair-queue
+ no cdp enable
+ ppp max-bad-auth 3
+ ppp authentication chap
+
+!--- Use CHAP authentication
+
+ group-range 1 24
+!
+router ospf 1
+ network 172.22.0.0 0.0.255.255 area 0
+!
+ip local pool default 172.22.83.2 172.22.83.254
+
+!--- IP address pool for dialin connection
+
+ip default-gateway 172.22.80.1
+ip http server
+ip classless
+!
+!
+line con 0
+ transport input none
+line 1 24
+ exec-timeout 0 0
+ autoselect during-login
+ autoselect ppp
+ absolute-timeout 240
+ refuse-message ^CCCCCCC!!! All lines are busy, try again later ###^C
+ modem InOut
+ international
+ transport preferred none
+ transport input telnet
+ transport output telnet
+line aux 0
+line vty 0 4
+ password <deleted>
+ login
+!
+ntp clock-period 17180069
+ntp server 172.22.255.1
+scheduler interval 3000
+end
+Verify
+This section provides information you can use to confirm your configuration is working properly.
+Certain show commands are supported by the Output Interpreter tool, which allows you to view an analysis of show command output.
+show caller userid detailed - To display detailed Link Control Protocol (LCP)-negotiated parameters.
+Note: The show caller command was added to Cisco IOS Software in release 11.3(5)AA. If your software version does not support the show caller command, use the show user command.
+show dialer - To determine whether a physical call was made.
+show ip route - To display all the routes in the routing table.
+show ip ospf database - To display the list of information related to the Open Shortest Path First (OSPF) database for a specific device.
+show ip ospf interface [interface-name] - To display OSPF-related interface information. For more information, see the What Does the show ip ospf interface Command Reveal? document.
+show ip ospf neighbor [interface-name] [neighbor-id] detail - To display OSPF-neighbor information on a per-interface basis. For more information, see the What Does the show ip ospf neighbor Command Reveal? document.
+show ip protocols - To display the parameters and current state of the active routing protocol process. For more information, see the show ip protocols information in the IP Routing Protocol-Independent Commands documentation.
+Sample show Output
+The following outputs shows the routing table of maui-nas-05 while the Frame Relay Link is up. Note that the OSPF routes are seen on the Serial subinterface.
+maui-nas-05#show ip route
+
+Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - IS-IS, L1 - ISIS level-1, L2 - ISIS level-2, ia - ISIS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+     192.168.10.0/30 is subnetted, 1 subnets
+C       192.168.10.0 is directly connected, Serial3/0.1
+     172.22.0.0/16 is variably subnetted, 7 subnets, 2 masks
+O       172.22.83.254/32 [110/50] via 192.168.10.2, 00:04:40, Serial3/0.1
+O       172.22.255.6/32 [110/49] via 192.168.10.2, 00:04:40, Serial3/0.1
+C       172.22.63.5/32 is directly connected, Loopback0
+C       172.22.95.0/24 is directly connected, Ethernet0/1
+O       172.22.80.0/24 [110/49] via 192.168.10.2, 00:04:40, Serial3/0.1
+O       172.22.87.2/32 [110/50] via 192.168.10.2, 00:04:42, Serial3/0.1
+C       172.22.69.0/24 is directly connected, Loopback1
+When the primary link fails, the backup link is brought up, and the routing table converges. Note that the OSPF routes are on the Dialer Interface.
+maui-nas-05#show ip route 
+
+Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - ISIS, L1 - ISIS level-1, L2 - ISIS level-2, IA - ISIS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+     172.22.0.0/16 is variably subnetted, 7 subnets, 2 masks
+C       172.22.83.254/32 is directly connected, Dialer1
+O       172.22.255.6/32 [110/1796] via 172.22.83.254, 00:00:48, Dialer1
+C       172.22.63.5/32 is directly connected, Loopback0
+C       172.22.95.0/24 is directly connected, Ethernet0/1
+O       172.22.80.0/24 [110/1795] via 172.22.83.254, 00:00:48, Dialer1
+O       172.22.87.2/32 [110/1786] via 172.22.83.254, 00:00:48, Dialer1
+C       172.22.69.0/24 is directly connected, Loopback1
+The following output shows details specific to user maui-nas-02 (the central site Access Server).
+maui-nas-05#show caller user maui-nas-02 detail
+
+  User: maui-nas-02, line tty 33, service Async
+        Idle time 00:00:09
+  Timeouts:            Absolute  Idle      Idle
+                                 Session   Exec
+      Limits:          -         -         00:10:00  
+      Disconnect in:   -         -         -         
+  TTY: Line 33, running PPP on As33
+  Location: PPP: 172.22.83.254
+
+  Line: Baud rate (TX/RX) is 9600/9600, no parity, 2 stopbits, 8 databits
+  Status: Ready, Active, No Exit Banner, Async Interface Active
+          HW PPP Support Active
+  Capabilities: Modem Callout, Modem RI is CD, Integrated Modem
+  Modem State: Ready
+
+  User: maui-nas-02, line As33, service PPP
+        Active time 00:00:35, Idle time 00:00:05
+  Timeouts:            Absolute  Idle
+      Limits:          -         00:05:00  
+      Disconnect in:   -         00:04:54  
+  PPP: LCP Open, CHAP (local <--> local), IPCP
+  LCP: -> peer, ACCM, AuthProto, MagicNumber, PCompression, ACCompression
+       <- peer, ACCM, AuthProto, MagicNumber, PCompression, ACCompression
+
+!--- LCP Parameters negotiated
+
+  NCP: Open IPCP
+  IPCP: <- peer
+        -> peer, Address
+
+!--- IPCP Parameters negotiated
+
+  Dialer: Connected 00:01:07 to 10001, outbound
+          Idle timer 300 secs, idle 7 secs
+          Type is IN-BAND ASYNC, group Dialer1
+          Cause: ip (s=172.22.63.5, d=224.0.0.5)
+
+!--- Reason for Dialout
+
+  IP: Local 172.22.63.5, remote 172.22.83.254
+  Counts: 23 packets input, 1204 bytes, 0 no buffer
+          0 input errors, 0 CRC, 0 frame, 0 overrun
+          27 packets output, 1498 bytes, 0 underruns
+          0 output errors, 0 collisions, 0 interface resets
+Troubleshoot
+This section provides information you can use to troubleshoot your configuration.
+Troubleshooting Commands
+Certain show commands are supported by the Output Interpreter tool, which allows you to view an analysis of show command output.
+Note: Before issuing debug commands, please see Important Information on Debug Commands.
+debug dialer events - To display debugging information about the packets received on a dialer interface. When Dial on Demand Routing (DDR) is enabled on the interface, information concerning the cause of any call (called the Dialing cause) is also displayed. For more information, see the debug dialer event information in the Debug Commands documentation.
+debug dialer packets - To display debugging information about the packets received on a dialer interface. The no form of this command disables debugging output. For more information, see the debug dialer packets information in the Debug Commands documentation.
+debug ppp - To display information on traffic and exchanges in an internetwork implementing PPP. The no form of this command disables debugging output.
+[no] debug ppp {packet | negotiation | error | authentication}
+For more information, see the debug ppp information in the Debug Commands documentation.
+debug isdn event - To display ISDN events occurring on the user side (on the router) of the ISDN interface. Q.931 ISDN events are displayed (call setup and teardown of ISDN network connections). The no form of this command disables debugging output.
+debug isdn q931 - To display information about call setup and teardown of ISDN network connections (Layer 3) between the local router (user side) and the network. The no form of this command disables debugging output. For more information, see the debug isdn q931 information in the Debug Commands documentation.
+Sample debug Output
+maui-nas-05#debug ppp negotiation
+PPP protocol negotiation debugging is on
+maui-nas-05#debug ppp chap 
+PPP authentication debugging is on
+maui-nas-05#debug modem
+Modem control/process activation debugging is on
+maui-nas-05#debug backup
+Backup events debugging is on
+maui-nas-05#debug dialer
+Dial on demand events debugging is on
+maui-nas-05#show debug
+General OS:
+  Modem control/process activation debugging is on
+Dial on demand:
+  Dial on demand events debugging is on
+Backup:
+  Backup events debugging is on
+PPP:
+  PPP authentication debugging is on
+  PPP protocol negotiation debugging is on
+maui-nas-05#
+*Mar  1 00:03:49.927 UTC: BACKUP(Serial3/0.1): event = primary went down
+*Mar  1 00:03:49.927 UTC: BACKUP(Serial3/0.1): changed state to "waiting to back up"
+*Mar  1 00:03:51.859 UTC: %LINK-3-UPDOWN: Interface Serial3/0, changed state to down
+*Mar  1 00:03:52.863 UTC: %LINEPROTO-5-UPDOWN: Line protocol on Interface Serial3/0, changed state to down
+
+!--- Primary Link is down
+
+*Mar  1 00:03:54.927 UTC: BACKUP(Serial3/0.1): event = timer expired
+*Mar  1 00:03:54.927 UTC: BACKUP(Serial3/0.1): secondary interface (Dialer1) made active
+*Mar  1 00:03:54.927 UTC: BACKUP(Serial3/0.1): changed state to "backup mode"
+*Mar  1 00:03:55.663 UTC: As33 DDR: rotor dialout [priority]
+*Mar  1 00:03:55.663 UTC: As33 DDR: Dialing cause ip (s=172.22.63.5, d=224.0.0.5)
+
+!--- interesting traffic causes dialout
+
+*Mar  1 00:03:55.663 UTC: As33 DDR: Attempting to dial 10001
+
+!--- Number to be dialed (PRI on maui-nas-02)
+
+*Mar  1 00:03:55.663 UTC: CHAT33: Attempting async line dialer script
+*Mar  1 00:03:55.663 UTC: CHAT33: no matching chat script found for 10001
+*Mar  1 00:03:55.663 UTC: CHAT33: Dialing using Modem script: d0efault-d0ials0cript & System script: none
+
+!--- using default modem chat script
+
+*Mar  1 00:03:55.663 UTC: CHAT33: process started
+*Mar  1 00:03:55.663 UTC: CHAT33: Asserting DTR
+*Mar  1 00:03:55.663 UTC: CHAT33: Chat script d0efault-d0ials0cript started
+*Mar  1 00:03:56.927 UTC: %LINK-3-UPDOWN: Interface Dialer1, changed state to up
+
+!--- Dialer interface is brought up
+
+*Mar  1 00:03:56.927 UTC: Di1 LCP: Not allowed on a Dialer Profile
+*Mar  1 00:03:56.927 UTC: BACKUP(Dialer1): event = primary came up
+*Mar  1 00:03:57.271 UTC: Modem 1/0 Mcom: in modem state 'Dialing/Answering'
+*Mar  1 00:04:06.671 UTC: Modem 1/0 Mcom: in modem state 'Waiting for Carrier'
+*Mar  1 00:04:18.135 UTC: Modem 1/0 Mcom: in modem state 'Connected'
+*Mar  1 00:04:18.543 UTC: Modem 1/0 Mcom: CONNECT at 31200/33600(Tx/Rx), V34, LAPM, V42bis, Originate
+*Mar  1 00:04:18.599 UTC: CHAT33: Chat script d0efault-d0ials0cript finished, status = Success
+*Mar  1 00:04:18.599 UTC: Modem 1/0 Mcom: switching to PPP mode
+*Mar  1 00:04:18.599 UTC: TTY33: no timer type 1 to destroy
+*Mar  1 00:04:18.599 UTC: TTY33: no timer type 0 to destroy
+*Mar  1 00:04:20.599 UTC: %LINK-3-UPDOWN: Interface Async33, changed state to up Dialer statechange to up Async33
+
+!--- Interface Async 33 is changed to state Up
+
+*Mar  1 00:04:20.599 UTC: %DIALER-6-BIND: Interface As33 bound to profile Di1 Dialer call has been placed Async33
+*Mar  1 00:04:20.599 UTC: As33 PPP: Treating connection as a callout
+*Mar  1 00:04:20.599 UTC: As33 PPP: Phase is ESTABLISHING, Active Open
+*Mar  1 00:04:20.599 UTC: Modem 1/0 Mcom: PPP escape map: TX map = FFFFFFFF, Rx map = 0
+
+!--- LCP Negotiation begins
+
+*Mar  1 00:04:20.599 UTC: As33 LCP: O CONFREQ [Closed] id 1 len 25
+...
+*Mar  1 00:04:22.599 UTC: As33 LCP: O CONFREQ [REQsent] id 2 Len 25
+*...
+*Mar  1 00:04:22.743 UTC: As33 LCP: I CONFACK [REQsent] id 2 Len 25
+...
+*Mar  1 00:04:24.599 UTC: As33 LCP: O CONFREQ [ACKrcvd] id 3 Len 25
+...
+*Mar  1 00:04:24.787 UTC: As33 LCP: I CONFACK [REQsent] id 3 Len 25
+...
+*Mar  1 00:04:24.795 UTC: As33 LCP: I CONFREQ [ACKrcvd] id 4 Len 25
+...
+*Mar  1 00:04:24.795 UTC: As33 LCP: O CONFACK [ACKrcvd] id 4 Len 25
+...
+*Mar  1 00:04:24.795 UTC: As33 LCP: State is Open
+
+!--- LCP negotiation complete
+
+*Mar  1 00:04:24.795 UTC: Modem 1/0 Mcom: PPP escape map: TX map = A0000, Rx map= 0
+*Mar  1 00:04:24.799 UTC: As33 PPP: Phase is AUTHENTICATING, by both
+*Mar  1 00:04:24.799 UTC: As33 CHAP: Using alternate hostname Maui-backup
+*Mar  1 00:04:24.799 UTC: As33 CHAP: O CHALLENGE id 1 Len 32 from "Maui-backup"
+*Mar  1 00:04:24.799 UTC: As33 AUTH: Started process 0 pid 51
+*Mar  1 00:04:24.939 UTC: As33 CHAP: I CHALLENGE id 2 Len 32 from "maui-nas-02"
+*Mar  1 00:04:24.939 UTC: As33 CHAP: Using alternate hostname Maui-backup
+*Mar  1 00:04:24.939 UTC: As33 CHAP: O RESPONSE id 2 Len 32 from "Maui-backup"
+*Mar  1 00:04:24.955 UTC: As33 CHAP: I RESPONSE id 1 Len 32 from "maui-nas-02"
+*Mar  1 00:04:24.955 UTC: As33 CHAP: O SUCCESS id 1 Len 4
+*Mar  1 00:04:25.079 UTC: As33 CHAP: I SUCCESS id 2 Len 4
+
+!--- CHAP Authentication successful
+
+*Mar  1 00:04:25.079 UTC: As33 PPP: Phase is UP
+
+!--- IPCP negotiation begins
+
+*Mar  1 00:04:25.079 UTC: As33 IPCP: O CONFREQ [Not negotiated] id 1 Len 10
+*Mar  1 00:04:25.079 UTC: As33 IPCP:    Address 172.22.63.5 (0x0306AC163F05)
+*Mar  1 00:04:25.087 UTC: As33 IPCP: I CONFREQ [REQsent] id 3 Len 16
+*Mar  1 00:04:25.091 UTC: As33 IPCP:    CompressType VJ 15 slots (0x0206002D0F00)
+*Mar  1 00:04:25.091 UTC: As33 IPCP:    Address 172.22.83.254 (0x0306AC1653FE)
+*Mar  1 00:04:25.091 UTC: As33 IPCP: O CONFREJ [REQsent] id 3 Len 10
+*Mar  1 00:04:25.091 UTC: As33 IPCP:    CompressType VJ 15 slots (0x0206002D0F00)
+*Mar  1 00:04:25.215 UTC: As33 IPCP: I CONFNAK [REQsent] id 1 Len 10
+*Mar  1 00:04:25.215 UTC: As33 IPCP:    Address 172.22.83.41 (0x0306AC165329)
+
+!--- IP address assigned to the dialin client from the address pool
+
+*Mar  1 00:04:25.215 UTC: As33 IPCP: O CONFREQ [REQsent] id 2 Len 4
+*Mar  1 00:04:25.219 UTC: As33 IPCP: I CONFREQ [REQsent] id 4 Len 10
+*Mar  1 00:04:25.219 UTC: As33 IPCP:    Address 172.22.83.254 (0x0306AC1653FE)
+*Mar  1 00:04:25.219 UTC: As33 IPCP: O CONFACK [REQsent] id 4 Len 10
+*Mar  1 00:04:25.223 UTC: As33 IPCP:    Address 172.22.83.254 (0x0306AC1653FE)
+*Mar  1 00:04:25.331 UTC: As33 IPCP: I CONFACK [ACKsent] id 2 Len 4
+*Mar  1 00:04:25.331 UTC: As33 IPCP: State is Open
+*Mar  1 00:04:25.331 UTC: As33 DDR: dialer protocol up
+*Mar  1 00:04:25.331 UTC: As33 DDR: Call connected, 3 packets unqueued, 3 transmitted, 0 discarded
+*Mar  1 00:04:25.331 UTC: Di1 IPCP: Install route to 172.22.83.254
+
+!--- Installing route to loopback address of maui-nas-02
+
+*Mar  1 00:04:26.079 UTC: %LINEPROTO-5-UPDOWN: Line protocol on Interface Async33, changed state to up
+
+!--- Async connection is up
+Related Information
+Configuring the NAS for Basic Dial Access
+Operations
+OSPF Commands
+Configuring OSPF
+Technical Support - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+14-Sep-2005
+Initial Release
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Asynchronous Connections
+Dial-on-Demand Routing (DDR)

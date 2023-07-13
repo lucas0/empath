@@ -1,0 +1,683 @@
+Configuration Examples and TechNotes
+Configuring AUX-to-AUX Port Async Backup with Dialer Watch
+Save
+Translations
+Download
+Print
+
+Updated:February 4, 2010
+Document ID:10305
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Conventions
+Background Theory
+Configure
+Network Diagram
+Configurations
+Verify
+Sample show Output
+Troubleshoot
+Troubleshooting Commands
+Sample Debug Output
+Related Information
+Introduction
+This document provides information about configuring dial-on-demand routing (DDR) backup for a serial, WAN, or leased line link using the dialer watch feature. The backup link uses modems on the AUX ports of both routers. When the primary link goes down, dialer watch initiates the backup dialout using the modem on the AUX Port.
+Prerequisites
+Requirements
+This document assumes you have a good understanding of the various issues associated with modems on AUX ports. If you need more information on these issues, please refer to the documents Modem-Router Connection Guide and Configuring Dialout using a Modem on the AUX Port before continuing on with this document.
+Components Used
+The information in this document is based on these software and hardware versions:
+Two Cisco 2600s with US Robotics Modems connected to the AUX Ports. Both routers are running Cisco IOS® Software Release 12.1(2).
+It is recommended that you use Cisco IOS version 12.1(7) or later, which includes fixes for IOS bugs that affect dialer watch.
+The information presented in this document was created from devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If you are working in a live network, ensure that you understand the potential impact of any command before using it.
+Conventions
+For more information on document conventions, refer to the Cisco Technical Tips Conventions.
+Background Theory
+This scenario involves configuring dialin and dialout using modems on the AUX ports, and configuring DDR backup with dialer watch. For more information on the dialer watch feature, refer to Evaluating Backup Interfaces, Floating Static Routes, and Dialer Watch for DDR Backup.
+Refer to Configuring DDR Backup using BRIs and Dialer Watch for information on how to configure and troubleshoot dialer watch. The concepts involved for dialer watch are independent of the media used, so that document is useful for dialer watch issues.
+Configure
+In this section, you are presented with the information to configure the features described in this document.
+Note: To find additional information on the commands used in this document, use the Command Lookup Tool (registered customers only) .
+Network Diagram
+This document uses the network setup shown in this diagram:
+Configurations
+In this configuration, maui-rtr-10 (Client) is connected by a serial link to maui-rtr-11 (Central Site). Both routers also have external US Robotics modems connected to the AUX Ports and used as backup. When the primary link goes down, dialer watch initiates the backup link and maui-rtr-10 dials the central site router, connects, negotiates PPP, and exchanges Open Shortest Path First (OSPF) routing information. All traffic between the routers now uses the backup connection. When the primary link is reestablished, the routing table is updated and all traffic once again uses the primary link. Since no traffic flows on the backup link, the idle timeout expires and dialer watch tears down the backup link.
+maui-rtr-10 (Client)
+maui-rtr-10#show running-config 
+Building configuration...
+
+Current configuration:
+!
+version 12.1
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no service password-encryption
+!
+hostname maui-rtr-10
+!
+aaa new-model
+aaa authentication login default local
+aaa authentication login NO_AUTHEN none
+aaa authentication ppp default local
+
+!--- This is the basic AAA configuration for PPP calls.
+
+enable secret 5 <deleted>
+!
+username admin password 0 <deleted>
+username maui-rtr-11 password 0 cisco
+
+!--- Username for remote router (maui-rtr-11) and shared secret !--- password. Shared secret (used for Challenge Handshake Authentication !--- Protocol [CHAP] authentication) must be the same on both sides.
+
+!    
+ip subnet-zero
+!
+chat-script Dialout ABORT ERROR ABORT BUSY "" "AT" OK "ATDT \T" TIMEOUT 45 
+CONNECT \c
+
+!--- Chat script named "Dialout" is used for the backup dialout.
+
+modemcap entry MY_USR_MODEM:MSC=&F1S0;=1
+
+!--- Modemcap named "MY_USR_MODEM" will be applied to the AUX !--- port line interface. This modemcap was created with the !--- modemcap edit MY_USR_MODEM miscellaneous &F1S0;=1 command !--- Refer to the Modem-Router Connection Guide for more information.
+
+!
+interface Loopback0
+ ip address 172.17.1.1 255.255.255.0
+!
+interface Ethernet0/0
+ ip address 172.16.1.1 255.255.255.0
+ no keepalive
+!
+interface Serial0/0
+ no ip address
+ shutdown
+ no fair-queue
+!
+interface Serial0/1
+
+!--- This is the primary link.
+
+ ip address 192.168.10.2 255.255.255.252
+ encapsulation ppp
+ clockrate 64000
+ ppp authentication chap
+!
+interface Async65
+
+!--- Async interface corresponding to the AUX Port (backup link). !--- This was determined using the show line command.
+
+ ip unnumbered Loopback0
+
+!--- This assigns the Loopback 0 IP address to this interface. !--- The central router will have a dialer map to this loopback address.
+
+ encapsulation ppp
+ dialer in-band
+
+!--- Allow DDR on this interface.
+
+ dialer idle-timeout 30
+
+!--- Idle timeout (in seconds) for this link. !--- Dialer watch checks the status of the primary link !--- every time the idle-timeout expires.
+
+ dialer watch-disable 15
+
+!--- Delays disconnection of the backup interface (for 15 seconds) after !--- the primary interface is found to be up.
+
+ dialer map ip 172.22.1.1 name maui-rtr-11 broadcast 84007
+
+!--- Dialer map for the AUX Port interface of the central router. !--- Remember that the central router's AUX port is unnumbered to its Loopback 0.
+
+ dialer map ip 172.22.53.0 name maui-rtr-11 broadcast 84007
+
+!--- Map statement for the route or network being watched. !--- Address must exactly match the network configured with !--- the dialer watch-list command. !--- Dials the phone number specified when the watched route disappears.
+
+ dialer watch-group 8
+
+!--- Enable dialer watch on this backup interface. !--- Watch the route specified with dialer watch-list 8.
+
+ dialer-group 1
+
+!--- Apply interesting traffic defined in dialer-list 1.
+
+ async default routing
+
+!--- Permit routing over the async interface. !--- This is required for a routing protocol to run across the async link.
+
+ async mode interactive
+ ppp authentication chap
+!
+router ospf 5
+ network 172.16.1.0 0.0.0.255 area 0
+ network 172.17.1.0 0.0.0.255 area 0
+ network 192.168.10.0 0.0.0.3 area 0
+!
+ip classless
+no ip http server
+!
+access-list 101 remark Define Interesting Traffic
+access-list 101 deny   ospf any any
+
+!--- Mark OSPF as uninteresting. !--- This prevents OSPF hellos from keeping the link up.
+
+access-list 101 permit ip any any
+!
+dialer watch-list 8 ip 172.22.53.0 255.255.255.0
+
+!--- Define the route to be watched. !--- This exact route (including subnet mask) must exist in the routing table.
+
+dialer-list 1 protocol ip list 101
+
+!--- Interesting traffic is defined by access-list 101. !--- This is applied to BRI0 using dialer-group 1.
+
+!
+line con 0
+ login authentication NO_AUTHEN
+ transport input none
+line Aux 0
+
+!--- Line configuration for the AUX port.
+
+ exec-timeout 0 0
+
+!--- Disable exec timeout on the interface.
+
+ autoselect ppp
+ script dialer Dialout
+
+!--- Use the chat script named "Dialout" for outgoing calls.
+
+ modem InOut
+
+!--- Enable incoming and outgoing calls.
+
+ modem autoconfigure type MY_USR_MODEM
+
+!--- Apply the modemcap MY_USR_MODEM (configured previously) !--- to initialize the modem.
+
+ transport input all
+ stopbits 1
+
+!--- Improve throughput by reducing async framing overhead.
+
+ speed 115200
+
+!--- AUX port on the 2600 supports a speed of 115200. !--- Note: If you are routing through the AUX port, each character generates a !--- processor interrupt. This is an abnormally high load on the CPU, which can be !--- resolved by using a lower AUX port speed.
+
+ flowcontrol hardware
+
+!--- This configures Ready To Send/Clear To Send (RTS/CTS) flow control.
+
+line vty 0 4
+!
+no scheduler allocate
+end
+maui-rtr-11 (Central Site)
+maui-rtr-11#show running-config 
+Building configuration...
+
+Current configuration:
+!
+version 12.1
+service timestamps debug uptime
+service timestamps log uptime
+no service password-encryption
+!
+hostname maui-rtr-11
+!
+aaa new-model
+aaa authentication login default local
+aaa authentication login NO_AUTHEN none
+aaa authentication ppp default local
+
+!--- This is the basic AAA configuration for PPP calls.
+
+enable secret 5 <deleted>
+!
+username admin password 0 <deleted>
+username maui-rtr-10 password 0 cisco
+
+!--- Username for remote router (maui-rtr-10) and shared secret. !--- Shared secret (used for CHAP authentication) must be the same on both sides.
+
+!
+memory-size iomem 30
+!
+ip subnet-zero
+!
+modemcap entry MY_USR_MODEM:MSC=&F1S0;=1
+
+!--- Modemcap (MY_USR_MODEM) will be applied to the AUX port line interface. !--- This modemcap was created with the command !--- modemcap edit MY_USR_MODEM miscellaneous &F1S0;=1 !--- Refer to the Modem-Router Connection Guide for more information.
+
+!
+interface Loopback0
+ ip address 172.22.1.1 255.255.255.0
+!
+interface FastEthernet0/0
+
+!--- Interface to corporate network.
+
+ ip address 172.22.53.105 255.255.255.0
+ no keepalive
+ duplex auto
+ speed auto
+!
+
+!--- Irrelevant output removed here.
+
+!
+interface Serial0/1
+
+!--- This is the primary link.
+
+ ip address 192.168.10.1 255.255.255.252
+ encapsulation ppp
+ ppp authentication chap
+!
+interface Serial0/2
+ no ip address
+ shutdown
+!
+interface Async65
+
+!--- Async interface corresponding to the AUX Port (backup link). !--- This was determined using the show line command.
+
+ ip unnumbered Loopback0
+
+!--- Use Loopback 0 address for this interface. !--- The remote router will have a dialer map to this loopback address.
+
+ encapsulation ppp
+ dialer in-band
+ dialer idle-timeout 900
+ dialer map ip 172.17.1.1 name maui-rtr-10 broadcast
+
+!--- Dialer map for the AUX Port interface of the remote router. !--- Remember that the remote router AUX port is unnumbered to its Loopback 0.
+
+ dialer-group 1
+
+!--- Apply interesting traffic defined in dialer-list 1.
+
+ async default routing
+
+!--- Permit routing over the async interface. !--- This is required for a routing protocol to run across the async link.
+
+ async mode interactive
+
+!--- Requires autoselect PPP under the line configuration PPP to be negotiated. !--- This command may be replaced with async mode dedicated.
+
+ no peer default ip address
+
+!--- Do not assign the peer an IP address.
+
+ ppp authentication chap
+!
+router ospf 5
+ network 172.22.1.0 0.0.0.255 area 0
+ network 172.22.53.0 0.0.0.255 area 0
+ network 192.168.10.0 0.0.0.3 area 0
+!
+ip classless
+no ip http server
+!
+dialer-list 1 protocol ip permit
+
+!--- Mark all IP traffic as interesting. !--- This interesting traffic definition is applied to BRI0 !--- using dialer-group 1.
+
+!
+!
+line con 0
+ login authentication NO_AUTHEN
+ transport input none
+line aux 0
+
+!--- AUX Port line configuration.
+
+ autoselect ppp
+
+!--- Launch PPP negotiation when PPP packets are received. !--- If the Async Interface has async mode dedicated, !--- this command is not needed.
+
+ modem InOut
+
+!--- Enable incoming and outgoing calls.
+
+ modem autoconfigure type MY_USR_MODEM
+
+!--- Apply the modemcap MY_USR_MODEM that was configured previously.
+
+ transport input all
+ stopbits 1
+
+!--- Improve throughput by reducing async framing overhead.
+
+ speed 115200
+
+!--- AUX port on the 2600 supports a speed of 115200.
+
+ flowcontrol hardware
+
+!--- Configures RTS/CTS flow control.
+
+line vty 0 4
+!
+no scheduler allocate
+end
+Verify
+This section provides information you can use to confirm your configuration works properly.
+Certain show commands are supported by the Output Interpreter (registered customers only) tool, which allows you to view an analysis of show command output.
+Sample show Output
+The routing table of the client (maui-rtr-10) with the primary link functioning is shown here:
+maui-rtr-10#show ip route
+Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+     192.168.10.0/24 is variably subnetted, 2 subnets, 2 masks
+C       192.168.10.0/30 is directly connected, Serial0/1
+C       192.168.10.1/32 is directly connected, Serial0/1
+     172.17.0.0/24 is subnetted, 1 subnets
+C       172.17.1.0 is directly connected, Loopback0
+     172.16.0.0/24 is subnetted, 1 subnets
+C       172.16.1.0 is directly connected, Ethernet0/0
+     172.22.0.0/16 is variably subnetted, 2 subnets, 2 masks
+O       172.22.53.0/24 [110/65] via 192.168.10.1, 00:00:57, Serial0/1
+O       172.22.1.1/32 [110/65] via 192.168.10.1, 00:00:59, Serial0/1
+The show ip route command output shown above displays the OSPF routes learned from the peers using the primary link (serial 0/1). Notice that the route being watched (172.22.53.0 with mask 255.255.255.0) exists in the routing table. This must be verified for dialer watch to function correctly.
+Now the primary link is brought down and dialer watch activates the backup link.
+After the backup link is activated, the OSPF table is exchanged and the new route using the backup link is installed. Traffic now passes across the backup link. An example of this is shown here:
+maui-rtr-10#show ip route
+Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+     172.17.0.0/24 is subnetted, 1 subnets
+C       172.17.1.0 is directly connected, Loopback0
+     172.16.0.0/24 is subnetted, 1 subnets
+C       172.16.1.0 is directly connected, Ethernet0/0
+     172.22.0.0/16 is variably subnetted, 2 subnets, 2 masks
+O       172.22.53.0/24 [110/870] via 172.22.1.1, 00:00:11, Async65
+C       172.22.1.1/32 is directly connected, Async65
+The output above shows that the routing table has been updated and all traffic for the watched network now uses the backup link (Async 65).
+Troubleshoot
+This section provides information you can use to troubleshoot your configuration.
+Troubleshooting Commands
+Certain show commands are supported by the Output Interpreter (registered customers only) tool, which allows you to view an analysis of show command output.
+Note: Before you issue debug commands, refer to Important Information on Debug Commands.
+debug dialer—To display debugging information about the packets received on a dialer interface. When DDR is enabled on the interface, information concerning the cause of any call (called the Dialing cause) is also displayed. For more information, see the debug dialer information in the Debug Commands documentation.
+debug modem—To display the modem line activity, modem control and process activation messages on the router.
+debug chat—To monitor the execution of the chat script when async/POTS dialing is initiated. Refer to Dialup Technology: Troubleshooting Techniques for more information.
+debug ppp negotiation—Displays information on PPP traffic and exchanges while negotiating the PPP components including Link Control Protocol (LCP), Authentication, and Network Control Protocol (NCP). A successful PPP negotiation first opens the LCP state, then Authenticates, and finally negotiates NCP.
+debug ppp authentication—Displays the PPP authentication protocol messages, including Challenge Authentication Protocol (CHAP) packet exchanges and Password Authentication Protocol (PAP) exchanges
+Sample Debug Output
+The debug output below shows the primary link failing and dialer watch recognizing the lost route. The router then initiates the backup link. After the dialer idle-timeout expires, the router checks whether the primary link is down. When the primary link is reestablished, dialer watch disconnects the backup link after the disable timer expires. When looking at the debugs, pay attention to the timestamp in each message as they can provide information on the various timers and idle timeouts that are active.
+maui-rtr-10#debug dialer
+Dial on demand events debugging is on
+maui-rtr-10#debug chat
+Chat scripts activity debugging is on
+maui-rtr-10#debug modem
+Modem control/process activation debugging is on
+maui-rtr-10#debug ppp negotiation 
+PPP protocol negotiation debugging is on
+maui-rtr-10#debug ppp authentication
+PPP authentication debugging is on
+maui-rtr-10#
+maui-rtr-10#
+maui-rtr-10#
+maui-rtr-10#
+maui-rtr-10#
+*Mar  3 17:00:28.136: %LINK-3-UPDOWN: Interface Serial0/1, 
+changed state to down
+
+!--- Primary link is brought down.
+
+*Mar  3 17:00:28.140: Se0/1 IPCP: State is Closed
+*Mar  3 17:00:28.140: Se0/1 CDPCP: State is Closed
+*Mar  3 17:00:28.140: Se0/1 PPP: Phase is TERMINATING
+*Mar  3 17:00:28.140: Se0/1 LCP: State is Closed
+*Mar  3 17:00:28.140: Se0/1 PPP: Phase is DOWN
+*Mar  3 17:00:28.144: Se0/1 IPCP: Remove route to 192.168.10.1
+*Mar  3 17:00:28.252: DDR: Dialer Watch: watch-group = 8
+
+!--- Use dialer watch-group 8.
+
+*Mar  3 17:00:28.252: DDR:        network 172.22.53.0/255.255.255.0 DOWN,
+*Mar  3 17:00:28.252: DDR:        primary DOWN
+
+!--- The primary network is down.
+
+*Mar  3 17:00:28.252: DDR: Dialer Watch: 
+Dial Reason: Primary of group 8 DOWN
+
+!--- Dial reason is that the primary route is down.
+
+*Mar  3 17:00:28.252: DDR: Dialer Watch: watch-group = 8, 
+*Mar  3 17:00:28.252: DDR:        
+dialing secondary by dialer map 172.22.53.0 on As65
+
+!--- Indicates which dialer map statement is used for the dialout. !--- Dialout will occur on AS 65 (the AUX Port).
+
+*Mar  3 17:00:28.252: As65 DDR: Attempting to dial 84007
+
+!--- Number being dialed for the backup link.
+
+*Mar  3 17:00:28.252: CHAT65: Attempting async line dialer script
+*Mar  3 17:00:28.256: CHAT65: Dialing using Modem script: Dialout
+ & System script: none
+
+!--- Using chat script "Dialout".
+
+*Mar  3 17:00:28.268: CHAT65: process started
+*Mar  3 17:00:28.273: CHAT65: Asserting DTR
+*Mar  3 17:00:28.273: TTY65: Set DTR to 1
+*Mar  3 17:00:28.273: CHAT65: Chat script Dialout started
+
+!--- Chat script "Dialout" starts.
+
+*Mar  3 17:00:28.273: CHAT65: Sending string: AT
+*Mar  3 17:00:28.273: CHAT65: Expecting string: OK
+*Mar  3 17:00:28.433: CHAT65: Completed match for expect: OK
+*Mar  3 17:00:28.433: CHAT65: Sending string: ATDT \T<84007>
+*Mar  3 17:00:28.433: CHAT65: Expecting string: CONNECT
+*Mar  3 17:00:29.138: %LINEPROTO-5-UPDOWN: Line protocol on Interface Serial0/1,
+ changed state to down
+*Mar  3 17:00:42.560: CHAT65: Completed match for expect: CONNECT
+*Mar  3 17:00:42.560: CHAT65: Sending string: \c
+*Mar  3 17:00:42.560: CHAT65: Chat script 
+Dialout finished, status = Success
+
+!--- Chat script is successful. !--- Notice the Expect/Send Attributes and the time elapsed.
+
+*Mar  3 17:00:42.564: TTY65: destroy timer type 1
+*Mar  3 17:00:42.564: TTY65: destroy timer type 0
+*Mar  3 17:00:42.568: As65 IPCP: Install route to 172.22.53.0
+*Mar  3 17:00:44.567: %LINK-3-UPDOWN: Interface Async65, changed state to up
+ Dialer statechange to up Async65
+*Mar  3 17:00:44.571: As65 DDR: Dialer Watch: resetting call in progress
+ Dialer call has been placed Async65
+*Mar  3 17:00:44.571: As65 PPP: Treating connection as a callout
+
+!--- PPP negotiation begins.
+
+*Mar  3 17:00:44.571: As65 PPP: Phase is ESTABLISHING, Active Open
+*Mar  3 17:00:44.571: As65 LCP: O CONFREQ [Closed] id 11 len 25
+*Mar  3 17:00:44.571: As65 LCP:    ACCM 0x000A0000 (0x0206000A0000)
+*Mar  3 17:00:44.575: As65 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  3 17:00:44.575: As65 LCP:    MagicNumber 0x103EC1ED (0x0506103EC1ED)
+*Mar  3 17:00:44.575: As65 LCP:    PFC (0x0702)
+*Mar  3 17:00:44.575: As65 LCP:    ACFC (0x0802)
+*Mar  3 17:00:46.575: As65 LCP: TIMEout: State REQsent
+*Mar  3 17:00:46.575: As65 LCP: O CONFREQ [REQsent] id 12 Len 25
+*Mar  3 17:00:46.575: As65 LCP:    ACCM 0x000A0000 (0x0206000A0000)
+*Mar  3 17:00:46.575: As65 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  3 17:00:46.575: As65 LCP:    MagicNumber 0x103EC1ED (0x0506103EC1ED)
+*Mar  3 17:00:46.575: As65 LCP:    PFC (0x0702)
+*Mar  3 17:00:46.575: As65 LCP:    ACFC (0x0802)
+*Mar  3 17:00:46.703: As65 LCP: I CONFACK [REQsent] id 12 Len 25
+*Mar  3 17:00:46.707: As65 LCP:    ACCM 0x000A0000 (0x0206000A0000)
+*Mar  3 17:00:46.707: As65 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  3 17:00:46.707: As65 LCP:    MagicNumber 0x103EC1ED (0x0506103EC1ED)
+*Mar  3 17:00:46.707: As65 LCP:    PFC (0x0702)
+*Mar  3 17:00:46.707: As65 LCP:    ACFC (0x0802)
+*Mar  3 17:00:46.715: As65 LCP: I CONFREQ [ACKrcvd] id 21 Len 25
+*Mar  3 17:00:46.715: As65 LCP:    ACCM 0x000A0000 (0x0206000A0000)
+*Mar  3 17:00:46.715: As65 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  3 17:00:46.719: As65 LCP:    MagicNumber 0x30CB092E (0x050630CB092E)
+*Mar  3 17:00:46.719: As65 LCP:    PFC (0x0702)
+*Mar  3 17:00:46.719: As65 LCP:    ACFC (0x0802)
+*Mar  3 17:00:46.719: As65 LCP: O CONFACK [ACKrcvd] id 21 Len 25
+*Mar  3 17:00:46.719: As65 LCP:    ACCM 0x000A0000 (0x0206000A0000)
+*Mar  3 17:00:46.719: As65 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  3 17:00:46.723: As65 LCP:    MagicNumber 0x30CB092E (0x050630CB092E)
+*Mar  3 17:00:46.723: As65 LCP:    PFC (0x0702)
+*Mar  3 17:00:46.723: As65 LCP:    ACFC (0x0802)
+*Mar  3 17:00:46.723: As65 LCP: State is Open
+*Mar  3 17:00:46.723: As65 PPP: Phase is AUTHENTICATING, by both
+
+!--- Two-way PPP CHAP authentication begins.
+
+*Mar  3 17:00:46.723: As65 CHAP: O CHALLENGE id 7 Len 32 from "maui-rtr-10"
+*Mar  3 17:00:46.847: As65 CHAP: I CHALLENGE id 7 Len 32 from "maui-rtr-11"
+*Mar  3 17:00:46.851: As65 CHAP: O RESPONSE id 7 Len 32 from "maui-rtr-10"
+*Mar  3 17:00:46.967: As65 CHAP: I SUCCESS id 7 Len 4
+*Mar  3 17:00:46.971: As65 CHAP: I RESPONSE id 7 Len 32 from "maui-rtr-11"
+*Mar  3 17:00:46.975: As65 CHAP: O SUCCESS id 7 Len 4
+
+!--- Incoming and Outgoing CHAP authentication are successful.
+
+*Mar  3 17:00:46.975: As65 PPP: Phase is UP
+*Mar  3 17:00:46.979: As65 IPCP: O CONFREQ [Closed] id 8 Len 10
+
+!--- IP Control Protocol (IPCP) negotiation begins.
+
+*Mar  3 17:00:46.979: As65 IPCP:    Address 172.17.1.1 (0x0306AC110101)
+*Mar  3 17:00:46.979: As65 CDPCP: O CONFREQ [Closed] id 7 Len 4
+*Mar  3 17:00:47.087: As65 IPCP: I CONFREQ [REQsent] id 7 Len 10
+*Mar  3 17:00:47.091: As65 IPCP:    Address 172.22.1.1 (0x0306AC160101)
+*Mar  3 17:00:47.091: As65 IPCP: O CONFACK [REQsent] id 7 Len 10
+*Mar  3 17:00:47.091: As65 IPCP:    Address 172.22.1.1 (0x0306AC160101)
+*Mar  3 17:00:47.095: As65 CDPCP: I CONFREQ [REQsent] id 7 Len 4
+*Mar  3 17:00:47.095: As65 CDPCP: O CONFACK [REQsent] id 7 Len 4
+*Mar  3 17:00:47.099: As65 IPCP: I CONFACK [ACKsent] id 8 Len 10
+*Mar  3 17:00:47.099: As65 IPCP:    Address 172.17.1.1 (0x0306AC110101)
+*Mar  3 17:00:47.099: As65 IPCP: State is Open
+*Mar  3 17:00:47.103: As65 DDR: dialer protocol up
+*Mar  3 17:00:47.103: As65 IPCP: Remove route to 172.22.53.0
+*Mar  3 17:00:47.103: As65 CDPCP: I CONFACK [ACKsent] id 7 Len 4
+*Mar  3 17:00:47.107: As65 CDPCP: State is Open
+*Mar  3 17:00:47.107: As65 IPCP: Install route to 172.22.1.1
+*Mar  3 17:00:47.708: %LINEPROTO-5-UPDOWN: Line protocol on Interface Async65,
+ changed state to up
+
+!--- Async 65 (AUX Port) is UP.
+
+*Mar  3 17:01:14.572: As65 DDR: idle timeout
+
+!--- Idle timeout expires. !--- The router will check to see if the primary link has come up.
+
+*Mar  3 17:01:14.572: DDR: Dialer Watch: watch-group = 8
+*Mar  3 17:01:14.572: DDR:        network 172.22.53.0/255.255.255.0 UP,
+
+!--- A route for the watched network exists (due to the active backup link).
+
+*Mar  3 17:01:14.572: DDR:        primary DOWN
+
+!--- The primary network is down.
+
+*Mar  3 17:02:05.191: As65 DDR: idle timeout
+
+!--- Idle Timeout expires. !--- The router will check to see if the primary link has come up.
+
+*Mar  3 17:02:05.191: DDR: Dialer Watch: watch-group = 8
+*Mar  3 17:02:05.191: DDR:        network 172.22.53.0/255.255.255.0 UP,
+*Mar  3 17:02:05.191: DDR:        primary DOWN
+
+!--- The primary network is still down.
+
+*Mar  3 17:02:50.982: %LINK-3-UPDOWN: Interface Serial0/1, 
+changed state to up
+
+!--- Primary link is reestablished.
+
+*Mar  3 17:02:50.986: Se0/1 PPP: Treating connection as a dedicated line
+*Mar  3 17:02:50.986: Se0/1 PPP: Phase is ESTABLISHING, Active Open
+...
+...
+!--- Primary link PPP negotiation output omitted.
+
+...
+*Mar  3 17:02:51.039: Se0/1 IPCP: Install route to 192.168.10.1
+*Mar  3 17:02:52.020: %LINEPROTO-5-UPDOWN: Line protocol on Interface Serial0/1,
+ changed state to up
+*Mar  3 17:03:05.194: As65 DDR: idle timeout
+
+!--- Next Idle Timeout expires. !--- The router will check to see if the primary link has come up.
+
+*Mar  3 17:03:05.194: DDR: Dialer Watch: watch-group = 8
+*Mar  3 17:03:05.194: DDR:        network 172.22.53.0/255.255.255.0 UP,
+*Mar  3 17:03:05.194: DDR:        primary DOWN
+
+!--- Dialer watch considers the primary network still down. !--- Even though the primary link is "up," the OSPF table has not yet been exchanged. !--- The primary link is not considered up until the route is installed.
+
+*Mar  3 17:03:35.195: As65 DDR: idle timeout
+
+!--- Next idle timeout (30 seconds) expires. !--- The router will check to see if the primary link has come up.
+
+*Mar  3 17:03:35.195: DDR: Dialer Watch: watch-group = 8
+*Mar  3 17:03:35.195: DDR:        network 172.22.53.0/255.255.255.0 UP,
+
+!--- A route for the watched network exists. 
+
+*Mar  3 17:03:35.195: DDR:        primary UP
+
+!--- The primary network is up. !--- Dialer watch will initiate a disconnect of the backup link.
+
+*Mar  3 17:03:35.195: As65 DDR: starting watch disable timer
+
+!--- Delays disconnecting the backup interface after the primary !--- interface recovers. This timer is 15 seconds as configured !--- with the command dialer watch-disable 15.
+
+*Mar  3 17:03:50.196: As65 DDR: watch disable timeout
+
+!--- The 15 second disconnect delay expires. !--- The link will be immediately brought down.
+
+*Mar  3 17:03:50.196: As65 DDR: disconnecting call
+
+!--- Call on Async 65 (AUX Port) is disconnected.
+
+*Mar  3 17:03:50.196: TTY65: Async Int reset: Dropping DTR
+...
+...
+!--- Link tear-down messages omitted here.
+
+...
+*Mar  3 17:03:57.203: %LINK-3-UPDOWN: Interface Async65, changed state to down
+Related Information
+Modem-Router Connection Guide
+Dial Technology Support Page
+Technical Support - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+04-Feb-2010
+Initial Release
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Asynchronous Connections
+Dial-on-Demand Routing (DDR)

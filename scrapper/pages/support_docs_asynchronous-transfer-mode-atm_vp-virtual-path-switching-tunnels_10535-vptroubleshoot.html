@@ -1,0 +1,142 @@
+Troubleshooting TechNotes
+Troubleshooting VP Tunnels
+Save
+Translations
+Download
+Print
+
+Updated:November 15, 2007
+Document ID:10535
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Conventions
+Troubleshooting Scenarios
+Cannot Create a PVC within Unshaped or Shaped VP Tunnels
+Cannot Create Hierarchical VP Tunnels
+Cannot Make Two Switches Terminating Two Ends of a VP Tunnel Become PNNI Neighbors
+Cannot Establish SVC or Soft-VC through Regular or Shaped VP Tunnel
+Cannot Remove the atm pvp Command from the Configuration
+Related Information
+Introduction
+A Virtual Path Tunnel Interface (VPI) is a multiplexing/demultiplexing point on a Cisco ATM switch (LS1010 and Catalyst 8540-MSR) at which VCs (Virtual Channels) from various sources (ATM interfaces) are aggregated to a Virtual Path (VP) on an interface. VPs are ATM connections that consist of multiple VCs that all have same VPI number, and are often used when transporting traffic across a WAN. They pass through ATM switches that handle VP switching. This document focuses on the LS1010, Catalyst 8510-MSR, and the 8540-MSR switches.
+This document describes various troubleshooting tips to some common problems with VP tunnels. For background information on VP tunnels, read Understanding VP Tunnels and VP Switching.
+Prerequisites
+Requirements
+There are no specific requirements for this document.
+Components Used
+This document is not restricted to specific software and hardware versions.
+Conventions
+For more information on document conventions, refer to the Cisco Technical Tips Conventions.
+Troubleshooting Scenarios
+Cannot Create a PVC within Unshaped or Shaped VP Tunnels
+You are trying to configure a PVC in the main interface, rather than the VP's subinterface, and the switch is returning the following message: %connection creation fails:specified VPI belongs to a VP-Tunnel.
+Example of failure:
+ASP#configure
+Configuring from terminal, memory, or network [terminal]?
+Enter configuration commands, one per line.  End with CNTL/Z.
+ASP(config)#int atm 12/0/2   
+ASP(config-if)#atm pvc 10 100 int
+ASP(config-if)#atm pvc 10 100 interface atm 12/0/3 10 100
+%connection creation fails:specified VPI belongs to a VP-Tunnel
+Solution:
+Make sure you configure the VP on the subinterface corresponding to the VP (for VPI 10, use subinterface 10).
+ASP(config-if)#int atm 12/0/2.10
+ASP(config-subif)#atm pvc 10 100 interface atm 12/0/3.10 10 100
+ASP(config-subif)#
+You are trying to configure a PVC within a shaped or unshaped VP tunnel and the switch is returning the following message: %connection creation fails:specified VPI is different from VP-Tunnel VP.
+Example of Failure:
+8540-MSR(config-if)#atm pvc 0 100 interface atm2/1/0.6 5 100
+%connection creation fails: specified VPI is different from VP-Tunnel VPI
+Solution:
+Make sure the VPI number of the VC you are trying to configure on the VP tunnel is the same as the VPI number of the VP tunnel.
+You are trying to configure a VC within an unshaped VP tunnel and the switch is returning the following message: %connection creation fails: bad traffic parameters.
+Example of Failure - configuring a UBR PVC through a CBR tunnel that permits CBR VCs:
+8540-MSR(config-if)#atm pvc 0 100 interface atm2/1/0.6 6 100
+%connection creation fails: bad traffic parameters
+8540-MSR(config-if)#
+Solution:
+VCs within unshaped tunnels need to be of the same service category as the tunnel itself. Make sure that the VC you are configuring is of the same service category as the VP tunnel. Use the show atm vp vp number command to verify the service category of the VP tunnel.
+You are trying to configure a VC within a shaped VP tunnel and the switch is returning the following message: %connection creation fails: bad traffic parameters.
+Example of Failure - configuring a UBR PVC through a CBR tunnel that permits CBR VCs:
+8540-MSR(config-if)#atm pvc 0 100 interface atm2/1/0.6 6 100
+%connection creation fails: bad traffic parameters
+8540-MSR(config-if)#
+Solution:
+If you have a version of Cisco IOS® Software earlier than 11.3(0.8)TWA4 (only CBR VCs supported through CBR shaped tunnel), check the following:
+Make sure the service category of the VC is CBR. You can check that by verifying that the connection traffic table index of the PVC is specified as CBR in show atm connection. If you didn't specify the connection traffic table index when configuring that PVC, it defaults to UBR. This causes the PVC to fail.
+If the Cisco IOS Software version on the ATM switch is 11.3(0.8)TWA4 or later, check the following two items as well.
+If this is the first PVC to be configured in a shaped VP tunnel and its service category needs to be different than CBR, you need to disable CBR and enable a new service category (UBR in this example) by using the cac service-category cbr deny and cac service-category ubr permit commands.
+If there are other PVCs already configured in this shaped VP tunnel, make sure that the PVC you are unsuccessfully configuring is of the same service category as the already configured PVCs.
+You are trying to configure a VC within a shaped or unshaped VP tunnel and the switch is returning the following message: %connection creation fails: specified traffic/resource parameters are invalid.
+Example of failure - trying to configure 10Mb CBR VC through 10Mb CBR VP:
+8540-MSR(config-if)#$00 rx-cttr 63999 tx-cttr 63999 int 
+atm2/1/0.6 6 100
+%connection creation fails: specified traffic/resource parameters are invalid
+Solution:
+The total amount of allocated bandwidth by all VCs within a VP tunnel needs to be less than 95% of the allocated bandwidth of the VP tunnel.
+PCR is allocated for CBR connections.
+SCR is allocated for VBR connections.
+There is no bandwidth allocation for UBR and ABR connections unless MCR (minimum cell rate) is specified.
+Only 95% of bandwidth can be reserved because that 5% is reserved for un-guaranteed VCs on each physical interface of the LS1010 and catalyst 8500, as well as on the VP tunnel subinterface. You can see the amount of bandwidth allocated and available in the VP tunnel by using the show atm interface resource atmx/y/z.n command, where n is the VPI number of VP tunnel. For example, the following scenario involves a CBR tunnel with CBR VCs in the tunnel.
+If the creation of the first PVC in that tunnel fails, make sure that the requested PCR of the CBR PVC is less than 95% of the PCR of the VP tunnel. If other PVCs already exist in this tunnel but the new connection is failing, ensure that the sum of the PCRs of all PVCs in this tunnel does not exceed 95% of PCR of the tunnel. You can use the show atm connection command to find out the PCRs of all configured indexes. For example, with a CBR tunnel with VBR VCs in the tunnel, the sum of the SCRs of all the VCs in the tunnel needs to be less than 95% of the PCR of the VP tunnel.
+Cannot Create Hierarchical VP Tunnels
+You are trying to configure a hierarchical VP tunnel and the switch is returning the following message: %connection creation fails: specified traffic/resource parameters are invalid.
+Example of failure:
+8540-MSR(config-if)#atm pvp 15 hierarchical rx-cttr 63999 tx-cttr 63999
+% Hierarchical scheduling disabled.
+%connection creation fails: specified traffic/resource parameters are invalid
+Solution:
+You are attempting to configure a hierarchical VP tunnel and VP scheduling is not enabled. You can use the show atm resource command to see if hierarchical scheduling is enabled. The same message will appear if you configured hierarchical scheduling (i.e., you are seeing it in show run) but haven't re-loaded the switch after you configured it. Do following:
+Configure: atm hierarchical-tunnel.
+Save configuration (with the write memory command) and reload the switch.
+You are trying to configure a hierarchical VP tunnel and the switch is returning the following message: %All PVCs/PVPs (except well knowns) must be removed from the interface before configuring Hierarchical VP-Tunnels. %connection creation fails: specified traffic/resource parameters are invalid.
+Example of failure:
+8540-MSR(config-if)#atm pvp 15 hierarchical rx-cttr 63999 tx-cttr 63999
+% All PVCs/PVPs (except well knowns) must be removed from the
+ interface before configuring Hierarchical VP-Tunnels.
+%connection creation fails: specified traffic/resource parameters are invalid
+Solution:
+This message is generated when attempting to configure hierarchical a VP tunnel on an interface that already has another type of connection (like PVCs , SVCs, shaped and unshaped VP tunnels, VPs etc.). Use the show atm vc interface atm x/y/z and show atm vp interface atm x/y/z commands to see which connections are going through this physical interface that are not hierarchical VP tunnels. Remove all of those connections. Note that some of those connections might be SVCs (i.e., LANE SVCs) and in that case, you might need to clear those SVCs on a device other than this switch. For example, you may nee to shut down the LANE client on the router or switch attached to the ATM switch that you are using to configure VP tunnel.
+You are trying to configure hierarchical VP tunnels and the switch returns the following message: % Hierarchical Tunnels not allowed on msc 0 port 3. %connection creation fails: specified traffic/resource parameters are invalid.
+Example of failure:
+8540-MSR(config-if)#int atm1/1/0
+8540-MSR(config-if)#atm pvp 15 hierarchical rx-cttr 63999 tx-cttr 63999
+% Hierarchical Tunnels not allowed on msc 0 port 3.
+%connection creation fails: specified traffic/resource parameters are invalid
+8540-MSR(config-if)#
+Solution:
+You are attempting to create hierarchical VP tunnels on an interface that doesn't support it. Refer to Understanding VP Tunnels and VP Switching to find out which interfaces support hierarchical VP tunnels and configure it on that interface.
+Cannot Make Two Switches Terminating Two Ends of a VP Tunnel Become PNNI Neighbors
+If the state of the PNNI neighbors is still not "full" as shown with the show atm pnni neighbor command, check the following:
+Check that you are seeing the PNNI PVC locally on each switch with a VP tunnel. Use the show atm vc int atmx/y/z.n command where n is the VPI of the VP tunnel. The PNNI VC will be labeled as PNNI and its VPI/VCI pair will be n/18. If you don't see it, verify that the PNNI is not disabled on the subinterface. Try using a shut/no shut command and see if the PVC shows up.
+Cells might be dropped in an ATM network due to policing or on an LS1010 where shaping is configured. Significant cell drop might cause a drop of PNNI packets so that PNNI neighbors don't get established. If the service provider is policing, you need to make sure that you configured traffic shaping on the VP tunnel. If you do have traffic shaping configured properly, call the service provider and have them check if they are seeing cell drops on the VP you purchased.
+Cannot Establish SVC or Soft-VC through Regular or Shaped VP Tunnel
+An example of this type of problem is that LANE is not coming up or CES soft-PVC's are not getting established. Follow these steps:
+Check that the requested service category of SVC is the same as the permitted service category of the VP tunnel.
+Check that traffic parameters requested in the signaling setup message are less than the available bandwidth on the tunnel.
+Find out what service category and traffic parameters are requested and then follow the same troubleshooting steps for PVCs.
+Turn on the following non-intrusive debug and leave them on: debug atm sig-error. If this debug is not sufficient and if the switch is not too busy, complete the following more intrusive debug: debug atm sig-events interface x/y/z.n where n is the subinterface number (i.e., VPI number of the VP tunnel). However, please read this caution regarding debug commands before trying this.
+Cannot Remove the atm pvp Command from the Configuration
+You must remove the subinterface associated with this VP tunnel first. For example, use the following commands to remove this VP tunnel for VP tunnels with VPI=5:
+no interface atmx/y/z.5
+no atm pvp 5
+Related Information
+ATM Technology Support
+Virtual Path (VP) Switching and Tunnels
+Technical Support & Documentation - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+15-Nov-2007
+Initial Release
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+VP (Virtual Path) Switching and Tunnels

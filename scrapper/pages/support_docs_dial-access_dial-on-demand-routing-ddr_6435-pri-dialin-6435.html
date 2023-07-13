@@ -1,0 +1,835 @@
+Configuration Examples and TechNotes
+Configuring Dialin and Dialout on the Same T1/E1 PRI Circuits
+Save
+Translations
+Download
+Print
+
+Updated:September 14, 2005
+Document ID:6435
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Background Theory
+Related Products
+Conventions
+Configure
+Network Diagram
+Configurations
+Verify
+Troubleshoot
+Troubleshooting Resources
+Troubleshooting Commands
+Related Information
+Introduction
+This document describes how to configure an Access Server for incoming and outgoing calls on the same T1 PRI. The incoming and outgoing calls are all traffic-based and use Dial-on-Demand Routing (DDR) but do not provide backup for any other router. If you wish to configure an Access Server for Dialin calls only, refer to the document Configuring an Access Server with PRIs for incoming Async and ISDN Calls. To adapt this configuration to include backup, refer to the document Configuring and Troubleshooting DDR Backup.
+Prerequisites
+Requirements
+Step 1 - Configure and verify that the Dialin and Dialout clients are setup correctly. Since this configuration is focused on the central site NAS configuration, we do not include a sample configuration for clients. Some client sample configurations are included below:
+Dialin Client - Device that dials into the NAS:
+BRI w/Dialer Profiles: Configuring an Access Server with PRIs for incoming Async and ISDN Calls - Use the client 1600 series router (hostname maui-soho-01) configuration provided in the document.
+BRI w/Dialer Maps: Configuring BRI-to-BRI Dialup with DDR Dialer Maps - Use the client 1600 series router (hostname maui-soho-01) configuration provided in the document
+PRI: AS5300 Dialing out with ISDN/Async (Outbound DDR) - Use the central site AS5300 (hostname as5300) configuration. That document shows outbound DDR on an Access Server, which makes it appropriate as the Dialin client in this document.
+Dialout Client - Device that this NAS dials out to:
+BRI w/Dialer Profiles: Configuring ISDN DDR with Dialer Profiles - Use the central site 3640 series router (hostname maui-nas-04) configuration provided in the document
+BRI w/Dialer Maps: Configuring BRI-to-BRI Dialup with DDR Dialer Maps - Use the central site 3640 series router (hostname maui-nas-05) configuration provided in the document
+PRI: Configuring an Access Server with PRIs for incoming Async and ISDN Calls - Use the central site AS5300 series router (hostname maui-nas-02) configuration provided in the document. If the device the NAS dials out to is another Access Server with a T1/E1 PRI circuit, then configure that device as if it were a regular Access Server accepting dialin calls.
+Step 2 - Verify that the Telco circuits are functioning properly. You can use the show isdn status command to verify that the BRI or PRI circuit is functionting correctly. Refer to the document Using the show isdn status Command for BRI Troubleshooting for more information. You must also enable the T1/E1 PRI circuit for outbound calls. Contact your Telco to verify this information.
+Components Used
+This configuration was developed and tested using the software and hardware versions below.
+NAS: Cisco AS5300 with one T1 PRI circuit. This AS5300 is running Cisco IOS Software Release 12.2(5).
+Client: Cisco AS5300 with one T1 PRI circuit. This configuration is not included.
+Client: Cisco 1600 with one BRI circuit. This configuration is not included.
+Client: Cisco 804 with one BRI circuit. This configuration is not included.
+The information presented in this document was created from devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If you are working in a live network, ensure that you understand the potential impact of any command before using it.
+Background Theory
+In many situations, it may be necessary to use the same T1/E1 PRI circuit for Dialin and Dialout connections. The Network Access Sever (NAS) would support incoming calls from multiple ISDN users and it could also make outbound calls on the same PRI to another device. The outbound dial could also be used in a backup scenario, where the NAS would dial and connect to a peer that loses its primary WAN link.
+Related Products
+This configuration can be used with any router that has T1 or PRI cards. Hence, any AS5xxx series router with a T1 or PRI card can use this configuration. Cisco 2600 and 3600 series routers can also be configured to accept ISDN calls with a T1/PRI WAN interface card (WIC) or Network Module.
+This configuration can also be modified to be used with E1 or PRI ports. Configure the E1 controller with the linecoding, framing and other physical characteristics supplied by the Telco. The D-channel configuration (interface Serial x:15 for E1s) is similar to the one shown here.
+Conventions
+For more information on document conventions, see the Cisco Technical Tips Conventions.
+Configure
+In this section, you are presented with the information to configure the features described in this document.
+Note: To find additional information on the commands used in this document, use the IOS Command Lookup tool
+Network Diagram
+This document uses the network setup shown in the diagram below.
+Configurations
+There are two primary methods for configuring an Access Server to be able to make outgoing calls and accept incoming calls on the same T1/E1 PRI. These are Dialer Profiles and Dialer Rotary Groups. Each has its benefits and drawbacks, such as:
+Dialer Rotary Groups are simpler to configure and manage.
+Dialer Profiles need a separate dialer interface for each incoming and outgoing call.. If you have numerous incoming and outgoing peers then the configuration will be complicated to create and maintain.
+Dialer Profiles allow for client specific configuration. For example, you can specify that a certain client will be assigned an IP address from address pool A while another client will be assigned an address from pool B.
+Dialer Rotary Groups allow only the same parameters to be applied to all users. Per-user customization is not possible.
+Dialer Rotary Groups only allow a single interesting traffic definition for incoming and outgoing calls. Hence, you cannot configure the router to use one interesting traffic definition for incoming calls and another one for outgoing calls.
+Dialer Profiles allow for separate interesting traffic definitions for each peer.
+This document provides samples using Dialer Profiles and Dialer Rotary Groups on the NAS. Choose the method appropriate for your situation.
+Central Access Server with Dialer Profiles (AS5300)
+maui-nas-03#show running-config 
+Building configuration...
+
+Current configuration : 3351 bytes
+!
+! Last configuration change at 07:25:39 CDT Wed Oct 24 2001
+! NVRAM config last updated at 16:37:00 CDT Tue Oct 23 2001
+!
+version 12.2
+service timestamps debug datetime msec show-timezone
+service timestamps log datetime msec show-timezone
+service password-encryption
+!
+hostname maui-nas-03
+!
+aaa new-model
+aaa authentication login default local
+aaa authentication login NO_AUTHEN none
+aaa authentication ppp default local
+aaa authorization network default local 
+enable secret 5 <deleted>
+!
+username admin password 7 <deleted>
+username 800-isdn-client password 7 <deleted>
+username 1600-isdn-client password 7 <deleted>
+username 5300-client password 7 <deleted>
+username lanai-nas-01 password 7 <deleted>
+
+! -- Usernames for local authentication of the call. ! -- The client presents the username/password ! -- and the NAS authenticates the peer.
+
+spe 2/0 2/7
+ firmware location mica-modem-pw.2.7.3.0.bin
+!
+resource-pool disable
+!
+clock timezone CST -6
+clock summer-time CDT recurring
+ip subnet-zero
+!
+isdn switch-type primary-ni
+
+! -- Switch-type for this NAS. Obtain this information from the Telco.
+
+isdn voice-call-failure 0
+!
+controller T1 0
+
+! -- T1 PRI physical controller configuration.
+
+ framing esf
+
+! -- Framing for this T1 is Extended Super Frame (ESF). ! -- Obtain this information from the telco.
+
+ clock source line primary
+
+! -- T1 0 is the primary clock source for this NAS. ! -- Clock source must be specified for the timing ! -- and synchronization of the T1 carrier.
+
+ linecode b8zs
+
+! -- Linecoding for this T1. Obtain this information from the telco.
+
+ pri-group timeslots 1-24
+
+! -- For T1 PRI scenarios, all 24 T1 timeslots are assigned ! -- as ISDN PRI channels. The router will now automatically create the ! -- corresponding D-channel: interface Serial 0:23 ! ! -- The configurations for unused T1 controllers are omitted to save space. ! -- Unused T1s can be shutdown. 
+
+!
+interface Ethernet0
+ ip address 172.22.53.150 255.255.255.0
+!
+interface Serial0:23
+
+! -- D-channel configuration for T1 0.
+
+ no ip address
+ encapsulation ppp
+ dialer pool-member 10
+
+! -- Assign this D-channel as member of dialer pool 10. ! -- Dialer pool 10 is used by interface Dialer 1 and Dialer 2. ! -- All Dialer Interfaces for incoming calls should be configured ! -- to use this pool.
+
+ dialer pool-member 50 max-link 10
+
+! -- The D-channel is also a member of dialer pool 50. ! -- Dialer pool 50 is used by interface Dialer 100. ! -- The pool can use a maximum of 10 links and will be used for outgoing calls.
+ 
+ isdn switch-type primary-ni
+ isdn bchan-number-order ascending
+
+! -- B Channel Outgoing Call Order is ascending. ! -- Contact the Telco to determine whether the ISDN outbound trunk ! -- call selection is configured for ascending or descending on the switch.
+
+ no cdp enable
+ ppp authentication chap
+ ppp multilink
+
+! -- Allow multlink ppp on this interface.
+
+!
+interface FastEthernet0
+ no ip address
+ shutdown
+ duplex auto
+ speed auto
+!
+interface Dialer1
+ description For Dialin ISDN Client - austin-soho-01
+ ip unnumbered Ethernet0
+
+! -- The interface is unnumbered to conserve IP addresses.
+
+ encapsulation ppp
+ dialer pool 10
+
+! -- Defines the pool of physical resources from which the Dialer ! -- interface may draw B channels as needed. Interface Dialer 2 also ! -- uses this pool. Serial 0:23 is a member of this pool.
+
+ dialer remote-name 1600-isdn-client
+
+! -- Specifies remote router authenticated name and must match that used by ! -- the remote router to authenticate itself (which can be different from ! -- the router hostname). The router uses this remote-name to bind the ! -- incoming call to this dialer. without this command calls from ! -- 1600-isdn-client will fail after authentication.
+
+ dialer idle-timeout 0
+
+! -- Set an idle-timeout of infinity. ! -- The "zero" option for dialer idle-timeout was introduced in 12.1(3)T.
+
+ dialer-group 1
+
+! -- Apply interesting traffic definition from dialer-list 1. 
+
+ peer default ip address pool DIALIN
+
+! -- Clients are assigned addresses from the ip address pool named "DIALIN".
+
+ no fair-queue
+ ppp authentication chap callin
+ ppp multilink
+!
+interface Dialer2
+ description For Dialin ISDN Client - travis-soho-01
+ ip unnumbered Ethernet0
+ encapsulation ppp
+ dialer pool 10
+
+! -- Defines the pool of physical resources from which the Dialer ! -- interface may draw B channels as needed. Interface Dialer 1 ! -- also uses this pool. Serial 0:23 is a member of this pool.
+
+ dialer remote-name 800-isdn-client
+
+! -- Binds incoming calls from user "800-isdn-client" to this dialer.
+
+ dialer-group 1
+
+! -- Apply interesting traffic definition from dialer-list 1. 
+
+ peer default ip address pool DIALIN
+ pulse-time 0
+ ppp authentication chap callin
+ ppp multilink
+!
+interface Dialer100
+ description For Dialout Client - lanai-nas-01
+ ip unnumbered Ethernet0
+ encapsulation ppp
+ dialer pool 50
+
+! -- This dialer will draw resources from dialer pool 50 ! -- in which int serial 0:23 is the sole member. ! -- Since this dialer is used for dialout, ! -- the outgoing call will be sent to interface se 0:23.
+
+ dialer remote-name lanai-nas-01
+
+! -- Specifies remote router authenticated name and must match that used by ! -- the remote router to authenticate itself ! -- (which can be different from the router hostname).
+
+ dialer idle-timeout 900
+
+! -- Idle timeout for incoming calls is 900 seconds (15 mins). ! -- Users that are idle for more than 900 seconds will be dropped.
+
+ dialer string 81690 class 56k
+
+!--- Dial 81690 and use the map-class named "56k" (defined below).
+
+ dialer load-threshold 1 outbound
+
+! -- This sets the outbound load level for traffic at which ! -- additional connections will be added to the MP bundle load level. ! -- Values range from 1 (unloaded) to 255 (fully loaded). ! -- With a threshold of 1, additional links will be immediately ! -- brought up and added to the bundle.
+
+ dialer-group 3
+
+! -- Apply interesting traffic definition from dialer-list 3. ! -- Note: the interesting traffic definition for outbound ! -- calls is different than for incoming calls.
+
+ ppp authentication chap
+ ppp multilink
+
+! -- Allow multlink ppp.
+
+!         
+router eigrp 69
+ network 172.22.0.0
+ auto-summary
+ no eigrp log-neighbor-changes
+!
+ip local pool DIALIN 172.22.53.151 172.22.53.159
+
+! -- IP address pools for dialin clients.
+
+ip classless
+ip route 172.16.0.0 255.255.0.0 Dialer100
+
+! -- Static route for the 172.16.0.0/16 network. ! -- Interesting Traffic for that network ! -- will be sent to interface Dialer100 and the router ! -- will initiate the outbound call.
+
+no ip http server
+ip pim bidir-enable
+!
+!
+map-class dialer 56k
+
+!-- map-class named "56k" that was used with the dialer string in int Dialer100.
+
+ dialer isdn speed 56
+
+! -- Set the speed of the call to be 56k (default is 64k). ! -- This may not be neccessary for your connection. Consult your telco ! -- to find out if you need to configure the dial speed to 56k.
+
+access-list 101 remark Interesting traffic definition for dialin clients
+access-list 101 deny   eigrp any any
+access-list 101 deny   udp any any eq ntp
+access-list 101 permit ip any any
+
+! -- EIGRP and NTP traffic are tagged uninteresting for dialin clients.
+
+access-list 103 remark Interesting traffic for link lanai-nas-01
+access-list 103 deny   eigrp any any
+access-list 103 deny   udp any any eq ntp
+access-list 103 permit ip any any
+
+! -- EIGRP and NTP traffic are tagged uninteresting for the outbound dial. ! -- Eventhough the two interesting traffic definitions here are identical, ! -- they can be changed depending on your traffic patterns.
+
+dialer-list 1 protocol ip list 101
+
+!--- Interesting traffic is defined by access-list 101. !--- This is applied to interface Dialer 1 & 2 using the command dialer-group 1. !--- Note: The specified dialer-list number must be the same !--- as the dialer-group number; in this example, defined to be "1".
+
+dialer-list 3 protocol ip list 103
+!
+line con 0
+ exec-timeout 0 0
+ login authentication NO_AUTHEN
+line 1 48
+line aux 0
+line vty 0 4
+!
+ntp clock-period 17180029
+ntp server 172.22.53.1
+end
+The above Dialer Profile configuration has a separate dialer interface for each incoming and outgoing call. The dialer interfaces for the incoming calls are Dialer 1 and Dialer 2, while the dialer interface for the outgoing call is Dialer100. After the incoming call is authenticated, the router binds the call to the appropriate dialer interface based on the dialer remote-name. Only the dialer interface for the outgoing call (Dialer100) has a dialer string with the number to be dialed. Only Dialer100 includes the dialer load-threshold command, since it can dial the additional links depending on the inbound or outbound load (the default is outbound).
+The following configuration uses Dialer Rotary Groups for this scenario:
+Central Access Server w/Rotary Groups
+maui-nas-03#show running-config 
+Building configuration...
+
+Current configuration : 2436 bytes
+!
+! Last configuration change at 08:20:11 CDT Thu Oct 25 2001
+!
+version 12.2
+service timestamps debug uptime
+service timestamps log uptime
+service password-encryption
+!
+hostname maui-nas-03
+!
+aaa new-model
+aaa authentication login default local
+aaa authentication login NO_AUTHEN none
+aaa authentication ppp default local
+aaa authorization network default local 
+enable secret 5 <deleted>
+!
+username admin password 7 <deleted>
+username lanai-nas-01 password 7 <deleted>
+username 800-isdn-client password 7 <deleted>
+username 1600-isdn-client password 7 <deleted>
+spe 2/0 2/7
+ firmware location mica-modem-pw.2.7.3.0.bin
+!
+resource-pool disable
+!
+clock timezone CST -6
+clock summer-time CDT recurring
+ip subnet-zero
+!
+isdn switch-type primary-ni
+!
+controller T1 0
+ framing esf
+ clock source line primary
+ linecode b8zs
+ pri-group timeslots 1-24
+!
+
+! -- The configuration for unused T1 controllers are omitted to save space. ! -- Unused T1s can be shutdown.
+
+!
+interface Ethernet0
+ ip address 172.22.53.150 255.255.255.0
+!
+interface Serial0:23
+
+! -- D-channel configuration for T1 0.
+
+ no ip address
+ encapsulation ppp
+ dialer rotary-group 1
+
+! -- T1 0 is a member of rotary group 1. ! -- The rotary group configuration is in interface Dialer 1. ! -- Note: this command was not included in the dialer profile configuration.
+
+ isdn switch-type primary-ni
+ isdn bchan-number-order ascending
+ no peer default ip address
+ no cdp enable
+ ppp authentication chap
+ ppp multilink
+!
+interface FastEthernet0
+ no ip address
+ shutdown
+ duplex auto
+ speed auto
+!
+interface Dialer1
+
+!--- Configuration for rotary group 1. !--- The Dialer interface number (1) must exactly match rotary group number !--- configured on the physical interfaces(interface Serial 0:23).
+
+ ip unnumbered Ethernet0
+
+! -- This dialer is unnumbered to ethernet 0.
+
+ encapsulation ppp
+ dialer in-band
+
+! -- Enable this dialer interface to be a DDR interface.
+
+ dialer idle-timeout 900
+
+! -- Idle timeout for incoming calls is 900 seconds (15 mins). ! -- Users that are idle for more than 900 seconds will be dropped. ! -- If dialer in-band is used and a dialer idle-timeout is not defined, then ! -- the default idle-timeout of 120 seconds (2min) will be applied.
+
+ dialer map ip 172.16.1.1 name lanai-nas-01 speed 56 broadcast 81690
+
+! -- Dialer map for the outbound dial. Add a dialer map for every router ! -- that needs to be dialed. Inbound calls do not need dialer maps. ! -- They will be dynmamically created.
+
+ dialer load-threshold 1 outbound
+
+! -- This sets the outbound load level for Multlink PPP at 1/255.
+
+ dialer-group 1
+
+!--- Apply interesting traffic definition from dialer-list 1. ! -- Note: The specified dialer-group number must be the same as ! -- the dialer-list number; in this example, defined to be "1". 
+
+ peer default ip address pool DIALIN
+
+! -- clients are assigned addresses from the ip address pool named "DIALIN".
+
+ no cdp enable
+ ppp authentication chap
+ ppp multilink
+ multilink max-links 5
+!
+router eigrp 69
+ network 172.22.0.0
+ auto-summary
+ no eigrp log-neighbor-changes
+!
+ip local pool DIALIN 172.22.53.151 172.22.53.159
+ip classless
+ip route 172.16.0.0 255.255.0.0 172.16.1.1
+ip route 172.16.1.1 255.255.255.255 Dialer1
+no ip http server
+ip pim bidir-enable
+!
+!
+access-list 101 remark Interesting traffic definition
+access-list 101 deny   eigrp any any
+access-list 101 deny   udp any any eq ntp
+access-list 101 permit ip any any
+dialer-list 1 protocol ip list 101
+
+! -- Interesting traffic is defined by dialer-list 1. ! -- This is applied to interface Dialer 1 using dialer-group 1. ! -- The interesting traffic definition for inbound and outbound calls ! -- is the same. If you want different interesting traffic definition ! -- for inbound and outbound calls use dialer profiles.
+
+!
+line con 0
+ login authentication NO_AUTHEN
+line 1 48
+line aux 0
+line vty 0 4
+!
+ntp clock-period 17179882
+ntp server 172.22.53.1
+end
+In the above dialer rotary group configuration, the dialer interface has a single dialer map used to dialout. Configure a dialer map for every peer that needs to be dialed.
+Note: Incoming calls do not need dialer maps as they are dynamically created. This can be verified using the command show dialer map. An example is shown below:
+maui-nas-03#show dialer map
+Dynamic dialer map ip 172.22.53.152 name 1600-isdn-client () on Di1
+
+! -- Dynamic dialer map for 1600-isdn-cliet created from Dialer1 ! -- (the rotary group interface).
+
+Dynamic dialer map ip 172.22.53.151 name 800-isdn-client () on Di1
+
+! -- Dynamic dialer map for 800-isdn-cliet created from Dialer1 ! -- (the rotary group interface).
+
+Static dialer map ip 172.16.1.1 name lanai-nas-01 (81690) on Di1
+
+! -- Static map configured on Dialer 1 was applied to this link ! -- connected to lanai-nas-01.
+Verify
+This section provides information you can use to confirm your configuration is working properly.
+Certain show commands are supported by the Output Interpreter tool, which allows you to view an analysis of show command output.
+show isdn status - Ensures that the router is properly communicating with the ISDN switch. In the output, verify that Layer 1 Status is ACTIVE, and that the Layer 2 Status state = MULTIPLE_FRAME_ESTABLISHED appears. This command also displays the number of active calls.
+show ppp multilink - Displays information on multilink bundles that are active. This command should be used to verify the multilink connection.
+show dialer [interface type number] - Displays general diagnostic information for interfaces configured for DDR. If the dialer came up properly, the Dialer state is data link layer up message should appear. If physical layer up appears, then the line protocol came up, but the Network Control Protocol (NCP) did not. The source and destination addresses of the packet that initiated the dialing are shown in the Dial reason line. This show command also displays the timer's configuration and the time before the connection times out.
+show caller user username detail - Shows parameters for the particular user such as the IP address assigned, PPP and PPP bundle parameters, and so on. If your version of Cisco IOS software does not support this command, use the show user command.
+show dialer map - Displays configured dynamic and static dialer maps. This command can be used to see if a dynamic dialer map was created. Without a dialer map, you cannot route packets.
+Below are some show command outputs for successful calls. Pay attention to the bolded sections and the comments provided in the outputs. Compare the output that you obtain with the result shown below.
+maui-nas-03#show isdn status
+Global ISDN Switchtype = primary-ni
+ISDN Serial0:23 interface
+        dsl 0, interface ISDN Switchtype = primary-ni
+    Layer 1 Status:
+        ACTIVE
+    Layer 2 Status:
+        TEI = 0, Ces = 1, SAPI = 0, State = MULTIPLE_FRAME_ESTABLISHED
+
+ ! -- Layer 1 is ACTIVE and Layer 2 is MULTIPLE FRAME ESTABLISHED.
+
+    Layer 3 Status:
+        0 Active Layer 3 Call(s)
+    Active dsl 0 CCBs = 0
+    The Free Channel Mask:  0x807FFFFF
+    Number of L2 Discards = 0, L2 Session ID = 0
+    Total Allocated ISDN CCBs = 0
+
+maui-nas-03#show isdn service
+PRI Channel Statistics:
+ISDN Se0:23, Channel [1-24]
+  Configured Isdn Interface (dsl) 0
+   Channel State (0=Idle 1=Proposed 2=Busy 3=Reserved 4=Restart 5=Maint_Pend)
+    Channel :  1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4
+    State   :  0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3 
+   Service State (0=Inservice 1=Maint 2=Outofservice)
+    Channel :  1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4
+    State   :  0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2 
+
+! -- All channels are Inservice.
+
+
+maui-nas-03#show user
+    Line       User       Host(s)              Idle       Location
+*  0 con 0                idle                 00:00:00   
+
+  Interface      User        Mode                     Idle     Peer Address
+  Di100        lanai-nas- PPP   Bundle        00:00:35 172.16.1.1
+
+ ! -- Connection to lanai-nas-01 uses int Dialer 100.
+
+  Di2          800-isdn-c PPP   Bundle        00:00:22 172.22.53.154
+  
+! -- Connection to 800-isdn-client uses int Dialer 2.
+
+  Di1          1600-isdn- PPP   Bundle        00:01:29 172.22.53.153
+ 
+ ! -- Connection to 1600-isdn-client uses int Dialer 1.
+
+  Se0:0        lanai-nas- Sync PPP                    -   Bundle: Di100
+  Se0:1        lanai-nas- Sync PPP                    -   Bundle: Di100
+  Se0:2        1600-isdn- Sync PPP                    -   Bundle: Di1
+  Se0:3        1600-isdn- Sync PPP                    -   Bundle: Di1
+  Se0:4        lanai-nas- Sync PPP                    -   Bundle: Di100
+  Se0:5        lanai-nas- Sync PPP                    -   Bundle: Di100
+  Se0:6        lanai-nas- Sync PPP                    -   Bundle: Di100
+  Se0:7        800-isdn-c Sync PPP                    -   Bundle: Di2
+  Se0:8        800-isdn-c Sync PPP                    -   Bundle: Di2
+
+ ! -- Two B-channels are connected to 800-isdn-client (Se0:7-Se0:8) and ! -- 1600-isdn-client (Se0:2-Se0:3). Five other B-channels ! -- (Se0:0-Se0:1 and Se0:4-Se0:6) are connected to lanai-nas-01.
+
+
+maui-nas-03#show ppp multilink 
+
+Dialer2, bundle name is 800-isdn-client
+
+ ! -- int Dialer 2 controls multilink bundle to 800-isdn-client.
+
+  Bundle up for never
+  0 lost fragments, 0 reordered, 0 unassigned
+  0 discarded, 0 lost received, 1/255 load
+  0x8 received sequence, 0xC sent sequence
+  Member links: 2 (max not set, min not set)
+    Serial0:7, since 00:00:16, last rcvd seq 000006
+    Serial0:8, since 00:00:15, last rcvd seq 000007
+
+ ! -- B-channels Se0:7 and Se0:8 are connected.
+
+
+Dialer100, bundle name is lanai-nas-01
+
+! -- int Dialer 100 controls multilink bundle to lanai-nas-01.
+
+  Bundle up for never
+  0 lost fragments, 0 reordered, 0 unassigned
+  0 discarded, 0 lost received, 1/255 load
+  0x33 received sequence, 0x33 sent sequence
+  Member links: 5 (max not set, min not set)
+    Serial0:0, since 00:02:08, last rcvd seq 000032
+    Serial0:1, since 00:02:05, last rcvd seq 00002E
+    Serial0:4, since 00:01:35, last rcvd seq 00002F
+    Serial0:5, since 00:01:05, last rcvd seq 000030
+    Serial0:6, since 00:00:35, last rcvd seq 000031
+
+ ! -- B-channels Se0:0-Se0:1 and Se0:4-Se0:6 are connected.
+
+
+Dialer1, bundle name is 1600-isdn-client
+
+! -- int Dialer 100 controls multilink bundle to 1600-isdn-client.
+
+  Bundle up for never
+  0 lost fragments, 1 reordered, 0 unassigned
+  0 discarded, 0 lost received, 1/255 load
+  0x28 received sequence, 0x7B sent sequence
+  Member links: 2 (max not set, min not set)
+    Serial0:2, since 00:06:24, last rcvd seq 000026
+    Serial0:3, since 00:06:22, last rcvd seq 000027
+
+ ! -- B-channels Se0:2 and Se0:3 are connected.
+Troubleshoot
+This section provides information you can use to troubleshoot your configuration.
+Troubleshooting Resources
+Use the following troubleshooting resources as required:
+Incoming ISDN Call Troubleshooting - For ISDN call failure troubleshooting.
+PRI ISDN Callin - Additional information on troubleshooting ISDN call failures.
+T1 troubleshooting flowchart - Use this flowchart if you suspect that the T1 circuit is not working properly.
+T1 PRI Troubleshooting - Troubleshooting procedure for ISDN PRI circuits.
+Loopback Tests for T1/56K Lines - To verify that the T1 port on the router is functioning correctly.
+Using the show isdn status Command for BRI Troubleshooting - Use this document for BRI troubleshooting.
+Troubleshooting ISDN BRI Layer 3 using the debug isdn q931 Command - Use this document ISDN Layer 3 troubleshooting.
+Troubleshooting Commands
+Certain show commands are supported by the Output Interpreter tool, which allows you to view an analysis of show command output.
+Note: Before issuing debug commands, please see Important Information on Debug Commands.
+debug dialer - Displays DDR debugging information about the packets received on a dialer interface. This information can help to ensure there is interesting traffic that can use the dialer interface.
+debug isdn q931 - Shows call setup and tear down of the ISDN network connection (Layer 3).
+debug ppp negotiation - Displays information on the PPP traffic and exchanges while negotiating Link Control Protocol (LCP), Authentication, and Network Control Protocol (NCP). A successful PPP negotiation will first open the LCP state, then Authenticate, and finally negotiate NCP. Multilink Parameters such as Maximum Receive Reconstructed Unit (MRRU) are established during LCP negotiation.
+debug ppp authentication - Displays PPP authentication protocol messages, including CHAP packet exchanges and Password Authentication Protocol (PAP) exchanges.
+debug ppp error - Displays protocol errors and error statistics associated with PPP connection negotiation and operation.
+Below is the debug outputs for a successful outgoing call. Pay attention to the bolded sections and the comments provided in the outputs. Compare the output that you obtain with the result shown below.
+maui-nas-03#debug dialer
+Dial on demand events debugging is on
+maui-nas-03#debug ppp negotiation
+PPP protocol negotiation debugging is on
+maui-nas-03#debug ppp authentication
+PPP authentication debugging is on
+maui-nas-03#debug isdn q931
+ISDN Q931 packets debugging is on
+
+maui-nas-03#ping 172.16.1.1
+
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 172.16.1.1, timeout is 2 seconds:
+
+Oct 24 12:56:16.205 UTC: Se0:23 DDR: rotor dialout [priority]
+Oct 24 12:56:16.205 UTC: Se0:23 DDR: Dialing cause ip 
+(s=172.22.53.150, d=172.16.1.1)
+
+! -- The dialing cause is a ping for 172.16.1.1. ! -- ICMP is tagged as interesting.
+
+Oct 24 12:56:16.205 UTC: Se0:23 DDR: Attempting to dial 81690
+Oct 24 12:56:16.205 UTC: ISDN Se0:23: TX -> SETUP pd = 8  callref = 0x0063
+
+! -- Outgoing ISDN Q.931 SETUP message.
+
+Oct 24 12:56:16.205 UTC:         Bearer Capability i = 0x8890218F
+Oct 24 12:56:16.205 UTC:         Channel ID i = 0xA98381
+Oct 24 12:56:16.209 UTC:         Called Party Number i = 0x80, '81690', 
+Plan:Unknown, Type:Unknown
+Oct 24 12:56:16.241 UTC: ISDN Se0:23: RX <- CALL_PROC pd = 8  callref = 0x8063
+Oct 24 12:56:16.241 UTC:         Channel ID i = 0xA98381
+Oct 24 12:56:16.285 UTC: ISDN Se0:23: RX <- CONNECT pd = 8  callref = 0x8063
+
+! -- Received Q.931 CONNECT message.
+
+Oct 24 12:56:16.297 UTC: %LINK-3-UPDOWN: Interface Serial0:0, changed state to up
+Oct 24 12:56:16.297 UTC: Se0:0: interface must be fifo queue, force fifo
+Oct 24 12:56:16.297 UTC: %DIALER-6-BIND: Interface Se0:0 bound to profile Di100
+Oct 24 12:56:16.297 UTC: Se0:0 PPP: Treating connection as a callout
+Oct 24 12:56:16.297 UTC: Se0:0 PPP: Phase is ESTABLISHING, 
+Active Open [0 sess, 1 load]
+Oct 24 12:56:16.301 UTC: Se0:0 LCP: O CONFREQ [Closed] id 12 len 33
+Oct 24 12:56:16.301 UTC: Se0:0 LCP:    AuthProto CHAP (0x0305C22305)
+Oct 24 12:56:16.301 UTC: Se0:0 LCP:    MagicNumber 0xE384A4CD (0x0506E384A4CD)
+Oct 24 12:56:16.301 UTC: Se0:0 LCP:    MRRU 1524 (0x110405F4)
+Oct 24 12:56:16.301 UTC: Se0:0 LCP:    EndpointDisc 1 maui-nas-03 
+(0x130E016D6175692D6E61732D3033)
+Oct 24 12:56:16.301 UTC: ISDN Se0:23: TX -> CONNECT_ACK pd = 8  callref = 0x0063
+Oct 24 12:56:16.317 UTC: Se0:0 LCP: I CONFREQ [REQsent] id 10 len 34
+Oct 24 12:56:16.317 UTC: Se0:0 LCP:    AuthProto CHAP (0x0305C22305)
+Oct 24 12:56:16.317 UTC: Se0:0 LCP:    MagicNumber 0x54F49B93 (0x050654F49B93)
+Oct 24 12:56:16.321 UTC: Se0:0 LCP:    MRRU 1524 (0x110405F4)
+Oct 24 12:56:16.321 UTC: Se0:0 LCP:    EndpointDisc 1 lanai-nas-01 
+(0x130F016C616E61692D6E61732D3031)
+Oct 24 12:56:16.321 UTC: Se0:0 LCP: O CONFACK [REQsent] id 10 len 34
+Oct 24 12:56:16.321 UTC: Se0:0 LCP:    AuthProto CHAP (0x0305C22305)
+Oct 24 12:56:16.321 UTC: Se0:0 LCP:    MagicNumber 0x54F49B93 (0x050654F49B93)
+Oct 24 12:56:16.321 UTC: Se0:0 LCP:    MRRU 1524 (0x110405F4)
+Oct 24 12:56:16.321 UTC: Se0:0 LCP:    EndpointDisc 1 lanai-nas-01 
+(0x130F016C616E61692D6E61732D3031)
+Oct 24 12:56:16.325 UTC: Se0:0 LCP: I CONFACK [ACKsent] id 12 len 33
+Oct 24 12:56:16.325 UTC: Se0:0 LCP:    AuthProto CHAP (0x0305C22305)
+Oct 24 12:56:16.325 UTC: Se0:0 LCP:    MagicNumber 0xE384A4CD (0x0506E384A4CD)
+Oct 24 12:56:16.325 UTC: Se0:0 LCP:    MRRU 1524 (0x110405F4)
+Oct 24 12:56:16.325 UTC: Se0:0 LCP:    EndpointDisc 1 maui-nas-03 
+(0x130E016D6175692D6E61732D3033)
+Oct 24 12:56:16.325 UTC: Se0:0 LCP: State is Open
+
+! -- LCP negotation is complete.
+
+Oct 24 12:56:16.325 UTC: Se0:0 PPP: Phase is AUTHENTICATING, 
+by both [0 sess, 1 load]
+Oct 24 12:56:16.325 UTC: Se0:0 CHAP: O CHALLENGE id 8 len 32 from "maui-nas-03"
+Oct 24 12:56:16.337 UTC: Se0:0 CHAP: I CHALLENGE id 10 len 33 from "lanai-nas-01"
+Oct 24 12:56:16.341 UTC: Se0:0 CHAP: O RESPONSE id 10 len 32 from "maui-nas-03"
+Oct 24 12:56:16.353 UTC: Se0:0 CHAP: I SUCCESS id 10 len 4
+Oct 24 12:56:16.357 UTC: Se0:0 CHAP: I RESPONSE id 8 len 33 from "lanai-nas-01"
+Oct 24 12:56:16.361 UTC: Se0:0 CHAP: O SUCCESS id 8 len 4
+
+! -- Two-way CHAP authentication is successful.
+
+Oct 24 12:56:16.361 UTC: Se0:0 PPP: Phase is VIRTUALIZED [0 sess, 1 load]
+Oct 24 12:56:16.361 UTC: Di100 DDR: Authenticated host lanai-nas-01 
+with no matching dialer map
+Oct 24 12:56:16.361 UTC: Di100 PPP: Phase is UP [0 sess, 1 load]
+Oct 24 12:56:16.361 UTC: Di100 IPCP: O CONFREQ [Closed] id 6 len 10
+Oct 24 12:56:16.361 UTC: Di100 IPCP:    Address 172.22.53.150 (0x0306AC163596)
+Oct 24 12:56:16.361 UTC: Di100 CDPCP: O CONFREQ [Closed] id 6 len 4
+Oct 24 12:56:16.365 UTC: Di100 MLP: Added first link Se0:0 to bundle lanai-nas-01
+Oct 24 12:56:16.365 UTC: Di100 PPP: Treating connection as a callout
+Oct 24 12:56:16.377 UTC: Di100 IPCP: I CONFREQ [REQsent] id 1 len 10
+Oct 24 12:56:16.377 UTC: Di100 IPCP:    Address 172.16.1.1 (0x0306AC100101)
+Oct 24 12:56:16.377 UTC: Di100 IPCP: O CONFACK [REQsent] id 1 len 10
+Oct 24 12:56:16.377 UTC: Di100 IPCP:    Address 172.16.1.1 (0x0306AC100101)
+Oct 24 12:56:16.381 UTC: Di100 IPCP: I CONFACK [ACKsent] id 6 len 10
+Oct 24 12:56:16.381 UTC: Di100 IPCP:    Address 172.22.53.150 (0x0306AC163596)
+Oct 24 12:56:16.381 UTC: Di100 IPCP: State is Open
+Oct 24 12:56:16.381 UTC: Di100 DDR: dialer protocol up
+Oct 24 12:56:16.381 UTC: Di100 IPCP: Install route to 172.16.1.1
+
+! -- A route to the peer is installed.
+
+Oct 24 12:56:17.361 UTC: %LINEPROTO-5-UPDOWN: Line protocol on Interface Serial0:0, 
+changed state to up
+Oct 24 12:56:19.113 UTC: Se0:23 DDR: rotor dialout [priority]
+
+! -- Second call is being dialed.
+
+Oct 24 12:56:19.113 UTC: Se0:23 DDR: Attempting to dial 81690
+Oct 24 12:56:19.113 UTC: ISDN Se0:23: TX -> SETUP pd = 8  callref = 0x0064
+Oct 24 12:56:19.113 UTC:         Bearer Capability i = 0x8890218F
+Oct 24 12:56:19.113 UTC:         Channel ID i = 0xA98382
+Oct 24 12:56:19.113 UTC:         Called Party Number i = 0x80, '81690', 
+Plan:Unknown, Type:Unknown
+Oct 24 12:56:19.141 UTC: ISDN Se0:23: RX <- CALL_PROC pd = 8  callref = 0x8064
+Oct 24 12:56:19.141 UTC:         Channel ID i = 0xA98382
+Oct 24 12:56:19.205 UTC: ISDN Se0:23: RX <- CONNECT pd = 8  callref = 0x8064
+Oct 24 12:56:19.217 UTC: %LINK-3-UPDOWN: Interface Serial0:1, 
+changed state to up
+Oct 24 12:56:19.217 UTC: Se0:1: interface must be fifo queue, force fifo
+Oct 24 12:56:19.217 UTC: %DIALER-6-BIND: Interface Se0:1 bound to profile Di100
+Oct 24 12:56:19.217 UTC: %ISDN-6-CONNECT: 
+Interface Serial0:0 is now connected to 81690 lanai-nas-01
+Oct 24 12:56:19.221 UTC: Se0:1 PPP: Treating connection as a callout
+Oct 24 12:56:19.221 UTC: Se0:1 PPP: Phase is ESTABLISHING, Active Open 
+[0 sess, 1 load]
+Oct 24 12:56:19.221 UTC: Se0:1 LCP: O CONFREQ [Closed] id 14 len 33
+Oct 24 12:56:19.221 UTC: Se0:1 LCP:    AuthProto CHAP (0x0305C22305)
+Oct 24 12:56:19.221 UTC: Se0:1 LCP:    MagicNumber 0xE384B037 
+(0x0506E384B037)
+Oct 24 12:56:19.221 UTC: Se0:1 LCP:    MRRU 1524 (0x110405F4)
+Oct 24 12:56:19.221 UTC: Se0:1 LCP:    EndpointDisc 1 maui-nas-03 
+(0x130E016D6175692D6E61732D3033)
+Oct 24 12:56:19.221 UTC: ISDN Se0:23: TX -> CONNECT_ACK pd = 8  
+callref = 0x0064
+Oct 24 12:56:19.241 UTC: Se0:1 LCP: I CONFREQ [REQsent] id 11 len 34
+Oct 24 12:56:19.241 UTC: Se0:1 LCP:    AuthProto CHAP (0x0305C22305)
+Oct 24 12:56:19.241 UTC: Se0:1 LCP:    MagicNumber 0x54F4A700 
+(0x050654F4A700)
+Oct 24 12:56:19.241 UTC: Se0:1 LCP:    MRRU 1524 (0x110405F4)
+Oct 24 12:56:19.241 UTC: Se0:1 LCP:    EndpointDisc 1 lanai-nas-01 
+(0x130F016C616E61692D6E61732D3031)
+Oct 24 12:56:19.241 UTC: Se0:1 LCP: O CONFACK [REQsent] id 11 len 34
+Oct 24 12:56:19.241 UTC: Se0:1 LCP:    AuthProto CHAP (0x0305C22305)
+Oct 24 12:56:19.241 UTC: Se0:1 LCP:    MagicNumber 0x54F4A700 
+(0x050654F4A700)
+Oct 24 12:56:19.241 UTC: Se0:1 LCP:    MRRU 1524 (0x110405F4)
+Oct 24 12:56:19.241 UTC: Se0:1 LCP:    EndpointDisc 1 lanai-nas-01 
+(0x130F016C616E61692D6E61732D3031)
+Oct 24 12:56:19.245 UTC: Se0:1 LCP: I CONFACK [ACKsent] id 14 len 33
+Oct 24 12:56:19.245 UTC: Se0:1 LCP:    AuthProto CHAP (0x0305C22305)
+Oct 24 12:56:19.245 UTC: Se0:1 LCP:    MagicNumber 0xE384B037 (0x0506E384B037)
+Oct 24 12:56:19.245 UTC: Se0:1 LCP:    MRRU 1524 (0x110405F4)
+Oct 24 12:56:19.245 UTC: Se0:1 LCP:    EndpointDisc 1 maui-nas-03 
+(0x130E016D6175692D6E61732D3033)
+Oct 24 12:56:19.245 UTC: Se0:1 LCP: State is Open
+Oct 24 12:56:19.245 UTC: Se0:1 PPP: Phase is AUTHENTICATING, by both 
+[0 sess, 1 load]
+Oct 24 12:56:19.245 UTC: Se0:1 CHAP: O CHALLENGE id 8 len 32 from "maui-nas-03"
+Oct 24 12:56:19.257 UTC: Se0:1 CHAP: I CHALLENGE id 11 len 33 from "lanai-nas-01"
+Oct 24 12:56:19.261 UTC: Se0:1 CHAP: O RESPONSE id 11 len 32 from "maui-nas-03"
+Oct 24 12:56:19.273 UTC: Se0:1 CHAP: I SUCCESS id 11 len 4
+Oct 24 12:56:19.281 UTC: Se0:1 CHAP: I RESPONSE id 8 len 33 from "lanai-nas-01"
+Oct 24 12:56:19.281 UTC: Se0:1 CHAP: O SUCCESS id 8 len 4
+! -- Authentication is successful.
+Oct 24 12:56:19.281 UTC: Se0:1 PPP: Phase is VIRTUALIZED [0 sess, 1 load]
+Oct 24 12:56:19.281 UTC: Di100 MLP: Added link Se0:1 to bundle lanai-nas-01
+
+! -- The link is added to the Multilink bundle.
+
+Oct 24 12:56:20.281 UTC: %LINEPROTO-5-UPDOWN: Line protocol on 
+Interface Serial0:1, changed state to up
+Oct 24 12:56:25.221 UTC: %ISDN-6-CONNECT: Interface Serial0:1 
+is now connected to 81690 lanai-nas-01
+Oct 24 12:56:49.117 UTC: Se0:23 DDR: rotor dialout [priority]
+
+! -- Third call is being dialed.
+
+Oct 24 12:56:49.117 UTC: Se0:23 DDR: Attempting to dial 81690
+Oct 24 12:56:49.117 UTC: ISDN Se0:23: TX -> SETUP pd = 8  callref = 0x0065
+Oct 24 12:56:49.117 UTC:         Bearer Capability i = 0x8890218F
+Oct 24 12:56:49.117 UTC:         Channel ID i = 0xA98385
+Oct 24 12:56:49.117 UTC:         Called Party Number i = 0x80, '81690', 
+Plan:Unknown, Type:Unknown
+...
+...
+
+! -- Output Omitted.
+
+...
+Oct 24 12:56:49.261 UTC: Se0:4 PPP: Phase is VIRTUALIZED [0 sess, 1 load]
+Oct 24 12:56:49.261 UTC: Di100 MLP: Added link Se0:4 to bundle lanai-nas-01
+
+! -- The 3rd link is added to the bundle.
+
+Oct 24 12:56:50.261 UTC: %LINEPROTO-5-UPDOWN: Line protocol on 
+Interface Serial0:4, changed state to up
+Oct 24 12:56:55.198 UTC: %ISDN-6-CONNECT: Interface Serial0:4 
+is now connected to 81690 lanai-nas-01  
+...
+...
+...
+Related Information
+AS5300 Dialing out with ISDN/Async (Outbound DDR)
+Technical Support - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+14-Sep-2005
+Initial Release
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Configuring and Troubleshooting Dialer Profiles
+Understanding and Troubleshooting Idle Timeouts
+Dialup Technology: Overviews and Explanations
++ Show 2 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Asynchronous Connections
+Dial-on-Demand Routing (DDR)
+Integrated Services Digital Networks (ISDN), Channel-Associated Signaling (CAS)
+Point-to-Point Protocol (PPP)
+T1/E1 & T3/E3

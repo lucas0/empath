@@ -1,0 +1,226 @@
+Troubleshooting TechNotes
+ASR1000 OTV Deployment Modes (OTV on a Stick)
+Save
+Translations
+Download
+Print
+
+
+
+Updated:March 28, 2017
+Document ID:210440
+Bias-Free Language
+Contents
+Introduction
+Prerequistes
+Requirements
+Components Used 
+Background Information
+Theory 
+Network Diagram
+Packet Walk
+Advantages & Working
+Configure
+Verify
+Introduction
+This document describes the configuration for a specific deployment Model of the Overlay Transport Virtualization (OTV) on ASR1000 Family.
+Prerequistes
+Requirements
+Cisco recommends that you have knowledge of these topics:
+Basic Knowledge of the ASR 1000 Platform architecture
+Basic Knowledge of ASR 1000 OTV Unicast Adjacency Server Configuration
+Unicast reachability between the L3 Border routers
+Components Used 
+The information in this document is based on the ASR 1002 with Cisco IOS® Version asr1001-universal.03.13.05.S.154-3.S5-ext.bin.
+Background Information
+ In OTV Appliance on a stick model, the join interface connects back through the device that has the SVIs built on. This particular model of deployment is widely used as it needs no network re-design or re-cabling when OTV is activated or de-activated for any reason. It should be further noted that OTV enabled device (ASR1000) is one hop away from the layer 3 border routers providing Datacenter connectivity.
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Theory 
+Network Diagram
+         Packet Walk
+In OTV it is always correct to say that there are no silent hosts (End hosts are not silent or Uni-directional). If there is any unicast traffic to a destination whose mac-address is not present in the OTV table, the traffic would be considered as Unknown Unicast and is dropped.
+Consider that the OTV Table has already populated & all mac-addresses are learnt.
+Traffic is initiated from Site A to Site B (MAC B to MAC D)
+Traffic initiated from MAC B toMAC D reaches the Edge Device (Flood and Learn Mechanism)
+Edge device will look into the mac-table and forward the frames on the dynamically learnt Interface (Eth 0/2) which is the L2 Interface
+Frames arrive at the OTV Device (ASR1K), and upon looking into the OTV route table finds out that the frames are for  Site B.
+OTV encapsulates the frame changing the Source as IP A, its own Join-interface IP and destination as IP A, join-interface of Site B. ( [MAC B to MAC D] IP A toIP B)
+OTV Decapsulation happens at Site B and the original frame is recovered
+A mac-address table look up is performed for the arriving frame and it is sent across the L2 Interface back to the Edge Device
+Edge Device checks the interface on which MAC D was learnt and sends the frame on it
+Advantages & Working
+The Main advantages of this Topology are :
+No change to the existing topology
+Hassle free implementation
+Ease of config
+The question that arises here is that how is this topology different than other in case of OTV deployment. The answer is:
+Where is the Join-Interface?
+As shown in the image, the Join-Interface resides behind the Edge Devices (i.e 6500 in this case). In the existing topology, put the join-interface behind the switch and build an overlay across it.
+One more Question that arises here is How many interfaces do we use for the L2 and L3 connectivity from the Edge device towards ASR1000. The answer is:
+There is simply no restriction to it . You can use separate interfaces for L2 and L3, or you can choose to leverage with one single interface which will act as both L2 and L3 and hence justify the name OTV ON A STICK.
+A single interface can be used for L2, by building Service instances and extending the VLAN’s from the Edge device towards the OTV router’s and again a sub-interface can be built over the same interface which will be used as the Join-Interface.
+The Configuration in this section focuses using of one single interface between the Edge device and the OTV router.
+Configure
+Note: Both the L2 & L3 links are hosted on a single Interface between Edge router & OTV router.
+On The Edge Device : (Could be a Nexus or C6500)
+LEFT-EDGE #sh run int gi4/3
+Building configuration...
+Current configuration : 109 bytes
+!
+interface GigabitEthernet4/3
+switchport
+switchport trunk encapsulation dot1q
+switchport mode trunk
+end
+LEFT-EDGE #sh run int vlan1
+Building configuration...
+Current configuration : 78 bytes
+!
+interface Vlan1
+ip address 192.168.1.2 255.255.255.0
+end
+RIGHT-EDGE #sh run int gi2/3
+Building configuration...
+Current configuration : 86 bytes
+!
+interface GigabitEthernet2/3
+switchport
+switchport mode trunk
+no ip address
+end
+RIGHT-EDGE #sh run int vlan 1
+Building configuration...
+Current configuration : 61 bytes
+!
+interface Vlan1
+ip address 192.168.2.2 255.255.255.0
+end
+On The OTV Router : (In this case ASR1000)
+LEFT-ASR #sh run int gi0/0/1
+Building configuration...
+Current configuration : 225 bytes
+!
+interface GigabitEthernet0/0/1
+no ip address
+negotiation auto
+service instance 10 ethernet
+encapsulation dot1q 10
+bridge-domain 10
+!
+service instance 20 ethernet
+encapsulation dot1q 20
+bridge-domain 20
+!
+end
+LEFT-ASR #sh run int gi0/0/1.100
+Building configuration...
+Current configuration : 110 bytes
+!
+interface GigabitEthernet0/0/1.100
+encapsulation dot1Q 1 native
+ip address 192.168.1.1 255.255.255.0
+end
+RIGHT-ASR #sh run int gi0/1/0
+Building configuration...
+Current configuration : 225 bytes
+!
+interface GigabitEthernet0/1/0
+no ip address
+negotiation auto
+service instance 10 ethernet
+encapsulation dot1q 10
+bridge-domain 10
+!
+service instance 20 ethernet
+encapsulation dot1q 20
+bridge-domain 20
+!
+end
+RIGHT-ASR #sh run int gi0/1/0.100
+Building configuration...
+Current configuration : 110 bytes
+!
+interface GigabitEthernet0/1/0.100
+encapsulation dot1Q 1 native
+ip address 192.168.2.1 255.255.255.0
+end
+Overlay Interface :
+LEFT-ASR#sh run int overlay 1
+interface Overlay1
+no ip address
+otv join-interface GigabitEthernet0/0/1.100
+otv adjacency-server unicast-only
+service instance 10 ethernet
+encapsulation dot1q 10
+bridge-domain 10
+!
+end
+RIGHT-ASR#sh run int overlay 1
+interface Overlay1
+no ip address
+otv join-interface GigabitEthernet0/1/0.100
+otv use-adjacency-server 192.168.1.1 unicast-only
+service instance 10 ethernet
+encapsulation dot1q 10
+bridge-domain 10
+!
+end
+Verify
+To verify if the set up is working as configured you need the same basic commands you use for any OTV set up.
+The list of outputs that are collected to verify the set up :
+Show otv detail
+Show otv adjacency
+Show otv route
+LEFT-ASR#sh otv detail 
+Overlay Interface Overlay1
+VPN name                : None
+VPN ID                  : 1
+ State                   : UP
+Fwd-capable             : Yes
+Fwd-ready               : Yes
+ AED-Server              : Yes
+Backup AED-Server       : No
+ AED Capable             : Yes
+Join interface(s)       : GigabitEthernet0/0/2
+ Join IPv4 address       : 192.168.1.1
+ Tunnel interface(s)     : Tunnel0
+ Encapsulation format    : GRE/IPv4
+ Site Bridge-Domain      : 20
+Capability              : Unicast-only
+ Is Adjacency Server     : Yes
+Adj Server Configured   : No
+ Prim/Sec Adj Svr(s)     : None
+ OTV instance(s)         : 0
+ FHRP Filtering Enabled  : Yes
+ ARP Suppression Enabled : Yes
+ ARP Cache Timeout       : 600 seconds
+ 
+LEFT-ASR#sh otv adjacency
+Overlay Adjacency Database for overlay 1
+Hostname                       System-ID     Dest Addr       Site-ID       Up Time   State
+RIGHT-ASR                 4403.a7d3.cf00     192.168.2.1  0000.0000.2222    1d03h      UP 
+ 
+LEFT-ASR#sh otv route 
+Codes: BD - Bridge-Domain, AD - Admin-Distance,
+       SI - Service Instance, * - Backup Route
+OTV Unicast MAC Routing Table for Overlay1
+Inst VLAN BD     MAC Address   AD   Owner Next Hops(s)
+----------------------------------------------------------
+
+0   10   10     0007.84bf.c8c0 40   BD Eng Gi0/0/1:SI10   <<<<<< LEARNT from Own Site
+
+0   10   10     000a.8b38.4000 50   ISIS   RIGHT-ASR
+ 0   10   10     d0d0.fd5a.a9a8 40   BD Eng Gi0/0/1:SI10
+0   10   10     d0d0.fd5a.a9a9 50   ISIS   RIGHT-ASR      <<<<<< LEARNT from SITE-B
+For troubleshooting and Verification purpose refer to the OTV unicast troubleshooting and verification guide:
+http://www.cisco.com/c/en/us/support/docs/routers/asr-1000-series-aggregation-services-routers/117158-configure-otv-00.html
+Contributed by Cisco Engineers
+Uma Mohanty
+Cisco TAC Engineer
+Meghana Tandon
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)

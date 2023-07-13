@@ -1,0 +1,314 @@
+Configuration Guides
+Cisco Security Appliance Command Line Configuration Guide, Version 7.2
+Bias-Free Language
+Book Contents
+Download
+Print
+Chapter: Configuring Easy VPN on the ASA 5505
+Chapter Contents
+
+This chapter describes how to configure the ASA 5505 as an Easy VPN hardware client. This chapter assumes you have configured the switch ports and VLAN interfaces of the ASA 5505 (see Chapter 4, "Configuring Switch Ports and VLAN Interfaces for the Cisco ASA 5505 Adaptive Security Appliance").
+Note The Easy VPN hardware client configuration specifies the IP address of its primary and secondary (backup) Easy VPN servers. Any ASA, including another ASA 5505 configured as a headend, a VPN 3000 Series Concentrator, an IOS-based router, or a firewall can act as an Easy VPN server. An ASA 5505 cannot, however function as both a client and a server simultaneously. To configure an ASA 5505 as a server, see "Specifying the Client/Server Role of the Cisco ASA 5505" section. Then configure the ASA 5505 as you would any other ASA, beginning with the "Getting Started" section on page 2-1 of this guide.
+This chapter includes the following sections:
+•Specifying the Client/Server Role of the Cisco ASA 5505
+•Specifying the Primary and Secondary Servers
+•Specifying the Mode
+•Configuring Automatic Xauth Authentication
+•Configuring IPSec Over TCP
+•Comparing Tunneling Options
+•Specifying the Tunnel Group or Trustpoint
+•Configuring Split Tunneling
+•Configuring Device Pass-Through
+•Configuring Remote Management
+•Guidelines for Configuring the Easy VPN Server
+Specifying the Client/Server Role of the Cisco ASA 5505
+The Cisco ASA 5505 can function as a Cisco Easy VPN hardware client (also called "Easy VPN Remote") or as a server (also called a "headend"), but not both at the same time. It does not have a default role. Use one of the following commands in global configuration mode to specify its role:
+•vpnclient enable to specify the role of the ASA 5505 as an Easy VPN Remote
+•no vpnclient enable to specify the role of the ASA 5505 as server
+The following example shows how to specify the ASA 5505 as an Easy VPN hardware client:
+hostname(config)# vpnclient enable
+hostname(config)# 
+
+The CLI responds with an error message indicating that you must remove certain data elements if you switch from server to hardware client, depending on whether the elements are present in the configuration. Table 34-1 lists the data elements that are permitted in both client and server configurations, and not permitted in client configurations.
+Table 34-1 Configuration Privileges and Restrictions on the ASA 5505 
+Permitted in Both Client and Server
+Configurations
+Not Permitted in Client Configurations
+crypto ca trustpoints
+tunnel-groups
+digital certificates
+isakmp policies
+group-policies
+crypto maps
+crypto dynamic-maps
+  crypto ipsec transform-sets
+  crypto ipsec security-association lifetime
+  crypto ipsec fragmentation before-encryption
+  crypto ipsec df-bit copy-df
+ 
+An ASA 5505 configured as an Easy VPN hardware client retains the commands listed in the first column within its configuration, however, some have no function in the client role.
+The following example shows how to specify the ASA 5505 as an Easy VPN server:
+hostname(config)# no vpnclient enable
+hostname(config)# 
+
+After entering the no version of this command, configure the ASA 5505 as you would any other ASA, beginning with "Getting Started" section on page 2-1 of this guide.
+Specifying the Primary and Secondary Servers
+Before establishing a connection with an Easy VPN hardware client, you must specify the IP address of an Easy VPN server to which it will connect. Any ASA can act as an Easy VPN server, including another ASA 5505 configured as a headend, a VPN 3000 Series Concentrator, an IOS-based router, or a firewall.
+The ASA 5505 Client always tries to set up the tunnel to the headend primary VPN server. If unable to set up the tunnel to the primary server, it tries the connection to the secondary_1 VPN server, and then sequentially down the list of VPN servers at 8 second intervals. If the setup tunnel to the secondary_1 server fails, the primary comes online during this time, and the ASA proceeds to set up the tunnel to the secondary_2 VPN server.
+Use the vpnclient server command in global configuration mode, as follows:
+[no] vpnclient server ip_primary [ip_secondary_1...ip_secondary_10]
+no removes the command from the running configuration.
+ip_primary_address is the IP address or DNS name of the primary Easy VPN server.
+ip_secondary_address_n (Optional) is a list of the IP addresses or DNS names of up to ten backup Easy VPN servers. Use a space to separate the items in the list.
+For example, enter the following command to configure a VPN client to use Easy VPN Server 10.10.10.15 as the primary server, and 10.10.10.30 and 192.168.10.45 as alternate servers:
+hostname(config)# vpnclient server 10.10.10.15 10.10.10.30 192.168.10.10
+hostname(config)# 
+
+Specifying the Mode
+The Easy VPN Client supports one of two modes of operation: Client Mode or Network Extension Mode (NEM). The mode of operation determines whether the inside hosts relative to the Easy VPN Client are accessible from the Enterprise network over the tunnel. Specifying a mode of operation is mandatory before making a connection because Easy VPN Client does not have a default mode.
+Client mode, also called Port Address Translation (PAT) mode, isolates the IP addresses of all devices on the Easy VPN Client private network from those on the enterprise network. The Easy VPN Client performs PAT for all VPN traffic for its inside hosts. IP address management is neither required for the Easy VPN Client inside interface or the inside hosts.
+NEM makes the inside interface and all inside hosts routeable across the enterprise network over the tunnel. Hosts on the inside network obtain their IP addresses from an accessible subnet (statically or via DHCP) pre-configured with static IP addresses. PAT does not apply to VPN traffic in NEM. This mode does not require a VPN configuration for each client. The Cisco ASA 5505 configured for NEM mode supports automatic tunnel initiation. The configuration must store the group name, user name, and password. Automatic tunnel initiation is disabled if secure unit authentication is enabled.
+Note If the Easy VPN hardware client is using NEM and has connections to secondary servers, use the crypto map set reverse-route command on each headend device to configure dynamic announcements of the remote network using Reverse Route Injection (RRI).
+To specify the mode for Easy VPN Clients, enter the following command in configuration mode:
+[no] vpnclient mode {client-mode | network-extension-mode}
+no removes the command from the running configuration.
+NEM with Multiple Interfaces
+If you have an ASA 5505 security appliance (version 7.2 (3) or higher) configured as an Easy VPN Client in Network Extension Mode with multiple interfaces configured, the security appliance builds a tunnel for locally encrypted traffic only from the interface with the highest security level.
+For example, consider the following configuration:
+vlan1 security level 100 nameif inside
+vlan2 security level 0 nameif outside
+vlan12 security level 75 nameif work
+
+In this scenario, the security appliance builds the tunnel only for vlan1, the interface with the highest security level. If you want to encrypt traffic from vlan12, you must change the security level of interface vlan1 to a lower value than that of vlan 12.
+Configuring Automatic Xauth Authentication
+The ASA 5505 configured as an Easy VPN hardware client automatically authenticates when it connects to the Easy VPN server if all of the following conditions are true:
+•Secure unit authentication is disabled on the server.
+•The server requests IKE Extended Authenticate (Xauth) credentials.
+Xauth provides the capability of authenticating a user within IKE using TACACS+ or RADIUS. Xauth authenticates a user (in this case, the Easy VPN hardware client) using RADIUS or any of the other supported user authentication protocols.
+•The client configuration contains an Xauth username and password.
+Enter the following command in global configuration mode to configure the Xauth username and password:
+vpnclient username xauth_username password xauth password
+You can use up to 64 characters for each.
+For example, enter the following command to configure the Easy VPN hardware client to use the XAUTH username testuser and password ppurkm1:
+hostname(config)# vpnclient username testuser password ppurkm1
+hostname(config)# 
+
+To remove the username and password from the running configuration, enter the following command:
+no vpnclient username
+For example:
+hostname(config)# no vpnclient username
+hostname(config)# 
+
+Configuring IPSec Over TCP
+By default, the Easy VPN hardware client and server encapsulate IPSec in User Datagram Protocol (UDP) packets. Some environments, such as those with certain firewall rules, or NAT and PAT devices, prohibit UDP. To use standard Encapsulating Security Protocol (ESP, Protocol 50) or Internet Key Exchange (IKE, UDP 500) in such environments, you must configure the client and the server to encapsulate IPSec within TCP packets to enable secure tunneling. If your environment allows UDP, however, configuring IPSec over TCP adds unnecessary overhead.
+To configure the Easy VPN hardware client to use TCP-encapsulated IPSec, enter the following command in global configuration mode:
+vpnclient ipsec-over-tcp [port tcp_port]
+The Easy VPN hardware client uses port 10000 if the command does not specify a port number.
+If you configure an ASA 5505 to use TCP-encapsulated IPSec, enter the following command to let it send large packets over the outside interface:
+hostname(config)# crypto ipsec df-bit clear-df outside
+hostname(config)#
+
+This command clears the Don't Fragment (DF) bit from the encapsulated header. A DF bit is a bit within the IP header that determines whether the packet can be fragmented. This command lets the Easy VPN hardware client send packets that are larger than the MTU size.
+The following example shows how to configure the Easy VPN hardware client to use TCP-encapsulated IPSec, using the default port 10000, and to let it send large packets over the outside interface:
+hostname(config)# vpnclient ipsec-over-tcp
+hostname(config)# crypto ipsec df-bit clear-df outside
+hostname(config)# 
+
+The next example shows how to configure the Easy VPN hardware client to use TCP-encapsulated IPSec, using the port 10501, and to let it send large packets over the outside interface:
+hostname(config)# vpnclient ipsec-over-tcp port 10501
+hostname(config)# crypto ipsec df-bit clear-df outside
+hostname(config)# 
+
+To remove the attribute from the running configuration, use the no form of this command, as follows:
+no vpnclient ipsec-over-tcp
+For example:
+hostname(config)# no vpnclient ipsec-over-tcp
+hostname(config)# 
+
+Comparing Tunneling Options
+The tunnel types the Cisco ASA 5505 configured as an Easy VPN hardware client sets up depends on a combination of the following factors:
+•Use of the split-tunnel-network-list and the split-tunnel-policy commands on the headend to permit, restrict, or prohibit split tunneling. (See the Creating a Network List for Split-Tunneling, page 30-42 and "Setting the Split-Tunneling Policy" section on page 30-42, respectively.)
+Split tunneling determines the networks for which the remote-access client encrypts and sends data through the secured VPN tunnel, and determines which traffic it sends to the Internet in the clear.
+•Use of the vpnclient management command to specify one of the following automatic tunnel initiation options:
+–tunnel to limit administrative access to the client side by specific hosts or networks on the corporate side and use IPSec to add a layer of encryption to the management sessions over the HTTPS or SSH encryption that is already present.
+–clear to permit administrative access using the HTTPS or SSH encryption used by the management session.
+–no to prohibit management access
+Caution Cisco does not support the use of the vpnclient management command if a NAT device is present between the client and the Internet.
+•Use of the vpnclient mode command to specify one of the following modes of operation:
+–client to use Port Address Translation (PAT) mode to isolate the addresses of the inside hosts, relative to the client, from the enterprise network.
+–network-extension-mode to make those addresses accessible from the enterprise network.
+Figure 34-1 shows the types of tunnels that the Easy VPN client initiates, based on the combination of the commands you enter.
+Figure 34-1 Easy VPN Hardware Client Tunneling Options for the Cisco ASA 5505
+The term "All-Or-Nothing" refers to the presence or absence of an access list for split tunneling. The access list ("ST-list") distinguishes networks that require tunneling from those that do not.
+Specifying the Tunnel Group or Trustpoint
+When configuring the Cisco ASA 5505 as an Easy VPN hardware client, you can specify a tunnel group or trustpoint configured on the Easy VPN server, depending on the Easy VPN server configuration. See the section that names the option you want to use:
+•Specifying the Tunnel Group
+•Specifying the Trustpoint
+Specifying the Tunnel Group
+Enter the following command in global configuration mode to specify the name of the VPN tunnel group and password for the Easy VPN client connection to the server:
+vpnclient vpngroup group_name password preshared_key
+group_name is the name of the VPN tunnel group configured on the Easy VPN server. You must configure this tunnel group on the server before establishing a connection.
+preshared_key is the IKE pre-shared key used for authentication on the Easy VPN server.
+For example, enter the following command to identify the VPN tunnel group named TestGroup1 and the IKE preshared key my_key123.
+hostname(config)# vpnclient vpngroup TestGroup1 password my_key123
+hostname(config)# 
+
+To remove the attribute from the running configuration, enter the following command:
+no vpnclient vpngroup
+If the configuration of the ASA 5505 running as an Easy VPN client does not specify a tunnel group, the client attempts to use an RSA certificate.
+For example:
+hostname(config)# no vpnclient vpngroup
+hostname(config)# 
+
+Specifying the Trustpoint
+A trustpoint represents a CA identity, and possibly a device identity, based on a certificate the CA issues. These parameters specify how the security appliance obtains its certificate from the CA and define the authentication policies for user certificates issued by the CA.
+First define the trustpoint using the crypto ca trustpoint command, as described in "Configuring Trustpoints" section on page 39-7. Then enter the following command in global configuration mode to name the trustpoint identifying the RSA certificate to use for authentication:
+vpnclient trustpoint trustpoint_name [chain]
+trustpoint_name names the trustpoint identifying the RSA certificate to use for authentication.
+(Optional) chain sends the entire certificate chain.
+For example, enter the following command to specify the identity certificate named central and send the entire certificate chain:
+hostname(config)# crypto ca trustpoint central
+hostname(config)# vpnclient trustpoint central chain
+hostname(config)# 
+
+To remove the attribute from the running configuration, enter the following command:
+no vpnclient trustpoint
+For example:
+hostname(config)# no vpnclient trustpoint
+hostname(config)# 
+
+Configuring Split Tunneling
+Split tunneling lets a remote-access IPSec client conditionally direct packets over an IPSec tunnel in encrypted form or to a network interface in clear text form.
+The Easy VPN server pushes the split tunneling attributes from the group policy to the Easy VPN Client for use only in the work zone. See Configuring Split-Tunneling Attributes, page 30-42 to configure split tunneling on the Cisco ASA 5505.
+Enter the following command in global configuration mode to enable the automatic initiation of IPSec tunnels when NEM and split tunneling are configured:
+[no] vpnclient nem-st-autoconnect
+no removes the command from the running configuration.
+For example:
+hostname(config)# vpnclient nem-st-autoconnect
+hostname(config)# 
+
+Configuring Device Pass-Through
+Devices such as Cisco IP phones, wireless access points, and printers are incapable of performing authentication. Enter the following command in global configuration mode to exempt such devices from authentication, thereby providing network access to them, if individual user authentication is enabled:
+[no] vpnclient mac-exempt mac_addr_1 mac_mask_1 [mac_addr_2 mac_mask_2...mac_addr_n mac_mask_n]
+no removes the command from the running configuration.
+mac_addr is the MAC address, in dotted hexadecimal notation, of the device to bypass individual user authentication.
+mac_mask is the network mask for the corresponding MAC address. A MAC mask of ffff.ff00.0000 matches all devices made by the same manufacturer. A MAC mask of ffff.ffff.ffff matches a single device.
+Only the first six characters of the specific MAC address are required if you use the MAC mask ffff.ff00.0000 to specify all devices by the same manufacturer. For example, Cisco IP phones have the Manufacturer ID 00036b, so the following command exempts any Cisco IP phone, including Cisco IP phones, you might add in the future:
+hostname(config)# vpnclient mac-exempt 0003.6b00.0000 ffff.ff00.0000
+hostname(config)# 
+
+The next example provides greater security but less flexibility because it exempts one specific Cisco IP phone:
+hostname(config)# vpnclient mac-exempt 0003.6b54.b213 ffff.ffff.ffff
+hostname(config)# 
+
+Configuring Remote Management
+The Cisco ASA 5505, operating as an Easy VPN hardware client, supports management access using SSH or HTTPS, with or without a second layer of additional encryption. You can configure the Cisco ASA 5505 to require IPSec encryption within the SSH or HTTPS encryption.
+Use the vpnclient management clear command in global configuration mode to use normal routing to provide management access from the corporate network to the outside interface of the ASA 5505 (no tunneling management packets).
+Caution Do not configure a management tunnel on a Cisco ASA 5505 configured as an Easy VPN hardware client if a NAT device is operating between the Easy VPN hardware client and the Internet. In that configuration, use the vpnclient management clear command.
+Use the vpnclient management tunnel command in global configuration mode if you want to automate the creation of IPSec tunnels to provide management access from the corporate network to the outside interface of the ASA 5505. The Easy VPN hardware client and server create the tunnels automatically after the execution of the vpnclient server command. The syntax of the vpnclient management tunnel command follows:
+vpnclient management tunnel ip_addr_1 ip_mask_1 [ip_addr_2 ip_mask_2...ip_addr_n ip_mask_n]
+For example, enter the following command to automate the creation of an IPSec tunnel to provide management access to the host with IP address 192.168.10.10:
+hostname(config)# vpnclient management tunnel 192.198.10.10 255.255.255.0
+hostname(config)# 
+
+The no form of this command sets up IPSec for management tunnels in accordance with the split-tunnel-policy and split-tunnel-network-list commands.
+no vpnclient management
+For example:
+hostname(config)# no vpnclient management
+hostname(config)# 
+
+Guidelines for Configuring the Easy VPN Server
+The following sections address the Easy VPN hardware client considerations that apply to the Easy VPN server:
+•Group Policy and User Attributes Pushed to the Client
+•Authentication Options
+Group Policy and User Attributes Pushed to the Client
+Upon tunnel establishment, the Easy VPN server pushes the values of the group policy or user attributes stored in its configuration to the Easy VPN hardware client. Therefore, to change certain attributes pushed to the Easy VPN hardware client, you must modify them on the security appliances configured as the primary and secondary Easy VPN servers. This section identifies the group policy and user attributes pushed to the Easy VPN hardware client.
+Note This section serves only as a reference. For complete instructions on configuring group policies and users, see Configuring Tunnel Groups, Group Policies, and Users, page 30-1.
+Use Table 34-2 as a guide for determining which commands to enter to modify the group policy or user attributes.
+Table 34-2 Group Policy and User Attributes Pushed to the Cisco ASA 5505 Configured as an EasyVPN Hardware Client 
+Command
+Description
+backup-servers
+Sets up backup servers on the client in case the primary server fails to respond.
+banner
+Sends a banner to the client after establishing a tunnel.
+client-access-rule
+Applies access rules.
+client-firewall
+Sets up the firewall parameters on the VPN client.
+default-domain
+Sends a domain name to the client.
+dns-server
+Specifies the IP address of the primary and secondary DNS servers, or prohibits the use of DNS servers.
+dhcp-network-scope
+Specifies the IP subnetwork to which the DHCP server assigns address to users within this group.
+group-lock
+Specifies a tunnel group to ensure that users connect to that group.
+ipsec-udp
+Uses UDP encapsulation for the IPSec tunnels.
+ipsec-udp-port
+Specifies the port number for IPSec over UDP.
+nem
+Enables or disables network extension mode.
+password-storage
+Lets the VPN user save a password in the user profile.
+pfs
+Commands the VPN client to use perfect forward secrecy.
+re-xauth
+Requires XAUTH authentication when IKE rekeys.
+Note: Disable re-xauth if secure unit authentication is enabled.
+secure-unit-authentication
+Enables interactive authentication for VPN hardware clients.
+split-dns
+Pushes a list of domains for name resolution.
+split-tunnel-network-list
+Specifies one of the following:
+•No access list exists for split tunneling. All traffic travels across the tunnel.
+•Identifies the access list the security appliance uses to distinguish networks that require tunneling and those that do not.
+Split tunneling lets a remote-access IPSec client conditionally direct packets over an IPSec tunnel in encrypted form, or to a network interface in cleartext form. With split-tunneling enabled, packets not bound for destinations on the other side of the IPSec tunnel do not have to be encrypted, sent across the tunnel, decrypted, and then routed to a final destination.
+split-tunnel-policy
+Lets a remote-access IPSec client conditionally direct packets over an IPSec tunnel in encrypted form, or to a network interface in cleartext form. Options include the following:
+•split-tunnel-policy—Indicates that you are setting rules for tunneling traffic.
+•excludespecified—Defines a list of networks to which traffic goes in the clear.
+•tunnelall—Specifies that no traffic goes in the clear or to any other destination than the Easy VPN server. Remote users reach Internet networks through the corporate network and do not have access to local networks.
+•tunnelspecified—Tunnels all traffic from or to the specified networks. This option enables split tunneling. It lets you create a network list of addresses to tunnel. Data to all other addresses travels in the clear, and is routed by the remote user's internet service provider.
+user-authentication
+Enables individual user authentication for hardware-based VPN clients.
+vpn-access-hours
+Restricts VPN access hours.
+vpn-filter
+Applies a filter to VPN traffic.
+vpn-idle-timeout
+Specifies the number of minutes a session can be idle before it times out.
+vpn-session-timeout
+Specifies the maximum number of minutes for VPN connections.
+vpn-simultaneous-logins
+Specifies the maximum number of simultaneous logins.
+vpn-tunnel-protocol
+Specifies the permitted tunneling protocols.
+wins-server
+Specifies the IP address of the primary and secondary WINS servers, or prohibits the use of WINS servers.
+
+Note IPSec NAT-T connections are the only IPSec connection types supported on the home VLAN of a Cisco ASA 5505. IPSec over TCP and native IPSec connections are not supported.
+Authentication Options
+The ASA 5505 supports the following authentication mechanisms, which it obtains from the group policy stored on the Easy VPN Server. The following list identifies the authentication options supported by the Easy VPN hardware client, however, you must configure them on the Easy VPN server:
+•Secure unit authentication (SUA, also called Interactive unit authentication)
+Ignores the vpnclient username Xauth command (described in "Configuring Automatic Xauth Authentication" section) and requires the user to authenticate the ASA 5505 by entering a password. By default, SUA is disabled. You can use the secure-unit-authentication enable command in group-policy configuration mode to enable SUA. See Configuring Secure Unit Authentication, page 30-45.
+•Individual user authentication
+Requires users behind the ASA 5505 to authenticate before granting them access to the enterprise VPN network. By default, IUA is disabled. To enable IUA, Use the user-authentication enable command in group-policy configuration mode. See Configuring User Authentication, page 30-45.
+The security appliance works correctly from behind a NAT deice, and if the ASA5505 is configured in NAT mode, the provisioned IP (to which theclients all PAT) is injected into the routing table on the central-site device.
+Caution Do not configure IUA on a Cisco ASA 5505 configured as an Easy VPN server if a NAT device is operating between the server and the Easy VPN hardware client.
+To set or remove the idle timeout period after which the Easy VPN Server terminates the client's access, use the user-authentication-idle-timeout command. See Configuring an Idle Timeout, page 30-46.
+•Authentication by HTTP redirection
+The Cisco Easy VPN server intercepts HTTP traffic and redirects the user to a login page if one of the following is true:
+–SUA or the username and password are not configured on the Easy VPN hardware client.
+–IAU is enabled.
+HTTP redirection is automatic and does not require configuration on the Easy VPN Server.
+•Preshared keys, digital certificates, tokens and no authentication
+The ASA 5505 supports preshared keys, token-based (e.g., SDI one-time passwords), and "no user authentication" for user authentication. NOTE: The Cisco Easy VPN server can use the digital certificate as part of user authorization. See Chapter 27, "Configuring IPsec and ISAKMP" for instructions.
+Was this Document Helpful?
+Yes No
+Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)

@@ -58,7 +58,7 @@ while (len(urls) > 0) and (len(visited) < 5000):
     filename = get_url.removeprefix("https://www.cisco.com/c/en/us/").replace("/","_")
     if "/Users/lucazeve/Coding/scrapper/pages/"+filename in saved_pages:
         if get_url not in visited: visited.append(get_url)
-        if len(urls) < 500: filter_and_add_urls(next_urls)
+        if len(urls) < 200: filter_and_add_urls(next_urls)
         print("page already saved: "+filename)
         continue
 

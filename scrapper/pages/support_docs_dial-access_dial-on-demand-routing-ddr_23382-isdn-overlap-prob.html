@@ -1,0 +1,226 @@
+Troubleshooting TechNotes
+Problems with ISDN Overlap Receiving an Unallocated/Unassigned Number
+Save
+Translations
+Print
+Updated:February 2, 2006
+Document ID:23382
+Bias-Free Language
+Contents
+Introduction
+Before You Begin
+Conventions
+Prerequisites
+Components Used
+Resolving the Unallocated/Unassigned Number Error
+Incorrect Configuration and Associated Debugs
+Corrected Configuration and Debugs
+Related Information
+Introduction
+Cisco routers can receive an ISDN call in En bloc or Overlap modes. When configured for En bloc, the setup message should contain all necessary addressing information to route the call. In Overlap, the setup message does not contain the complete address. Additional information messages are required from the calling side to complete the called address.
+A common pitfall when configuring a Cisco router to receive an ISDN call in Overlap mode is the incorrect configuration of the dial peer. This can cause the called number to be received incorrectly, causing the call to fail.
+Before You Begin
+Conventions
+For more information on document conventions, see the Cisco Technical Tips Conventions.
+Prerequisites
+Readers of this document should be knowledgeable of:
+configuring ISDN on Cisco routers
+basic knowledge of dial peers and Voice over IP (VoIP)
+Components Used
+The information in this document is based on these software and hardware versions:
+Cisco IOS® Software Release 12.2.(7)a
+C3640 router
+The information presented in this document was created from devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If you are working in a live network, ensure that you understand the potential impact of any command before using it.
+Resolving the Unallocated/Unassigned Number Error
+Configuring Overlap receiving on the D-channel changes the way routers behave when receiving ISDN calls. The router responds to the setup message with a SETUP ACK. This informs the network that it is ready to receive further information messages containing additional call routing elements.
+The problem occurs when the destination number used in the dial peer is not of the same length as the called number being received. As shown below, the destination number is summarized to reflect a range of numbers that may start with the same digits:
+The destination number range is 5000 through 5600.
+The dial peer may be configured for destination pattern 5.
+This type of dial plan works without problems in En bloc mode, but with Overlap receiving the router, it tries to place the call after enough digits have been received to match the destination number. In this case, after the 5 has been received. To prevent this from occurring the "T" terminator should be placed after the digits in the destination pattern. This causes the router to wait for the T302 timer to expire after each digit's reception, allowing the full number to be collected before placing the call.
+Incorrect Configuration and Associated Debugs
+This is an example of a configuration that cause calls to fail:
+! 
+interface Serial3/0:15 
+ no ip address 
+ no logging event link-status 
+ isdn switch-type primary-qsig 
+ isdn overlap-receiving 
+ isdn incoming-voice voice 
+ isdn send-alerting 
+ no cdp enable 
+! 
+! 
+voice-port 3/0:15 
+! 
+dial-peer cor custom 
+! 
+! 
+dial-peer voice 1 voip 
+ destination-pattern 5 
+ session target ipv4:10.0.0.1 
+! 
+!
+The debug ISDN Q931 and debug voip ccapi inout commands have been enabled. Some of the debugs were omitted for clarity.
+ECV-3640-2# 
+*Mar  2 01:47:05.705: ISDN Se3/0:15: RX <- SETUP pd = 8  callref = 0x001A 
+*Mar  2 01:47:05.705:         Bearer Capability i = 0x8090A3 
+*Mar  2 01:47:05.709:         Channel ID i = 0xA9839B 
+*Mar  2 01:47:05.709:         Facility i = 0x91AA068001008201008B0102A11
+           402025CA002013B300B30090A01050A01030A0104 
+*Mar  2 01:47:05.713:         Facility i = 0x91AA068001008201008B0100A10
+           C02025CB006042B0C09008400 
+*Mar  2 01:47:05.713:         Calling Party Number i = 0x00, 0x83, '5000', 
+           Plan:Unknown, Type:Unknown 
+*Mar  2 01:47:05.717:         Called Party Number i = 0x80, '5', Plan:Unknown, 
+           Type:Unknown 
+*Mar  2 01:47:05.717:         High Layer Compat i = 0x9181
+
+!--- An incoming call with the first digit of called number 5.
+
+*Mar  2 01:47:05.729: ISDN Se3/0:15: TX -> SETUP_ACK pd = 8  callref = 0x801A 
+*Mar  2 01:47:05.729:         Channel ID i = 0xA9839B 
+  
+
+*Mar  2 01:47:06.385: ISDN Se3/0:15: RX <- INFORMATION pd = 8  callref = 0x001A 
+*Mar  2 01:47:06.385:         Called Party Number i = 0x80, '5', Plan:Unknown, 
+           Type:Unknown 
+
+!--- An information message with the next digit 5.
+ 
+*Mar  2 01:47:06.393: ccCallSetupRequest numbering_type 0x80 
+*Mar  2 01:47:06.393: ccCallSetupRequest encapType 2 clid_restrict_disable 1 
+   null_orig_clg 0 clid_transparent 0 callingNumber 5000 
+*Mar  2 01:47:06.393: dest pattern 5, called 55, digit_strip 0 
+*Mar  2 01:47:06.393: callingNumber=5000, calledNumber=55, redirectNumber= 
+            display_info= calling_oct3a=83 
+
+!--- The router matches received digits 55 with dial peer 1.
+ 
+*Mar  2 01:47:06.421: ccCallDisconnect (callID=0x25, cause=0x1 tag=0x0) 
+*Mar  2 01:47:06.421: ccCallDisconnect (callID=0x24, cause=0x1 tag=0x0) 
+*Mar  2 01:47:06.425: cc_api_call_disconnect_done(vdbPtr=0x62679168, 
+            callID=0x24, disp=0, tag=0x0) 
+
+!--- The call was disconnected from the remote router, because !--- the number is incomplete as only 55 is sent, this fails to match any dial !--- peers (dial peers at remote router were four digits in length).
+ 
+*Mar  2 01:47:06.433: ISDN Se3/0:15: TX -> DISCONNECT pd = 8  callref = 0x801A 
+*Mar  2 01:47:06.433:         Cause i = 0x8081 - Unallocated/unassigned number 
+
+!--- The call was disconnected because of an unallocated/unassigned number.
+ 
+ECV-3640-2# 
+ECV-3640-2# 
+ECV-3640-2# 
+ECV-3640-2#
+Corrected Configuration and Debugs
+In this example, the number being dialed is 5678. The dial peer has now been corrected with the addition of the "T" terminator. Also included in the Overlap configuration is the adjustment of the T302 timer to reflect a more realistic configuration. The default timer is 10 seconds, which may be too long in certain situations.
+interface Serial3/0:15 
+ no ip address 
+ no logging event link-status 
+ isdn switch-type primary-qsig 
+ isdn overlap-receiving T302 2000
+ 
+!--- The T302 timer is configured to wait for two seconds.
+
+ isdn incoming-voice voice 
+ isdn send-alerting 
+ no cdp enable 
+! 
+! 
+voice-port 3/0:15 
+! 
+dial-peer cor custom 
+! 
+! 
+! 
+dial-peer voice 1 voip 
+ destination-pattern 5T     
+
+!--- The "T" is added to the dial peer.
+ 
+ session target ipv4:10.0.0.1 
+! 
+end 
+
+ECV-3640-2# 
+*Mar  2 21:36:10.132: ISDN Se3/0:15: RX <- SETUP pd = 8  callref = 0x0024 
+*Mar  2 21:36:10.136:         Bearer Capability i = 0x8090A3 
+*Mar  2 21:36:10.136:         Channel ID i = 0xA98386 
+*Mar  2 21:36:10.136:         Facility i = 0x91AA068001008201008B0102A114020262A
+            002013B300B30090A01050A01030A0104 
+*Mar  2 21:36:10.140:         Facility i = 0x91AA068001008201008B0100A10C020262B
+            006042B0C09008400 
+*Mar  2 21:36:10.140:         Calling Party Number i = 0x00, 0x83, '5000', 
+            Plan:Unknown, Type:Unknown 
+*Mar  2 21:36:10.144:         Called Party Number i = 0x80, '5', Plan:Unknown, 
+            Type:Unknown 
+*Mar  2 21:36:10.144:         High Layer Compat i = 0x9181 
+
+!--- An incoming call with the first digit of called number 5.
+ 
+*Mar  2 21:36:10.164: ISDN Se3/0:15: TX -> SETUP_ACK pd = 8  callref = 0x8024 
+*Mar  2 21:36:10.164:         Channel ID i = 0xA98386 
+  
+
+*Mar  2 21:36:10.360: ISDN Se3/0:15: RX <- INFORMATION pd = 8  callref = 0x0024 
+*Mar  2 21:36:10.364:         Called Party Number i = 0x80, '6', Plan:Unknown, 
+            Type:Unknown 
+
+!--- An information message with the next digit 6.
+ 
+*Mar  2 21:36:10.660: ISDN Se3/0:15: RX <- INFORMATION pd = 8  callref = 0x0024 
+*Mar  2 21:36:10.664:         Called Party Number i = 0x80, '7', Plan:Unknown, 
+            Type:Unknown 
+
+!--- An information message with the next digit 7.
+ 
+*Mar  2 21:36:10.924: ISDN Se3/0:15: RX <- INFORMATION pd = 8  callref = 0x0024 
+*Mar  2 21:36:10.924:         Called Party Number i = 0x80, '8', Plan:Unknown, 
+            Type:Unknown 
+
+!--- An information message with the next digit 8.
+ 
+*Mar  2 21:36:20.168: ccCallSetupRequest encapType 2 clid_restrict_disable 1 
+            null_orig_clg 0 clid_transparent 0 callingNumber 5000 
+*Mar  2 21:36:20.172: dest pattern 5T, called 5678, digit_strip 0 
+*Mar  2 21:36:20.172: callingNumber=5000, calledNumber=5678, redirectNumber= 
+            display_info= calling_oct3a=83 
+
+!--- The router matches received digits 5678 with dial peer 1.
+ 
+*Mar  2 21:36:20.228: ISDN Se3/0:15: TX -> CALL_PROC pd = 8  callref = 0x8024 
+*Mar  2 21:36:20.420: cc_api_call_cut_progress(vdbPtr=0x6221F1E8, callID=0x38, 
+            prog_ind=0x8, sig_ind=0x1) 
+  
+
+*Mar  2 21:36:20.440: ISDN Se3/0:15: TX -> ALERTING pd = 8  callref = 0x8024 
+*Mar  2 21:36:20.440:         Progress Ind i = 0x8188 - In-band info or appropriate 
+            now available 
+
+!--- The call is successfully routed and the remote phone is ringing.
+ 
+ECV-3640-2#
+Related Information
+Configuring ISDN Interfaces for Voice
+Understanding debug isdn q931 Disconnect Cause Codes
+Understanding 1- or 2-Port ISDN PRI/Channelized T1 Network Module
+T1 PRI Troubleshooting
+Voice and Unified Communications Product Support
+Troubleshooting Cisco IP Telephony
+Technical Support - Cisco Systems
+Contributed by
+vaconsta
+jianzhan
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Configuring and Troubleshooting Dialer Profiles
+Understanding and Troubleshooting Idle Timeouts
+Dialup Technology: Overviews and Explanations
++ Show 2 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Dial-on-Demand Routing (DDR)
+IP Telephony/Voice over IP (VoIP)

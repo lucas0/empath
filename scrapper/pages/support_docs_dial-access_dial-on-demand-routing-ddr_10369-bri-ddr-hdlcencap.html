@@ -1,0 +1,457 @@
+Configuration Examples and TechNotes
+ISDN DDR Using HDLC Encapsulation
+Save
+Translations
+Download
+Print
+
+Updated:September 9, 2005
+Document ID:10369
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Conventions
+Why Use HDLC?
+Configure
+Network Diagram
+Configurations
+Verify
+Troubleshoot
+Troubleshooting Commands
+Related Information
+Introduction
+There are two different ways to use high-level data link control (HDLC) over ISDN:
+Define the physical interface to run HDLC. In other words, no encapsulation is defined since HDLC is the default encapsulation used by Cisco IOS® Software. This is the original way to configure HDLC with dial-on-demand routing (DDR) and is discussed in this document.
+Use dialer interface to bind the protocol you want (in this example, HDLC) to a specific dialer. This is the newer method and allows for a specific physical interface to handle multiple protocols (for example, Point-to-Point Protocol [PPP] and HDLC). Since the protocol is configured on the dialer interface, the physical interface is not restricted. This method is known as Dynamic Multiple Encapsulations and is discussed in ISDN DDR using HDLC Encapsulation with Dynamic Multiple Encapsulations.
+Prerequisites
+Requirements
+There are no specific requirements for this document.
+Components Used
+The information in this document is based on these software and hardware versions:
+The routers taxbol, and goya are 2500 series routers used in a lab environment with cleared configurations.
+Cisco IOS Software Release 11.2(22) is used on both routers.
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Conventions
+For more information on document conventions, refer to Cisco Technical Tips Conventions.
+Why Use HDLC?
+The reason why a user requires HDLC on the ISDN is not obvious, since it has a lot of disadvantages compared to PPP. The only purpose is to simplify the configuration. However, it also simplifies access to the router for any hackers. HDLC does not support any kind of authentication, hence the best protection here would be to verify the calling number with the isdn caller command on your interface. Refer to Configuring CLI Screening or ISDN Authentication and Callback with Caller ID for additional information. Calling line ID (CLID) based authentication assumes that your Telco supplies the calling number in the ISDN setup messages. However, since many Telcos do not supply CLID, verify with your Telco before you configure CLID-based screening. If CLID is not supplied by the Telco, then all incoming calls into the router fail.
+Another disadvantage of HDLC is that the router does not install a dynamic map. Therefore, a dialer map needs to be configured (on each end) for the HDLC peer.
+Note: If only one side makes the call (for example, one router always accepts the call and does not dialout) make sure that you include a name for the remote peer in the dialer map statement of the receiving side. However, the name can be a fake name since the router has no way to authenticate the peer name to determine if it matches the dialer map name.
+For example, this is a description and this ISDN number is 8130.
+  ip address 172.16.1.6 255.255.255.252 
+  isdn caller 8129 
+
+ !--- This is to accept only calls from 8129. 
+
+  dialer map ip 172.16.1.5 name bogus_to_accept_command
+
+ !--- This is a dialer-map with a fake name. 
+
+  dialer-group 1 
+Configure
+In this section, you are presented with the information to configure the features described in this document.
+Note: To find additional information on the commands used in this document, use the Command Lookup tool
+Network Diagram
+This document uses the network setup shown in this diagram.
+Configurations
+goya
+Current configuration:
+!
+version 11.2
+service timestamps debug datetime msec
+service timestamps log datetime msec
+!
+hostname goya
+!
+
+isdn switch-type basic-net3 
+
+!--- The switch-type used is basic-net3. If you are in the United States, !--- configure the correct switch-type (for example !--- isdn switch-type basic-5ess). In the US, you also need to !--- configure the spids under the Basic Rate Interface (BRI) interface.
+  
+! 
+interface Ethernet0 
+ ip address 10.1.1.1 255.255.255.0 
+ no ip redirects 
+! 
+interface BRI0 
+
+ !--- If you are in the US do not forget the SPID !--- (for example isdn spid1 01555.....) 
+
+ description This ISDN number is 8129 
+ ip address 172.16.1.5 255.255.255.252 
+ dialer idle-timeout 60
+ 
+!--- The idle is set to 60 seconds. 
+ 
+  isdn caller 8130 
+ 
+!--- Verify the incoming number since there is no authentication on HDLC. 
+
+ dialer map ip 172.16.1.6 8130
+
+ !--- This side is making the call to 8130. 
+
+ dialer-group 1 
+! 
+ip classless 
+ip route 0.0.0.0 0.0.0.0 172.16.1.6 
+access-list 105 permit icmp any any
+
+!--- This access-list is to debug ICMP only. 
+
+dialer-list 1 protocol ip permit 
+! 
+line con 0 
+ exec-timeout 0 0 
+ transport input none 
+line aux 0 
+line vty 0 4 
+ exec-timeout 0 0 
+ no login 
+! 
+end
+traxbol
+Current configuration: 
+! 
+version 11.2 
+service timestamps debug datetime msec 
+service timestamps log datetime msec 
+! 
+hostname traxbol 
+! 
+
+isdn switch-type basic-net3 
+
+!--- The switch-type used here is basic-net3. If you are in the United States, !--- configure the correct switch-type (for example !--- isdn switch-type basic-5ess). In the United States, you also need to !--- configure the SPIDs under the BRI interface. 
+  
+! 
+Interface Ethernet0 
+ ip address 10.1.2.1 255.255.255.0 
+ no ip redirects 
+! 
+interface BRI0 
+
+ !--- If you are in the United States, do not forget the SPID !--- (for example isdn spid1 01555.....). 
+
+ description This ISDN number is 8130 
+ ip address 172.16.1.6 255.255.255.252 
+ isdn caller 8129 
+
+ !--- Verify the incoming number since there is no authentication on HDLC. 
+
+ dialer map ip 172.16.1.5 name goya
+
+ !--- This side will not make any calls, but "name goya" is added to complete the !--- command. This is because a static dialer map is necessary.
+
+ dialer-group 1 
+! 
+ip classless 
+ip route 0.0.0.0 0.0.0.0 172.16.1.5 
+access-list 105 permit icmp any any
+
+!--- This access-list is to debug ICMP only. 
+
+dialer-list 1 protocol ip permit 
+! 
+line con 0 
+ exec-timeout 0 0 
+line aux 0 
+line vty 0 4 
+ exec-timeout 0 0 
+ password ww 
+ login 
+! 
+end
+Verify
+This section provides information you can use to confirm your configuration works properly.
+Certain show commands are supported by the Output Interpreter Tool (registered customers only) , which allows you to view an analysis of show command output.
+show interfaces bri number - Specifying only the number displays the D-channel for that BRI interface.
+Command Description
+number Interface number. The value is 0 through 7 if the router has one 8-port BRI NIM, or 0 through 15 if the router has two 8-port BRI NIMs. Interface number values vary, based on the hardware platform used. The Cisco 3600 series router for example, can have up to 48 interfaces.
+No encapsulation was defined in the configuration, so by default it is HDLC. This can be verified with the show interface command as shown here:
+ goya#show interfaces bri 0 
+  BRI0 is up, line protocol is up (spoofing) 
+   Hardware is BRI 
+   Description: This ISDN number is 8129 
+   Internet address is 172.16.1.5/30 
+   MTU 1500 bytes, BW 64 Kbit, DLY 20000 usec, rely 255/255, load 1/255 
+   Encapsulation HDLC, loopback not set 
+   
+!--- HDLC is configured automatically
+ 
+   Last input 00:00:00, output 00:00:00, output hang never 
+   Last clearing of "show interface" counters never 
+   Input queue: 0/75/0 (size/max/drops); Total output drops: 0 
+   Queueing strategy: weighted fair 
+   Output queue: 0/1000/64/0 (size/max total/threshold/drops)   
+    Conversations  0/1/256 (active/max active/max total) 
+    Reserved Conversations 0/0 (allocated/max allocated) 
+    5 minute input rate 0 bits/sec, 0 packets/sec 
+    5 minute output rate 0 bits/sec, 0 packets/sec 
+      3933 packets input, 20462 bytes, 0 no buffer 
+      Received 15 broadcasts, 0 runts, 0 giants, 0 throttles 
+      0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort 
+      3926 packets output, 26100 bytes, 0 underruns 
+      0 output errors, 0 collisions, 10 interface resets 
+      0 output buffer failures, 0 output buffers swapped out 
+      7 carrier transitions
+Troubleshoot
+This section provides information you can use to troubleshoot your configuration.
+Troubleshooting Commands
+Note: Before issuing debug commands, refer to Important Information on Debug Commands.
+debug dialer
+debug ip packet detail 105—Used to debug IP packets that are only ICMP (see access-list 105 in the configuration).
+debug isdn q931—Used to see the ISDN Q.931 event and packets.
+debug serial interface—Used to debug the HDLC.
+Debug examples of both routers are shown here:
+The output from goya:
+goya#debug dialer 
+Dial on demand events debugging is on 
+goya#debug ip packet detail 105 
+IP packet debugging is on (detailed) for access list 105 
+goya#debug isdn q931 
+ISDN Q931 packets debugging is on
+
+!--- Verify that the map is correctly configured. 
+
+goya#show dialer map 
+Static dialer map ip 172.16.1.6 name traxbol (8130) on BRI0 
+goya#ping? 172.16.1.6 
+
+!--- Ping to the remote destination. 
+
+Type escape sequence to abort. 
+Sending 5, 100-byte ICMP Echos to 172.16.1.6, timeout is 2 seconds: 
+*Mar? 1 05:40:07.230: IP: s=172.16.1.5 (local), d=172.16.1.6 (BRI0), len 100, sending
+
+!--- The Ping attempts to leave the router. 
+
+*Mar? 1 05:40:07.234:???? ICMP type=8, code=0 
+*Mar? 1 05:40:07.238: BRI0: Dialing cause ip (s=172.16.1.5, d=172.16.1.6) 
+*Mar? 1 05:40:07.238: BRI0: Attempting to dial 8130 
+
+!--- The dialer attempts the call. 
+
+*Mar? 1 05:40:07.242: IP: s=172.16.1.5 (local), d=172.16.1.6 (BRI0), Len 100,
+   encapsulation failed
+
+!--- This is because the HDLC is not ready. !--- Therefore, the encapsulation failed.
+  
+*Mar? 1 05:40:07.246:???? ICMP type=8, code=0 
+ 
+*Mar? 1 05:40:07.258: ISDN BR0: TX ->? SETUP pd = 8? callref = 0x37 
+*Mar? 1 05:40:07.258:???????? Bearer Capability i = 0x8890 
+*Mar? 1 05:40:07.262:???????? Channel ID i = 0x83 
+*Mar? 1 05:40:07.266:???????? Called Party Number i = 0x80, '8130' 
+*Mar? 1 05:40:07.318: ISDN BR0: RX <-? CALL_PROC pd = 8? callref = 0xB7 
+*Mar? 1 05:40:07.322:???????? Channel ID i = 0x89 
+*Mar? 1 05:40:07.470: ISDN BR0: RX <-? CONNECT pd = 8? callref = 0xB7 
+*Mar? 1 05:40:07.486: %LINK-3-UPDOWN: Interface BRI0:1, changed state to up 
+*Mar? 1 05:40:07.514: ISDN BR0: TX ->? CONNECT_ACK pd = 8? callref = 0x37
+
+!--- The call is made.
+
+*Mar? 1 05:40:07.!!!! 
+
+!--- One ping packet was lost because the encapsulation was not ready. 
+
+Success rate is 80 percent (4/5), round-trip min/avg/max = 52/58/76 ms 
+goya#.518: dialer Protocol up for BR0:1 
+*Mar? 1 05:40:07.526: %LINEPROTO-5-UPDOWN: Line protocol on Interface BRI0:1,
+ changed state to up 
+*Mar? 1 05:40:09.230: IP: s=172.16.1.5 (local), d=172.16.1.6 (BRI0), Len 100, sending 
+*Mar? 1 05:40:09.234:???? ICMP type=8, code=0 
+*Mar? 1 05:40:09.278: IP: s=172.16.1.6 (BRI0), d=172.16.1.5 (BRI0), Len 100, rcvd 3 
+*Mar? 1 05:40:09.278:???? ICMP type=0, code=0 
+*Mar? 1 05:40:09.282: IP: s=172.16.1.5 (local), d=172.16.1.6 (BRI0), Len 100, sending 
+*Mar? 1 05:40:09.286:???? ICMP type=8, code=0 
+*Mar? 1 05:40:09.330: IP: s=172.16.1.6 (BRI0), d=172.16.1.5 (BRI0), Len 100, rcvd 3 
+*Mar? 1 05:40:09.334:???? ICMP type=0, code=0 
+*Mar? 1 05:40:09.338: IP: s=172.16.1.5 (local), d=172.16.1.6 (BRI0), Len 100, sending 
+*Mar? 1 05:40:09.338:???? ICMP type=8, code=0 
+*Mar? 1 05:40:09.406: IP: s=172.16.1.6 (BRI0), d=172.16.1.5 (BRI0), Len 100, rcvd 3 
+*Mar? 1 05:40:09.410:???? ICMP type=0, code=0 
+*Mar? 1 05:40:09.414: IP: s=172.16.1.5 (local), d=172.16.1.6 (BRI0), Len 100, sending 
+*Mar? 1 05:40:09.418:???? ICMP type=8, code=0 
+*Mar? 1 05:40:09.462: IP: s=172.16.1.6 (BRI0), d=172.16.1.5 (BRI0), Len 100, rcvd 3 
+
+!--- Other four ping packets are successful.
+
+*Mar? 1 05:40:09.466:???? ICMP type=0, code=0 
+goya# 
+*Mar? 1 05:40:13.674: %ISDN-6-CONNECT: Interface BRI0:1 is now connected to 8130
+   traxbol 
+!? 
+
+!--- View the dialer.
+
+!
+goya#show dialer 
+
+BRI0 - dialer type = ISDN 
+Dial String????? Successes?? Failures??? Last called?? Last status 
+8130?????????????????? 299???????? 10??? 00:00:11?????? successful 
+0 incoming call(s) have been screened. 
+BRI0:1 - dialer type = ISDN 
+Idle timer (60 secs), Fast idle timer (20 secs) 
+Wait for carrier (30 secs), Re-enable (15 secs) 
+Dialer state is data link layer up 
+
+!--- The next two lines tell who triggered the call !--- and the time remaining before disconnect. 
+
+Dial reason: ip (s=172.16.1.5, d=172.16.1.6) 
+Time until disconnect 50 secs 
+Connected to 8130 (traxbol) 
+
+BRI0:2 - dialer type = ISDN 
+Idle timer (60 secs), Fast idle timer (20 secs) 
+Wait for carrier (30 secs), Re-enable (15 secs) 
+Dialer state is idle 
+goya# 
+!
+
+!--- View the HDLC.
+
+!
+goya#debug serial interface? 
+Serial network interface debugging is on 
+goya#ping 172.16.1.6
+ Type escape sequence to abort. 
+Sending 5, 100-byte ICMP Echos to 172.16.1.6, timeout is 2 seconds: 
+!!!!! 
+Success rate is 100 percent (5/5), round-trip min/avg/max = 32/93/328 ms 
+goya# 
+*Mar? 1 06:35:03.266: %LINK-3-UPDOWN: Interface BRI0:1, changed state to up 
+*Mar? 1 06:35:03.814: %LINEPROTO-5-UPDOWN: Line protocol on Interface BRI0:1,
+   changed state to up 
+*Mar? 1 06:35:04.822: BRI0:1: HDLC myseq 0, mineseen 0, yourseen 0, line up? 
+*Mar? 1 06:35:09.846: %ISDN-6-CONNECT: Interface BRI0:1 is now connected to 8130
+   traxbol 
+*Mar? 1 06:35:14.826: BRI0:1: HDLC myseq 1, mineseen 1*, yourseen 1, line up? 
+*Mar? 1 06:35:24.838: BRI0:1: HDLC myseq 2, mineseen 2*, yourseen 2, line up? 
+*Mar? 1 06:35:34.842: BRI0:1: HDLC myseq 3, mineseen 3*, yourseen 3, line up? 
+*Mar? 1 06:35:44.846: BRI0:1: HDLC myseq 4, mineseen 4*, yourseen 4, line up? 
+*Mar? 1 06:35:54.850: BRI0:1: HDLC myseq 5, mineseen 5*, yourseen 5, line up? 
+*Mar? 1 06:36:03.862: %ISDN-6-DISCONNECT: Interface BRI0:1? disconnected from
+   8130 traxbol, call lasted 60 seconds 
+*Mar? 1 06:36:03.974: %LINK-3-UPDOWN: Interface BRI0:1, changed state to down 
+*Mar? 1 06:36:04.858: %LINEPROTO-5-UPDOWN: Line protocol on Interface BRI0:1,
+   changed state to down 
+goya#undebug all 
+All possible debugging has been turned off 
+goya# 
+The output from traxbol:
+traxbol#debug dialer 
+Dial on demand events debugging is on 
+traxbol#debug ip packet detail 105 
+IP packet debugging is on (detailed) for access list 105 
+traxbol#debug isdn q931 
+ISDN Q931 packets debugging is on 
+
+!--- Verify that the map is correctly configured. 
+
+traxbol#show dialer map 
+Static dialer map ip 172.16.1.5 name goya (8129) on BRI0 
+traxbol# 
+
+!--- A call is received, notice that the calling party !--- matches the ISDN caller configuration.
+
+*Mar? 1 05:40:30.898: ISDN BR0: RX <-? SETUP pd = 8? callref = 0x15 
+*Mar? 1 05:40:30.898:???????? Bearer Capability i = 0x8890 
+*Mar? 1 05:40:30.902:???????? Channel ID i = 0x89 
+*Mar? 1 05:40:30.906:???????? Calling Party Number i = 0xA1, '8129' 
+*Mar? 1 05:40:30.906:???????? Called Party Number i = 0xC1, '8130' 
+*Mar? 1 05:40:30.918: %LINK-3-UPDOWN: Interface BRI0:1, changed state to up 
+*Mar? 1 05:40:30.954: ISDN BR0: TX ->? CONNECT pd = 8? callref = 0x95 
+*Mar? 1 05:40:30.958: dialer Protocol up for BR0:1 
+*Mar? 1 05:40:31.014: ISDN BR0: RX <-? CONNECT_ACK pd = 8? callref = 0x15 
+*Mar? 1 05:40:31.018:???????? Channel ID i = 0x89 
+*Mar? 1 05:40:31.862: %LINEPROTO-5-UPDOWN: Line protocol on Interface BRI0:1,
+ changed state to up 
+
+!--- debug ip packet detail 105 shows the ICMPs on this router. 
+
+*Mar? 1 05:40:32.794: IP: s=172.16.1.5 (BRI0), d=172.16.1.6 (BRI0), Len 100, rcvd 3 
+*Mar? 1 05:40:32.798:???? ICMP type=8, code=0 
+*Mar? 1 05:40:32.802: IP: s=172.16.1.6 (local), d=172.16.1.5 (BRI0), Len 100, sending 
+*Mar? 1 05:40:32.802:???? ICMP type=0, code=0 
+*Mar? 1 05:40:32.850: IP: s=172.16.1.5 (BRI0), d=172.16.1.6 (BRI0), Len 100, rcvd 3 
+*Mar? 1 05:40:32.854:???? ICMP type=8, code=0 
+*Mar? 1 05:40:32.854: IP: s=172.16.1.6 (local), d=172.16.1.5 (BRI0), Len 100, sending 
+*Mar? 1 05:40:32.858:???? ICMP type=0, code=0 
+*Mar? 1 05:40:32.926: IP: s=172.16.1.5 (BRI0), d=172.16.1.6 (BRI0), Len 100, rcvd 3 
+*Mar? 1 05:40:32.930:???? ICMP type=8, code=0 
+*Mar? 1 05:40:32.930: IP: s=172.16.1.6 (local), d=172.16.1.5 (BRI0), Len 100, sending 
+*Mar? 1 05:40:32.934:???? ICMP type=0, code=0 
+*Mar? 1 05:40:32.982: IP: s=172.16.1.5 (BRI0), d=172.16.1.6 (BRI0), Len 100, rcvd 3 
+*Mar? 1 05:40:32.982:???? ICMP type=8, code=0 
+*Mar? 1 05:40:32.986: IP: s=172.16.1.6 (local), d=172.16.1.5 (BRI0), Len 100, sending 
+*Mar? 1 05:40:32.990:???? ICMP type=0, code=0 
+*Mar? 1 05:40:36.994: %ISDN-6-CONNECT: Interface BRI0:1 is now connected to 8129 goya
+! 
+
+!--- On the dialer, the call is received. !--- There is no dial reason. However, the idle has been using the !--- default 120 seconds since nothing was configured. !--- The router GOYA closes !--- the call earlier because the idle is set to 60 seconds on that side. 
+!
+traxbol#show dialer 
+
+BRI0 - dialer type = ISDN 
+
+Dial String????? Successes?? Failures??? Last called?? Last status 
+8129???????????????????? 0????????? 0??? never?????????????????? - 
+10 incoming call(s) have been screened. 
+
+BRI0:1 - dialer type = ISDN 
+Idle timer (120 secs), Fast idle timer (20 secs) 
+Wait for carrier (30 secs), Re-enable (15 secs) 
+Dialer state is data link layer up 
+Time until disconnect 103 secs 
+Connected to 8129 (goya) 
+
+BRI0:2 - dialer type = ISDN 
+Idle timer (120 secs), Fast idle timer (20 secs) 
+Wait for carrier (30 secs), Re-enable (15 secs) 
+Dialer state is idle 
+traxbol# 
+!
+
+!--- View the HDLC.
+
+!
+traxbol#debug serial interface 
+Serial network interface debugging is on 
+traxbol# 
+*Mar? 1 06:35:26.674: %LINK-3-UPDOWN: Interface BRI0:1, changed state to up 
+*Mar? 1 06:35:26.698: Ser-Autodetect BR0:1: no autodetect configuration 
+*Mar? 1 06:35:27.534: %LINEPROTO-5-UPDOWN: Line protocol on Interface BRI0:1,
+   changed state to up 
+*Mar? 1 06:35:31.554: BRI0:1: HDLC myseq 0, mineseen 0*, yourseen 1, line up? 
+*Mar? 1 06:35:33.578: %ISDN-6-CONNECT: Interface BRI0:1 is now connected to 8129
+   goya 
+*Mar? 1 06:35:41.598: BRI0:1: HDLC myseq 1, mineseen 1*, yourseen 2, line up? 
+*Mar? 1 06:35:51.702: BRI0:1: HDLC myseq 2, mineseen 2*, yourseen 3, line up? 
+*Mar? 1 06:36:01.746: BRI0:1: HDLC myseq 3, mineseen 3*, yourseen 4, line up? 
+*Mar? 1 06:36:11.790: BRI0:1: HDLC myseq 4, mineseen 4*, yourseen 5, line up? 
+*Mar? 1 06:36:21.894: BRI0:1: HDLC myseq 5, mineseen 5*, yourseen 6, line up? 
+*Mar? 1 06:36:27.510: %ISDN-6-DISCONNECT: Interface BRI0:1? disconnected from 8129
+   goya, call lasted 60 seconds 
+*Mar? 1 06:36:27.514: %LINK-3-UPDOWN: Interface BRI0:1, changed state to down 
+*Mar? 1 06:36:27.922: %LINEPROTO-5-UPDOWN: Line protocol on Interface BRI0:1,
+   changed state to down 
+traxbol#undebug all 
+All possible debugging has been turned off 
+traxbol# 
+Related Information
+Configuring ISDN DDR with Dialer Profiles
+Configuring BRI-to-BRI Dialup with DDR Dialer Maps
+Technical Support - Cisco Systems
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Dial-on-Demand Routing (DDR)
+Integrated Services Digital Networks (ISDN), Channel-Associated Signaling (CAS)

@@ -1,0 +1,316 @@
+Configuration Examples and TechNotes
+ASA Access to the ASDM from an Inside Interface Over a VPN Tunnel Configuration Example
+Save
+Translations
+Download
+Print
+
+
+
+Updated:May 18, 2016
+Document ID:118092
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Configure
+Network Diagram
+Configurations
+Access ASDM/SSH Across a VPN Tunnel
+Verify
+Command Summary
+Troubleshoot
+Sample Debug Output
+Related Information
+Introduction
+This document describes how to configure a LAN-to-LAN VPN tunnel with the use of two Cisco Adaptive Security Appliance (ASA) Firewalls. The Cisco Adaptive Security Device Manager (ASDM) runs on the remote ASA through the outside interface on the public side, and it encrypts both regular network and ASDM traffic. The ASDM is a browser-based configuration tool that is designed in order to help you set up, configure, and monitor your ASA Firewall with a GUI. You do not need extensive knowledge of the ASA Firewall CLI. 
+Prerequisites
+Requirements
+Cisco recommends that you have knowledge of these topics:
+IPsec encryption
+Cisco ASDM
+Note: Ensure that all of the devices that are used in your topology meet the requirements that are described in the Cisco ASA 5500 Series Hardware Installation Guide.
+Tip: Refer to the An Introduction to IP Security (IPSec) Encryption Cisco article in order to gain familiarity with basic IPsec encryption.
+Components Used
+The information in this document is based on these software and hardware versions:
+Cisco ASA Firewall software Release 9.x.
+
+ASA-1 and ASA-2 are Cisco ASA Firewall 5520
+
+ASA 2 uses ASDM Version 7.2(1)
+Note: When you are prompted for a username and password for the ASDM, the default settings do not require a username. If an enable password was previously configured, enter that password as the ASDM password. If there is no enable password, leave both the username and password entries blank and click OK in order to continue.
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Configure
+Use the information that is described in this section in order to configure the features that are described in this document.
+Network Diagram
+Configurations
+This is the configuration that is used on ASA-1:
+ASA-1
+ 
+ASA Version 9.1(5)
+!
+hostname ASA-1
+!
+interface GigabitEthernet0/0
+nameif outside
+security-level 0
+ip address 203.0.113.2 255.255.255.0
+!
+interface GigabitEthernet0/1
+nameif inside
+security-level 100
+ip address 172.18.124.1 255.255.255.0
+!
+ 
+!--- Traffic matching ACL 101 is punted to VPN
+!--- Encrypt/Decrypt traffic matching ACL 101 
+
+access-list 101 extended permit ip 172.18.124.0 255.255.255.0 192.168.10.0
+ 255.255.255.0
+
+!--- Do not use NAT
+!--- on traffic matching below Identity NAT
+
+object network obj_192.168.10.0
+subnet 192.168.10.0 255.255.255.0
+
+object network obj_172.18.124.0
+subnet 172.18.124.0 255.255.255.0
+
+nat (inside,outside) source static obj_172.18.124.0 obj_172.18.124.0 destination
+ static obj_192.168.10.0 obj_192.168.10.0 no-proxy-arp route-lookup
+
+!--- Configures a default route towards the gateway router.
+
+route outside 0.0.0.0 0.0.0.0 203.0.113.252 1
+
+!--- Point the configuration to the appropriate version of ASDM in flash
+
+asdm image asdm-722.bin
+
+!--- Enable the HTTP server required to run ASDM.
+ 
+http server enable
+ 
+!--- This is the interface name and IP address of the host or 
+!--- network that initiates the HTTP connection.
+ 
+http 172.18.124.102 255.255.255.255 inside
+ 
+!--- Implicitly permit any packet that came from an IPsec 
+!--- tunnel and bypass the checking of an associated access-group
+!--- command statement for IPsec connections.
+ 
+sysopt connection permit-vpn
+ 
+!--- Specify IPsec (phase 2) transform set.
+!--- Specify IPsec (phase 2) attributes.
+
+crypto ipsec ikev1 transform-set vpn esp-3des esp-md5-hmac
+crypto ipsec security-association pmtu-aging infinite
+crypto map vpn 10 match address 101
+crypto map vpn 10 set peer 198.51.100.2
+crypto map vpn 10 set ikev1 transform-set vpn
+crypto map vpn interface outside
+ 
+!--- Specify ISAKMP (phase 1) attributes.
+  
+crypto ikev1 enable outside
+crypto ikev1 policy 10
+authentication pre-share
+encryption 3des
+hash sha
+group 2
+lifetime 86400
+ 
+!--- Specify tunnel-group ipsec attributes.
+ 
+tunnel-group 198.51.100.2 type ipsec-l2l
+tunnel-group 198.51.100.2 ipsec-attributes
+ikev1 pre-shared-key cisco
+This is the configuration that is used on ASA-2:
+ASA-2
+ 
+ASA Version 9.1(5)
+!
+hostname ASA-2
+!
+interface GigabitEthernet0/0
+nameif outside
+security-level 0
+ip address 198.51.100.2 255.255.255.0
+!
+interface GigabitEthernet0/1
+nameif inside
+security-level 100
+ip address 192.168.10.1 255.255.255.0
+!
+  
+!--- Traffic matching ACL 101 is punted to VPN
+!--- Encrypt/Decrypt traffic  matching ACL 101 
+
+access-list 101 extended permit ip 192.168.10.0 255.255.255.0 172.18.124.0
+ 255.255.255.0
+ 
+!--- Do not use NAT 
+!--- on traffic matching below Identity NAT
+ 
+object network obj_192.168.10.0
+subnet 192.168.10.0 255.255.255.0
+ 
+object network obj_172.18.124.0
+subnet 172.18.124.0 255.255.255.0
+ 
+nat (inside,outside) source static obj_192.168.10.0 obj_192.168.10.0 destination
+ static obj_172.18.124.0 obj_172.18.124.0 no-proxy-arp route-lookup
+
+!--- Configures a default route towards the gateway router.
+ 
+route outside 0.0.0.0 0.0.0.0 198.51.100.252 1
+ 
+!--- Point the configuration to the appropriate version of ASDM in flash
+
+asdm image asdm-722.bin
+ 
+!--- Enable the HTTP server required to run ASDM.
+ 
+http server enable
+ 
+!--- This is the interface name and IP address of the host or 
+!--- network that initiates the HTTP connection.
+ 
+http 192.168.10.102 255.255.255.255 inside
+
+!--- Add an aditional 'http' configuration to allow the remote subnet
+!--- to access ASDM over the VPN tunnel
+
+http 172.18.124.0 255.255.255.0 outside
+ 
+!--- Implicitly permit any packet that came from an IPsec 
+!--- tunnel and bypass the checking of an associated access-group 
+!--- command statement for IPsec connections.
+ 
+sysopt connection permit-vpn
+ 
+!--- Specify IPsec (phase 2) transform set.
+!--- Specify IPsec (phase 2) attributes.
+
+crypto ipsec ikev1 transform-set vpn esp-3des esp-md5-hmac
+crypto ipsec security-association pmtu-aging infinite
+crypto map vpn 10 match address 101
+crypto map vpn 10 set peer 203.0.113.2
+crypto map vpn 10 set ikev1 transform-set vpn
+crypto map vpn interface outside
+ 
+!--- Specify ISAKMP (phase 1) attributes.
+  
+crypto ikev1 enable outside
+crypto ikev1 policy 10
+authentication pre-share
+encryption 3des
+hash sha
+group 2
+lifetime 86400
+  
+!--- Specify tunnel-group ipsec attributes.
+ 
+tunnel-group 203.0.113.2 type ipsec-l2l
+tunnel-group 203.0.113.2 ipsec-attributes
+ikev1 pre-shared-key cisco
+Access ASDM/SSH Across a VPN Tunnel
+In order to access ASDM via the inside interface of ASA-2 from the ASA-1 inside network, you must use the command that is described here. This command can only be used for one interface. On ASA-2, configure management-access with the management-access inside command:
+management-access <interface-name>
+Verify
+This section provides information that you can use in order to verify that your configuration works properly.
+Note: The Cisco CLI Analyzer (registered customers only) supports certain show commands. Use the Cisco CLI Analyzer in order to view an analysis of show command output.
+Use these commands in order to verify your configuration:
+Enter the show crypto isakmp sa/show isakmp sa command in order to verify that Phase 1 establishes correctly.
+Enter the show crypto ipsec sa in order to verify that Phase 2 establishes correctly.
+Command Summary
+Once the VPN commands are entered into the ASAs, a VPN tunnel is established when traffic passes between the ASDM PC (172.18.124.102) and the inside interface of ASA-2 (192.168.10.1). At this point, the ASDM PC is able to reach https://192.168.10.1 and communicate with the ASDM interface of ASA-2 over the VPN tunnel.
+Troubleshoot
+This section provides information that you can use in order to troubleshoot your configuration.
+Note: Refer to the ASA Connection Problems to the Cisco Adaptive Security Device Manager Cisco article in order to troubleshoot ASDM-related issues.
+Sample Debug Output
+Enter the show crypto isakmp sa command in order to view the tunnel that is formed between 198.51.100.2  and 203.0.113.2:
+ASA-2(config)# show crypto isakmp sa
+
+IKEv1 SAs:
+
+   Active SA: 1
+    Rekey SA: 0 (A tunnel will report 1 Active and 1 Rekey SA during rekey)
+Total IKE SA: 1
+
+1   IKE Peer: 203.0.113.2
+    Type    : L2L             Role    : initiator
+    Rekey   : no              State   : MM_ACTIVE
+Enter the show crypto ipsec sa command in order to view the tunnel that passes traffic between 192.168.10.0 255.255.255.0 and 172. 18.124.0 255.255.255.0:
+ASA-2(config)# show crypto ipsec sa
+interface: outside
+ Crypto map tag: vpn, seq num: 10, local addr: 198.51.100.2
+ 
+  access-list 101 extended permit ip 192.168.10.0 255.255.255.0
+   172.18.124.0 255.255.255.0
+  local ident (addr/mask/prot/port): (192.168.10.0/255.255.255.0/0/0)
+  remote ident (addr/mask/prot/port): (172.18.124.0/255.255.255.0/0/0)
+  current_peer: 203.0.113.2
+
+  #pkts encaps: 5, #pkts encrypt: 5, #pkts digest: 5
+  #pkts decaps: 5, #pkts decrypt: 5, #pkts verify: 5
+  #pkts compressed: 0, #pkts decompressed: 0
+  #pkts not compressed: 5, #pkts comp failed: 0, #pkts decomp failed: 0
+  #pre-frag successes: 0, #pre-frag failures: 0, #fragments created: 0
+  #PMTUs sent: 0, #PMTUs rcvd: 0, #decapsulated frgs needing reassembly: 0
+  #TFC rcvd: 0, #TFC sent: 0
+  #Valid ICMP Errors rcvd: 0, #Invalid ICMP Errors rcvd: 0
+  #send errors: 0, #recv errors: 0
+ 
+  local crypto endpt.: 198.51.100.2/0, remote crypto endpt.: 203.0.113.2/0
+  path mtu 1500, ipsec overhead 58(36), media mtu 1500
+  PMTU time remaining (sec): 0, DF policy: copy-df
+  ICMP error validation: disabled, TFC packets: disabled
+  current outbound spi: DDE6AD22
+  current inbound spi : 92425FE5
+ 
+ inbound esp sas:
+  spi: 0x92425FE5 (2453823461)
+   transform: esp-3des esp-md5-hmac no compression
+   in use settings ={L2L, Tunnel, IKEv1, }
+   slot: 0, conn_id: 28672, crypto-map: vpn
+   sa timing: remaining key lifetime (kB/sec): (4373999/28658)
+   IV size: 8 bytes
+   replay detection support: Y
+   Anti replay bitmap:
+    0x00000000 0x0000003F
+ outbound esp sas:
+  spi: 0xDDE6AD22 (3722882338)
+   transform: esp-3des esp-md5-hmac no compression
+   in use settings ={L2L, Tunnel, IKEv1, }
+   slot: 0, conn_id: 28672, crypto-map: vpn
+   sa timing: remaining key lifetime (kB/sec): (4373999/28658)
+   IV size: 8 bytes
+   replay detection support: Y
+   Anti replay bitmap:
+    0x00000000 0x00000001
+Related Information
+Cisco ASA Command Reference
+Technical Support & Documentation - Cisco Systems
+Contributed by Cisco Engineers
+Dinkar Sharma
+Cisco TAC Engineer
+Prashant Joshi
+Cisco TAC Engineer
+Magnus Mortensen
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+ASA Connection Problems to the Cisco Adaptive Security Device Manager
+Use ASDM to Manage a FirePOWER Module on an ASA
+ASDM Troubleshooting
++ Show 2 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)

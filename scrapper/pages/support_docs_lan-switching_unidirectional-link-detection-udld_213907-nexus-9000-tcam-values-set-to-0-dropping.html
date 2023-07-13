@@ -1,0 +1,267 @@
+Troubleshooting TechNotes
+Nexus 9000 TCAM values set to 0 dropping Arp, UDLD, LACP packets
+Save
+Translations
+Download
+Print
+
+
+
+Updated:November 16, 2018
+Document ID:213907
+Bias-Free Language
+Contents
+Introduction
+Prerequsite
+Topology
+Troubleshooting
+Analysis
+Solution
+Useful commands
+Useful links
+Introduction
+This document explains how to troubleshoot when Nexus 9000 TCAM when ports go down due to UDLD error
+It cover the current and common concepts, troubleshooting methods and error messages.
+The purpose of this document is to help users understand how to troubleshoot TCAM when ports go down due to UDLD error
+Prerequsite
+Understanding of Cisco NXOS commands
+NXOS TCAM configuration
+Topology
+The issue can be seen with a simple topology
+                                                              (N9k-1)Eth2/1-2——————————— (N9k-2) Eth2/1-2
+1.1.1.1 /24                                                    1.1.1.2/24
+Troubleshooting
+Following protocols fail to work on control plane:
+ARP resolution fail
+Ports on Nexus 9000 reported down due to UDLD error for module 1 & 2.
+N9K-1(config-if)# 2018 Oct 20 07:23:23 N9K-1 %ETHPORT-5-IF_ADMIN_UP: Interface port-channel100 is admin up .
+2018 Oct 20 07:23:23 N9K-1 %ETHPORT-5-IF_DOWN_PORT_CHANNEL_MEMBERS_DOWN: Interface port-channel100 is down (No operational members)
+2018 Oct 20 07:23:23 N9K-1 last message repeated 1 time
+2018 Oct 20 07:23:23 N9K-1 %ETHPORT-5-IF_DOWN_ERROR_DISABLED: Interface Ethernet2/2 is down (Error disabled. Reason:UDLD empty echo)
+2018 Oct 20 07:23:23 N9K-1 last message repeated 1 time
+2018 Oct 20 07:23:23 N9K-1 %ETHPORT-5-IF_DOWN_ERROR_DISABLED: Interface Ethernet2/1 is down (Error disabled. Reason:UDLD empty echo)
+sh 2018 Oct 20 07:23:25 N9K-1 last message repeated 1 time
+Line cards fail due to L2ACLRedirect diagnostic test on chassis for module 1 & 2.
+'Show module'
+
+Mod  Online Diag Status
+---  ------------------
+1    Fail————————————cleared the module 1 and 2 error .[show logging nvram]
+2    Fail—————————————module 2 reloaded.
+3    Pass
+
+Module 1 and 2:
+
+                11) L2ACLRedirect-----------------> E
+                12) BootupPortLoopback: U
+
+Another Possible way customer can hit this state is SUP/LC from a T2 ASIC based chassis moved to Tahoe based chassis
+Note: If you want to know more information about ASIC troubleshooting please contact cisco TAC
+CSCvc36411  Upgrading from T2 to Tahoe based line cards / FM can cause diagnostic failure and TCAM issues
+Analysis
+This issue would be seen when TCAM Values set to 0 on N9K-2
+N9K-2# sh hardware access-list tcam region
+                                    NAT ACL[nat] size =    0
+                        Ingress PACL [ing-ifacl] size =    0
+                                     VACL [vacl] size =    0
+                         Ingress RACL [ing-racl] size =    0
+                       Ingress RBACL [ing-rbacl] size =    0
+                     Ingress L2 QOS [ing-l2-qos] size =    0
+           Ingress L3/VLAN QOS [ing-l3-vlan-qos] size =    0
+                           Ingress SUP [ing-sup] size =    0
+     Ingress L2 SPAN filter [ing-l2-span-filter] size =    
+     Ingress L3 SPAN filter [ing-l3-span-filter] size =    0
+                       Ingress FSTAT [ing-fstat] size =    0
+                                     span [span] size =    0
+                          Egress RACL [egr-racl] size =    0
+                            Egress SUP [egr-sup] size =    0
+                 Ingress Redirect [ing-redirect] size =    0
+To islolate further remove UDLD and but ping fail to work
+Arp request going out of N9K-2
+N9K-2# ethanalyzer local interface inband
+
+Capturing on inband
+2018-10-23 10:46:47.282551      1.1.1.1 -> 1.1.1.2      ICMP Echo (ping) request
+2018-10-23 10:46:47.286072 b0:aa:77:30:75:bf -> ff:ff:ff:ff:ff:ff ARP Who has 1.1.1.1?  Tell 1.1.1.2
+2018-10-23 10:46:49.284704      1.1.1.1 -> 1.1.1.2      ICMP Echo (ping) request
+2018-10-23 10:46:51.286150 b0:aa:77:30:75:bf -> ff:ff:ff:ff:ff:ff ARP Who has 1.1.1.1?  Tell 1.1.1.2
+2018-10-23 10:46:51.286802      1.1.1.1 -> 1.1.1.2      ICMP Echo (ping) request
+2018-10-23 10:46:53.288989      1.1.1.1 -> 1.1.1.2      ICMP Echo (ping) request
+2018-10-23 10:46:55.289920      1.1.1.1 -> 1.1.1.2      ICMP Echo (ping) request
+2018-10-23 10:46:57.292070      1.1.1.1 -> 1.1.1.2      ICMP Echo (ping) request
+2018-10-23 10:46:59.292568      1.1.1.1 -> 1.1.1.2      ICMP Echo (ping) request
+2018-10-23 10:46:59.292818 b0:aa:77:30:75:bf -> ff:ff:ff:ff:ff:ff ARP Who has 1.1.1.1?  Tell 1.1.1.2
+10 packets captured
+N9K-1# ethanalyzer local interface inband
+Capturing on inband
+2018-10-23 04:02:40.568119 b0:aa:77:30:75:bf -> ff:ff:ff:ff:ff:ff ARP Who has 1.1.1.1?  Tell 1.1.1.2
+2018-10-23 04:02:40.568558 cc:46:d6:af:ff:bf -> b0:aa:77:30:75:bf ARP 1.1.1.1 is at cc:46:d6:af:ff:bf
+2018-10-23 04:02:48.574800 b0:aa:77:30:75:bf -> ff:ff:ff:ff:ff:ff ARP Who has 1.1.1.1?  Tell 1.1.1.2
+2018-10-23 04:02:48.575230 cc:46:d6:af:ff:bf -> b0:aa:77:30:75:bf ARP 1.1.1.1 is at cc:46:d6:af:ff:bf————arp reply packet sent by agg1.
+ELAM on N9K-2 has ARP response from N9K-1
+Note: Please contact Cisco TAC to verify ELAM capture
+module-2(TAH-elam-insel6)# reprort
+
+Initting block addresses
+
+SUGARBOWL ELAM REPORT SUMMARY
+
+slot - 2, asic - 1, slice - 0
+============================
+
+Incoming Interface: Eth2/2
+Src Idx : 0x42, Src BD : 4489
+Outgoing Interface Info: dmod 0, dpid 0
+Dst Idx : 0x0, Dst BD : 4489
+
+Packet Type: ARP
+
+Dst MAC address: B0:AA:77:30:75:BF
+Src MAC address: CC:46:D6:AF:FF:BF
+Target Hardware address: B0:AA:77:30:75:BF           ---------------------------------------      Arp packet captured on Linecard 
+Sender Hardware address: CC:46:D6:AF:FF:BF
+Target Protocol address: 1.1.1.2
+Sender Protocol address: 1.1.1.1
+ARP opcode: 2
+
+Drop Info:
+module-2(TAH-elam-insel6)#
+Bug ping still fail
+N9K-2# ping 1.1.1.1
+
+PING 1.1.1.1 (1.1.1.1): 56 data bytes
+36 bytes from 1.1.1.2: Destination Host Unreachable
+Request 0 timed out
+36 bytes from 1.1.1.2: Destination Host Unreachable
+Request 1 timed out
+36 bytes from 1.1.1.2: Destination Host Unreachable
+Request 2 timed out
+36 bytes from 1.1.1.2: Destination Host Unreachable
+Request 3 timed out
+36 bytes from 1.1.1.2: Destination Host Unreachable
+N9K-2# show ip arp | inc 1.1.1.1———arp not getting populated
+To isolate arp issue add a static arp entry and disable UDLD
+After static arp ping from 1.1.1.2 to 1.1.1.1 started working but it would fail again if UDLD is enabled
+N9K-2(config)# ping 1.1.1.2
+
+PING 1.1.1.2 (1.1.1.2): 56 data bytes
+
+64 bytes from 1.1.1.2: icmp_seq=0 ttl=255 time=0.32 ms
+64 bytes from 1.1.1.2: icmp_seq=1 ttl=255 time=0.285 ms
+64 bytes from 1.1.1.2: icmp_seq=2 ttl=255 time=0.282 ms
+64 bytes from 1.1.1.2: icmp_seq=3 ttl=255 time=0.284 ms
+64 bytes from 1.1.1.2: icmp_seq=4 ttl=255 time=0.291 ms
+Though ping works the UDLD errors would still be seen on the interface when enabled
+No CoPP drops as seen below
+N9K-2# show hardware internal cpu-mac inband active-fm traffic-to-sup
+
+Active FM Module for traffic to sup:
+0x00000016———————————————————————————Module 22.
+
+N9K-2# show policy-map interface control-plane module 22 | inc dropp
+
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+        dropped 0 bytes;
+Spoiler
+Active FM towards Sup is Module 22. Toverify run below commands
+
+module-30# show mvdxn internal port-status
+
+Switch type: Marvell 98DXN41 - 4 port switch
+Port  Descr               Enable  Status  ANeg  Speed  Mode   InByte    OutByte     InPkts    OutPkts
+--  --------------------  ------  ------  ----  -----  ---- ---------- ---------- ---------- ----------
+6         Local AXP CPU     Yes      UP   No      2     6   781502852 1006219901    6868852    3506128
+7  This SC BCM EOBC switch     Yes      UP   No      2     6   654791960  430206276    1833465    3523170
+8  Other SC BCM EOBC switch     Yes    DOWN   No      2     6       72282        176          3          2
+9    This SC EPC switch     Yes      UP   No      2     6   351355874  351309506    1672662    3345683
+
+Switch type: Marvell 98DXN11 - 10 port switch
+Port  Descr               Enable  Status  ANeg  Speed  Mode   InByte    OutByte     InPkts    OutPkts
+--  --------------------  ------  ------  ----  -----  ---- ---------- ---------- ---------- ----------
+0        FM6 EPC switch     Yes    DOWN   No      2     6           0          0          0          0
+1        FM5 EPC switch     Yes    DOWN   No      2     6           0          0          0          0
+2           SUP ALT EPC     Yes    DOWN   No      2     6           0          0          0          0
+3           SUP PRI EPC     Yes    DOWN   No      2     6           0          0          0          0
+4        FM4 EPC switch     Yes    DOWN   No      2     6           0          0          0          0
+5        FM3 EPC switch     Yes    DOWN   No      2     6           0          0          0          0
+6        FM2 EPC switch     Yes    DOWN   No      2     6           0          0          0          0
+7        FM1 EPC switch     Yes    DOWN   No      2     6           0          0          0          0
+8   Other SC EPC switch     Yes      UP   No      2     6   351356399  351310095    1672664    3345687
+9  Local SC 4-port switch     Yes      UP   No      2     6   351310031  351356399    3345688    1672664
+
+Rule  Rule_name             Match_ctr             Pol_en  Pol_idx  inProfileBytes        outOfProfileBytes
+
+----  --------------------  --------------------  ------  -------  --------------------  --------------------
+   Solution
+TCAM Values set to 0 cause dropping of all control traffic in the linecard .
+After changing the TCAM values to the default udld comes up and arp gets resolved
+Configuration added to N9K-2 to solve the issue
+Reload is needed after the configration change
+N9K-2(config)# hardware access-list tcam region ing-sup 512
+Warning: Please reload all linecards for the configuration to take effect
+
+N9K-2(config)# hardware access-list tcam region ing-racl 1536
+Warning: Please reload all linecards for the configuration to take effect
+
+N9K-2(config)# hardware access-list tcam region ing-l2 ing-l2-qos ing-l2-span-filter
+
+N9K-2(config)# hardware access-list tcam region ing-l2-qos 256
+Warning: Please reload all linecards for the configuration to take effect
+
+N9K-2(config)# hardware access-list tcam region ing-l3-vlan-qos 512
+Warning: Please reload all linecards for the configuration to take effect
+
+N9K-2(config)# hardware access-list tcam region ing-l2 ing-l2-qos ing-l2-span-filter
+N9K-2(config)# hardware access-list tcam region ing-l2-span-filter 256
+
+N9K-2(config)# hardware access-list tcam region ing-l3-span-filter 256
+N9K-2(config)# hardware access-list tcam region span 512
+
+Warning: Please reload all linecards for the configuration to take effect
+
+N9K-2(config)# hardware access-list tcam region egr-racl 1792
+
+Warning: Please reload all linecards for the configuration to take effect
+
+N9K-2(config)# show run | grep tcam
+hardware access-list tcam region ing-redirect 0
+
+N9K-2(config)# hardware access-list tcam region ing-redirect 256
+
+Warning: Please reload all linecards for the configuration to take effect
+Useful commands
+Show hardware access-list tcam region
+Show run | inc TCAM"-----No output means TCAM is set to default settings.
+   Useful links
+Nexus 9000 TCAM Carving
+Contributed by Cisco Engineers
+Parthiban Chinnaya
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)

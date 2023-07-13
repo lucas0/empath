@@ -1,0 +1,370 @@
+Configuration Guides
+Cisco Security Appliance Command Line Configuration Guide, Version 7.2
+Bias-Free Language
+Book Contents
+Download
+Print
+Chapter: Applying AAA for Network Access
+Chapter Contents
+
+This chapter describes how to enable AAA (pronounced "triple A") for network access.
+For information about AAA for management access, see the "Configuring AAA for System Administrators" section on page 40-5.
+This chapter contains the following sections:
+•AAA Performance
+•Configuring Authentication for Network Access
+•Configuring Authorization for Network Access
+•Configuring Accounting for Network Access
+•Using MAC Addresses to Exempt Traffic from Authentication and Authorization
+AAA Performance
+The security appliance uses "cut-through proxy" to significantly improve performance compared to a traditional proxy server. The performance of a traditional proxy server suffers because it analyzes every packet at the application layer of the OSI model. The security appliance cut-through proxy challenges a user initially at the application layer and then authenticates against standard AAA servers or the local database. After the security appliance authenticates the user, it shifts the session flow, and all traffic flows directly and quickly between the source and destination while maintaining session state information.
+Configuring Authentication for Network Access
+This section includes the following topics:
+•Authentication Overview
+•Enabling Network Access Authentication
+•Enabling Secure Authentication of Web Clients
+•Authenticating Directly with the Security Appliance
+Authentication Overview
+The security appliance lets you configure network access authentication using AAA servers. This section includes the following topics:
+•One-Time Authentication
+•Applications Required to Receive an Authentication Challenge
+•Security Appliance Authentication Prompts
+•Static PAT and HTTP
+•Enabling Network Access Authentication
+One-Time Authentication
+A user at a given IP address only needs to authenticate one time for all rules and types, until the authentication session expires. (See the timeout uauth command in the Cisco Security Appliance Command Reference for timeout values.) For example, if you configure the security appliance to authenticate Telnet and FTP, and a user first successfully authenticates for Telnet, then as long as the authentication session exists, the user does not also have to authenticate for FTP.
+Applications Required to Receive an Authentication Challenge
+Although you can configure the security appliance to require authentication for network access to any protocol or service, users can authenticate directly with HTTP, HTTPS, Telnet, or FTP only. A user must first authenticate with one of these services before the security appliance allows other traffic requiring authentication.
+The authentication ports that the security appliance supports for AAA are fixed:
+•Port 21 for FTP
+•Port 23 for Telnet
+•Port 80 for HTTP
+•Port 443 for HTTPS
+Security Appliance Authentication Prompts
+For Telnet and FTP, the security appliance generates an authentication prompt.
+For HTTP, the security appliance uses basic HTTP authentication by default, and provides an authentication prompt. You can optionally configure the security appliance to redirect users to an internal web page where they can enter their username and password (configured with the aaa authentication listener command).
+For HTTPS, the security appliance generates a custom login screen. You can optionally configure the security appliance to redirect users to an internal web page where they can enter their username and password (configured with the aaa authentication listener command).
+Redirection is an improvement over the basic method because it provides an improved user experience when authenticating, and an identical user experience for HTTP and HTTPS in both Easy VPN and firewall modes. It also supports authenticating directly with the security appliance.
+You might want to continue to use basic HTTP authentication if: you do not want the security appliance to open listening ports; if you use NAT on a router and you do not want to create a translation rule for the web page served by the security appliance; basic HTTP authentication might work better with your network. For example non-browser applications, like when a URL is embedded in email, might be more compatible with basic authentication.
+After you authenticate correctly, the security appliance redirects you to your original destination. If the destination server also has its own authentication, the user enters another username and password. If you use basic HTTP authentication and need to enter another username and password for the destination server, then you need to configure the virtual http command.
+Note If you use HTTP authentication without using the aaa authentication secure-http-client command, the username and password are sent from the client to the security appliance in clear text. We recommend that you use the aaa authentication secure-http-client command whenever you enable HTTP authentication. For more information about the aaa authentication secure-http-client command, see the "Enabling Secure Authentication of Web Clients" section.
+For FTP, a user has the option of entering the security appliance username followed by an at sign (@) and then the FTP username (name1@name2). For the password, the user enters the security appliance password followed by an at sign (@) and then the FTP password (password1@password2). For example, enter the following text.
+name> jamiec@jchrichton
+password> letmein@he110
+
+This feature is useful when you have cascaded firewalls that require multiple logins. You can separate several names and passwords by multiple at signs (@).
+Static PAT and HTTP
+For HTTP authentication, the security appliance checks real ports when static PAT is configured. If it detects traffic destined for real port 80, regardless of the mapped port, the security appliance intercepts the HTTP connection and enforces authentication.
+For example, assume that outside TCP port 889 is translated to port 80 (www) and that any relevant access lists permit the traffic:
+static (inside,outside) tcp 10.48.66.155 889 192.168.123.10 www netmask 255.255.255.255
+
+Then when users try to access 10.48.66.155 on port 889, the security appliance intercepts the traffic and enforces HTTP authentication. Users see the HTTP authentication page in their web browsers before the security appliance allows HTTP connection to complete.
+If the local port is different than port 80, as in the following example:
+static (inside,outside) tcp 10.48.66.155 889 192.168.123.10 111 netmask 255.255.255.255
+
+Then users do not see the authentication page. Instead, the security appliance sends to the web browser an error message indicating that the user must be authenticated prior using the requested service.
+Enabling Network Access Authentication
+To enable network access authentication, perform the following steps:
+Step 1 Using the aaa-server command, identify your AAA servers. If you have already identified your AAA servers, continue to the next step.
+For more information about identifying AAA servers, see the "Identifying AAA Server Groups and Servers" section on page 13-12.
+Step 2 Using the access-list command, create an access list that identifies the source addresses and destination addresses of traffic you want to authenticate. For steps, see the "Adding an Extended Access List" section on page 16-5.
+The permit ACEs mark matching traffic for authentication, while deny entries exclude matching traffic from authentication. Be sure to include the destination ports for either HTTP, HTTPS, Telnet, or FTP in the access list because the user must authenticate with one of these services before other services are allowed through the security appliance.
+Step 3 To configure authentication, enter the following command:
+hostname(config)# aaa authentication match acl_name interface_name server_group
+
+Where acl_name is the name of the access list you created in Step 2, interface_name is the name of the interface as specified with the nameif command, and server_group is the AAA server group you created in Step 1.
+Note You can alternatively use the aaa authentication include command (which identifies traffic within the command). However, you cannot use both methods in the same configuration. See the Cisco Security Appliance Command Reference for more information.
+Step 4 (Optional) To enable the redirection method of authentication for HTTP or HTTPS connections, enter the following command:
+hostname(config)# aaa authentication listener http[s] interface_name [port portnum] 
+redirect
+
+where the interface_name argument is the interface on which you want to enable listening ports.
+The port portnum argument specifies the port number that the security appliance listens on; the defaults are 80 (HTTP) and 443 (HTTPS).
+Enter this command separately for HTTP and for HTTPS.
+Step 5 (Optional) If you are using the local database for network access authentication and you want to limit the number of consecutive failed login attempts that the security appliance allows any given user account, use the following command:
+hostname(config)# aaa local authentication attempts max-fail number
+
+Where number is between 1 and 16.
+For example:
+hostname(config)# aaa local authentication attempts max-fail 7
+
+Tip To clear the lockout status of a specific user or all users, use the clear aaa local user lockout command.
+For example, the following commands authenticate all inside HTTP traffic and SMTP traffic:
+hostname(config)# aaa-server AuthOutbound protocol tacacs+
+hostname(config-aaa-server-group)# exit
+hostname(config)# aaa-server AuthOutbound (inside) host 10.1.1.1
+hostname(config-aaa-server-host)# key TACPlusUauthKey
+hostname(config-aaa-server-host)# exit
+hostname(config)# access-list MAIL_AUTH extended permit tcp any any eq smtp
+hostname(config)# access-list MAIL_AUTH extended permit tcp any any eq www
+hostname(config)# aaa authentication match MAIL_AUTH inside AuthOutbound
+hostname(config)# aaa authentication listener http inside redirect
+
+The following commands authenticate Telnet traffic from the outside interface to a particular server (209.165.201.5):
+hostname(config)# aaa-server AuthInbound protocol tacacs+
+hostname(config-aaa-server-group)# exit
+hostname(config)# aaa-server AuthInbound (inside) host 10.1.1.1
+hostname(config-aaa-server-host)# key TACPlusUauthKey
+hostname(config-aaa-server-host)# exit
+hostname(config)# access-list TELNET_AUTH extended permit tcp any host 209.165.201.5 eq 
+telnet
+hostname(config)# aaa authentication match TELNET_AUTH outside AuthInbound
+
+Enabling Secure Authentication of Web Clients
+The security appliance provides a method of securing HTTP authentication. Without securing HTTP authentication, usernames and passwords from the client to the security appliance would be passed as clear text. By using the aaa authentication secure-http-client command, you enable the exchange of usernames and passwords between a web client and the security appliance with HTTPS.
+After enabling this feature, when a user requires authentication when using HTTP, the security appliance redirects the HTTP user to an HTTPS prompt. After you authenticate correctly, the security appliance redirects you to the original HTTP URL.
+To enable secure authentication of web clients, enter the following command:
+hostname(config)# aaa authentication secure-http-client
+
+Secured web-client authentication has the following limitations:
+•A maximum of 16 concurrent HTTPS authentication sessions are allowed. If all 16 HTTPS authentication processes are running, a new connection requiring authentication will not succeed.
+•When uauth timeout 0 is configured (the uauth timeout is set to 0), HTTPS authentication might not work. If a browser initiates multiple TCP connections to load a web page after HTTPS authentication, the first connection is let through, but the subsequent connections trigger authentication. As a result, users are continuously presented with an authentication page, even if the correct username and password are entered each time. To work around this, set the uauth timeout to 1 second with the timeout uauth 0:0:1 command. However, this workaround opens a 1-second window of opportunity that might allow non-authenticated users to go through the firewall if they are coming from the same source IP address.
+•Because HTTPS authentication occurs on the SSL port 443, users must not configure an access-list command statement to block traffic from the HTTP client to HTTP server on port 443. Furthermore, if static PAT is configured for web traffic on port 80, it must also be configured for the SSL port. In the following example, the first line configures static PAT for web traffic and the second line must be added to support the HTTPS authentication configuration.
+static (inside,outside) tcp 10.132.16.200 www 10.130.16.10 www
+static (inside,outside) tcp 10.132.16.200 443 10.130.16.10 443
+
+Authenticating Directly with the Security Appliance
+If you do not want to allow HTTP, HTTPS, Telnet, or FTP through the security appliance but want to authenticate other types of traffic, you can authenticate with the security appliance directly using HTTP, HTTPS, or Telnet.
+This section includes the following topics:
+•Enabling Direct Authentication Using HTTP and HTTPS
+•Enabling Direct Authentication Using Telnet
+Enabling Direct Authentication Using HTTP and HTTPS
+If you enabled the redirect method of HTTP and HTTPS authentication in the "Enabling Network Access Authentication" section, then you also automatically enabled direct authentication. If you want to continue to use basic HTTP authentication, but want to enable direct authentication for HTTP and HTTPS, then enter the following command:
+hostname(config)# aaa authentication listener http[s] interface_name [port portnum]
+
+where the interface_name argument is the interface on which you want to enable direct authentication.
+The port portnum argument specifies the port number that the security appliance listens on; the defaults are 80 (HTTP) and 443 (HTTPS).
+Enter this command separately for HTTP and for HTTPS.
+You can authenticate directly with the security appliance at the following URLs when you enable AAA for the interface:
+http://interface_ip[:port]/netaccess/connstatus.html
+https://interface_ip[:port]/netaccess/connstatus.html
+
+Enabling Direct Authentication Using Telnet
+To enable direct authentication with Telnet, configure a virtual Telnet server. With virtual Telnet, the user Telnets to a given IP address configured on the security appliance, and the security appliance provides a Telnet prompt. To configure a virtual Telnet server, enter the following command:
+hostname(config)# virtual telnet ip_address
+
+where the ip_address argument sets the IP address for the virtual Telnet server. Make sure this address is an unused address that is routed to the security appliance. For example, if you perform NAT for inside addresses when they access the outside, and you want to provide outside access to the virtual Telnet server, you can use one of the global NAT addresses for the virtual Telnet server address.
+Configuring Authorization for Network Access
+After a user authenticates for a given connection, the security appliance can use authorization to further control traffic from the user.
+This section includes the following topics:
+•Configuring TACACS+ Authorization
+•Configuring RADIUS Authorization
+Configuring TACACS+ Authorization
+You can configure the security appliance to perform network access authorization with TACACS+. You identify the traffic to be authorized by specifying access lists that authorization rules must match. Alternatively, you can identify the traffic directly in authorization rules themselves.
+Tip Using access lists to identify traffic to be authorized can greatly reduced the number of authorization commands you must enter. This is because each authorization rule you enter can specify only one source and destination subnet and service, whereas an access list can include many entries.
+Authentication and authorization statements are independent; however, any unauthenticated traffic matched by an authorization statement will be denied. For authorization to succeed, a user must first authenticate with the security appliance. Because a user at a given IP address only needs to authenticate one time for all rules and types, if the authentication session hasn't expired, authorization can occur even if the traffic is matched by an authentication statement.
+After a user authenticates, the security appliance checks the authorization rules for matching traffic. If the traffic matches the authorization statement, the security appliance sends the username to the TACACS+ server. The TACACS+ server responds to the security appliance with a permit or a deny for that traffic, based on the user profile. The security appliance enforces the authorization rule in the response.
+See the documentation for your TACACS+ server for information about configuring network access authorizations for a user.
+To configure TACACS+ authorization, perform the following steps:
+Step 1 Enable authentication. For more information, see the "Enabling Network Access Authentication" section. If you have already enabled authentication, continue to the next step.
+Step 2 Using the access-list command, create an access list that identifies the source addresses and destination addresses of traffic you want to authorize. For steps, see the "Adding an Extended Access List" section on page 16-5.
+The permit ACEs mark matching traffic for authorization, while deny entries exclude matching traffic from authorization. The access list you use for authorization matching should contain rules that are equal to or a subset of the rules in the access list used for authentication matching.
+Note If you have configured authentication and want to authorize all the traffic being authenticated, you can use the same access list you created for use with the aaa authentication match command.
+Step 3 To enable authorization, enter the following command:
+hostname(config)# aaa authorization match acl_name interface_name server_group
+
+where acl_name is the name of the access list you created in Step 2, interface_name is the name of the interface as specified with the nameif command or by default, and server_group is the AAA server group you created when you enabled authentication.
+Note Alternatively, you can use the aaa authorization include command (which identifies traffic within the command) but you cannot use both methods in the same configuration. See the Cisco Security Appliance Command Reference for more information.
+The following commands authenticate and authorize inside Telnet traffic. Telnet traffic to servers other than 209.165.201.5 can be authenticated alone, but traffic to 209.165.201.5 requires authorization.
+hostname(config)# access-list TELNET_AUTH extended permit tcp any any eq telnet
+hostname(config)# access-list SERVER_AUTH extended permit tcp any host 209.165.201.5 eq 
+telnet
+hostname(config)# aaa-server AuthOutbound protocol tacacs+
+hostname(config-aaa-server-group)# exit
+hostname(config)# aaa-server AuthOutbound (inside) host 10.1.1.1
+hostname(config-aaa-server-host)# key TACPlusUauthKey
+hostname(config-aaa-server-host)# exit
+hostname(config)# aaa authentication match TELNET_AUTH inside AuthOutbound
+hostname(config)# aaa authorization match SERVER_AUTH inside AuthOutbound
+
+Configuring RADIUS Authorization
+When authentication succeeds, the RADIUS protocol returns user authorizations in the access-accept message sent by a RADIUS server. For more information about configuring authentication, see the "Configuring Authentication for Network Access" section.
+When you configure the security appliance to authenticate users for network access, you are also implicitly enabling RADIUS authorizations; therefore, this section contains no information about configuring RADIUS authorization on the security appliance. It does provide information about how the security appliance handles access list information received from RADIUS servers.
+You can configure a RADIUS server to download an access list to the security appliance or an access list name at the time of authentication. The user is authorized to do only what is permitted in the user-specific access list.
+Note If you have used the access-group command to apply access lists to interfaces, be aware of the following effects of the per-user-override keyword on authorization by user-specific access lists:
+•Without the per-user-override keyword, traffic for a user session must be permitted by both the interface access list and the user-specific access list.
+•With the per-user-override keyword, the user-specific access list determines what is permitted.
+For more information, see the access-group command entry in the Cisco Security Appliance Command Reference.
+This section includes the following topics:
+•Configuring a RADIUS Server to Send Downloadable Access Control Lists
+•Configuring a RADIUS Server to Download Per-User Access Control List Names
+Configuring a RADIUS Server to Send Downloadable Access Control Lists
+This section describes how to configure Cisco Secure ACS or a third-party RADIUS server, and includes the following topics:
+•About the Downloadable Access List Feature and Cisco Secure ACS
+•Configuring Cisco Secure ACS for Downloadable Access Lists
+•Configuring Any RADIUS Server for Downloadable Access Lists
+•Converting Wildcard Netmask Expressions in Downloadable Access Lists
+About the Downloadable Access List Feature and Cisco Secure ACS
+Downloadable access lists is the most scalable means of using Cisco Secure ACS to provide the appropriate access lists for each user. It provides the following capabilities:
+•Unlimited access list size—Downloadable access lists are sent using as many RADIUS packets as required to transport the full access list from Cisco Secure ACS to the security appliance.
+•Simplified and centralized management of access lists—Downloadable access lists enable you to write a set of access lists once and apply it to many user or group profiles and distribute it to many security appliances.
+This approach is most useful when you have very large access list sets that you want to apply to more than one Cisco Secure ACS user or group; however, its ability to simplify Cisco Secure ACS user and group management makes it useful for access lists of any size.
+The security appliance receives downloadable access lists from Cisco Secure ACS using the following process:
+1. The security appliance sends a RADIUS authentication request packet for the user session.
+2. If Cisco Secure ACS successfully authenticates the user, Cisco Secure ACS returns a RADIUS access-accept message that contains the internal name of the applicable downloadable access list. The Cisco IOS cisco-av-pair RADIUS VSA (vendor 9, attribute 1) contains the following attribute-value pair to identify the downloadable access list set:
+ACS:CiscoSecure-Defined-ACL=acl-set-name
+
+where acl-set-name is the internal name of the downloadable access list, which is a combination of the name assigned to the access list by the Cisco Secure ACS administrator and the date and time that the access list was last modified.
+3. The security appliance examines the name of the downloadable access list and determines if it has previously received the named downloadable access list.
+–If the security appliance has previously received the named downloadable access list, communication with Cisco Secure ACS is complete and the security appliance applies the access list to the user session. Because the name of the downloadable access list includes the date and time it was last modified, matching the name sent by Cisco Secure ACS to the name of an access list previous downloaded means that the security appliance has the most recent version of the downloadable access list.
+–If the security appliance has not previously received the named downloadable access list, it may have an out-of-date version of the access list or it may not have downloaded any version of the access list. In either case, the security appliance issues a RADIUS authentication request using the downloadable access list name as the username in the RADIUS request and a null password attribute. In a cisco-av-pair RADIUS VSA, the request also includes the following attribute-value pairs:
+AAA:service=ip-admission
+AAA:event=acl-download
+
+In addition, the security appliance signs the request with the Message-Authenticator attribute (IETF RADIUS attribute 80).
+4. Upon receipt of a RADIUS authentication request that has a username attribute containing the name of a downloadable access list, Cisco Secure ACS authenticates the request by checking the Message-Authenticator attribute. If the Message-Authenticator attribute is missing or incorrect, Cisco Secure ACS ignores the request. The presence of the Message-Authenticator attribute prevents malicious use of a downloadable access list name to gain unauthorized network access. The Message-Authenticator attribute and its use are defined in RFC 2869, RADIUS Extensions, available at http://www.ietf.org.
+5. If the access list required is less than approximately 4 KB in length, Cisco Secure ACS responds with an access-accept message containing the access list. The largest access list that can fit in a single access-accept message is slightly less than 4 KB because some of the message must be other required attributes.
+Cisco Secure ACS sends the downloadable access list in a cisco-av-pair RADIUS VSA. The access list is formatted as a series of attribute-value pairs that each contain an ACE and are numbered serially:
+ip:inacl#1=ACE-1
+ip:inacl#2=ACE-2
+.
+.
+.
+ip:inacl#n=ACE-n
+
+An example of an attribute-value pair follows:
+ip:inacl#1=permit tcp 10.1.0.0 255.0.0.0 10.0.0.0 255.0.0.0
+
+6. If the access list required is more than approximately 4 KB in length, Cisco Secure ACS responds with an access-challenge message that contains a portion of the access list, formatted as described above, and an State attribute (IETF RADIUS attribute 24), which contains control data used by Cisco Secure ACS to track the progress of the download. Cisco Secure ACS fits as many complete attribute-value pairs into the cisco-av-pair RADIUS VSA as it can without exceeding the maximum RADIUS message size.
+The security appliance stores the portion of the access list received and responds with another access-request message containing the same attributes as the first request for the downloadable access list plus a copy of the State attribute received in the access-challenge message.
+This repeats until Cisco Secure ACS sends the last of the access list in an access-accept message.
+Configuring Cisco Secure ACS for Downloadable Access Lists
+You can configure downloadable access lists on Cisco Secure ACS as a shared profile component and then assign the access list to a group or to an individual user.
+The access list definition consists of one or more security appliance commands that are similar to the extended access-list command (see the "Adding an Extended Access List" section on page 16-5), except without the following prefix:
+access-list acl_name extended
+
+The following example is a downloadable access list definition on Cisco Secure ACS version 3.3:
++--------------------------------------------+
+| Shared profile Components                  |
+|                                            |
+|      Downloadable IP ACLs Content          |
+|                                            |
+| Name:    acs_ten_acl                       |
+|                                            |
+|      ACL Definitions                       |
+|                                            |
+| permit tcp any host 10.0.0.254             |
+| permit udp any host 10.0.0.254             |
+| permit icmp any host 10.0.0.254            |
+| permit tcp any host 10.0.0.253             |
+| permit udp any host 10.0.0.253             |
+| permit icmp any host 10.0.0.253            |
+| permit tcp any host 10.0.0.252             |
+| permit udp any host 10.0.0.252             |
+| permit icmp any host 10.0.0.252            |
+| permit ip any any                          |
++--------------------------------------------+
+
+For more information about creating downloadable access lists and associating them with users, see the user guide for your version of Cisco Secure ACS.
+On the security appliance, the downloaded access list has the following name:
+#ACSACL#-ip-acl_name-number
+
+The acl_name argument is the name that is defined on Cisco Secure ACS (acs_ten_acl in the preceding example), and number is a unique version ID generated by Cisco Secure ACS.
+The downloaded access list on the security appliance consists of the following lines:
+access-list #ACSACL#-ip-asa-acs_ten_acl-3b5385f7 permit tcp any host 10.0.0.254
+access-list #ACSACL#-ip-asa-acs_ten_acl-3b5385f7 permit udp any host 10.0.0.254
+access-list #ACSACL#-ip-asa-acs_ten_acl-3b5385f7 permit icmp any host 10.0.0.254
+access-list #ACSACL#-ip-asa-acs_ten_acl-3b5385f7 permit tcp any host 10.0.0.253
+access-list #ACSACL#-ip-asa-acs_ten_acl-3b5385f7 permit udp any host 10.0.0.253
+access-list #ACSACL#-ip-asa-acs_ten_acl-3b5385f7 permit icmp any host 10.0.0.253
+access-list #ACSACL#-ip-asa-acs_ten_acl-3b5385f7 permit tcp any host 10.0.0.252
+access-list #ACSACL#-ip-asa-acs_ten_acl-3b5385f7 permit udp any host 10.0.0.252
+access-list #ACSACL#-ip-asa-acs_ten_acl-3b5385f7 permit icmp any host 10.0.0.252
+access-list #ACSACL#-ip-asa-acs_ten_acl-3b5385f7 permit ip any any
+
+Configuring Any RADIUS Server for Downloadable Access Lists
+You can configure any RADIUS server that supports Cisco IOS RADIUS VSAs to send user-specific access lists to the security appliance in a Cisco IOS RADIUS cisco-av-pair VSA (vendor 9, attribute 1).
+In the cisco-av-pair VSA, configure one or more ACEs that are similar to the access-list extended command (see the "Adding an Extended Access List" section on page 16-5), except that you replace the following command prefix:
+access-list acl_name extended
+
+with the following text:
+ip:inacl#nnn=
+
+The nnn argument is a number in the range from 0 to 999999999 that identifies the order of the command statement to be configured on the security appliance. If this parameter is omitted, the sequence value is 0, and the order of the ACEs inside the cisco-av-pair RADIUS VSA is used.
+The following example is an access list definition as it should be configured for a cisco-av-pair VSA on a RADIUS server:
+ip:inacl#1=permit tcp 10.1.0.0 255.0.0.0 10.0.0.0 255.0.0.0
+ip:inacl#99=deny tcp any any
+ip:inacl#2=permit udp 10.1.0.0 255.0.0.0 10.0.0.0 255.0.0.0
+ip:inacl#100=deny udp any any
+ip:inacl#3=permit icmp 10.1.0.0 255.0.0.0 10.0.0.0 255.0.0.0
+
+For information about making unique per user the access lists that are sent in the cisco-av-pair attribute, see the documentation for your RADIUS server.
+On the security appliance, the downloaded access list name has the following format:
+AAA-user-username
+
+The username argument is the name of the user that is being authenticated.
+The downloaded access list on the security appliance consists of the following lines. Notice the order based on the numbers identified on the RADIUS server.
+access-list  AAA-user-bcham34-79AD4A08 permit tcp 10.1.0.0 255.0.0.0 10.0.0.0 255.0.0.0
+access-list  AAA-user-bcham34-79AD4A08 permit udp 10.1.0.0 255.0.0.0 10.0.0.0 255.0.0.0
+access-list  AAA-user-bcham34-79AD4A08 permit icmp 10.1.0.0 255.0.0.0 10.0.0.0 255.0.0.0
+access-list  AAA-user-bcham34-79AD4A08 deny tcp any any
+access-list  AAA-user-bcham34-79AD4A08 deny udp any any
+
+Downloaded access lists have two spaces between the word "access-list" and the name. These spaces serve to differentiate a downloaded access list from a local access list. In this example, "79AD4A08" is a hash value generated by the security appliance to help determine when access list definitions have changed on the RADIUS server.
+Converting Wildcard Netmask Expressions in Downloadable Access Lists
+If a RADIUS server provides downloadable access lists to Cisco VPN 3000 Series Concentrators as well as to the security appliance, you may need the security appliance to convert wildcard netmask expressions to standard netmask expressions. This is because Cisco VPN 3000 Series Concentrators support wildcard netmask expressions but the security appliance only supports standard netmask expressions. Configuring the security appliance to convert wildcard netmask expressions helps minimize the effects of these differences upon how you configure downloadable access lists on your RADIUS servers. Translation of wildcard netmask expressions means that downloadable access lists written for Cisco VPN 3000 Series Concentrators can be used by the security appliance without altering the configuration of the downloadable access lists on the RADIUS server.
+You configure access list netmask conversion on a per server basis, using the acl-netmask-convert command, available in the AAA-server configuration mode. For more information about configuring a RADIUS server, see "Identifying AAA Server Groups and Servers" section on page 13-12. For more information about the acl-netmask-convert command, see the Cisco Security Appliance Command Reference.
+Configuring a RADIUS Server to Download Per-User Access Control List Names
+To download a name for an access list that you already created on the security appliance from the RADIUS server when a user authenticates, configure the IETF RADIUS filter-id attribute (attribute number 11) as follows:
+filter-id=acl_name
+
+Note In Cisco Secure ACS, the value for filter-id attributes are specified in boxes in the HTML interface, omitting filter-id= and entering only acl_name.
+For information about making unique per user the filter-id attribute value, see the documentation for your RADIUS server.
+See the "Adding an Extended Access List" section on page 16-5 to create an access list on the security appliance.
+Configuring Accounting for Network Access
+The security appliance can send accounting information to a RADIUS or TACACS+ server about any TCP or UDP traffic that passes through the security appliance. If that traffic is also authenticated, then the AAA server can maintain accounting information by username. If the traffic is not authenticated, the AAA server can maintain accounting information by IP address. Accounting information includes when sessions start and stop, username, the number of bytes that pass through the security appliance for the session, the service used, and the duration of each session.
+To configure accounting, perform the following steps:
+Step 1 If you want the security appliance to provide accounting data per user, you must enable authentication. For more information, see the "Enabling Network Access Authentication" section. If you want the security appliance to provide accounting data per IP address, enabling authentication is not necessary and you can continue to the next step.
+Step 2 Using the access-list command, create an access list that identifies the source addresses and destination addresses of traffic you want accounted. For steps, see the "Adding an Extended Access List" section on page 16-5.
+The permit ACEs mark matching traffic for authorization, while deny entries exclude matching traffic from authorization.
+Note If you have configured authentication and want accounting data for all the traffic being authenticated, you can use the same access list you created for use with the aaa authentication match command.
+Step 3 To enable accounting, enter the following command:
+hostname(config)# aaa accounting match acl_name interface_name server_group
+
+Note Alternatively, you can use the aaa accounting include command (which identifies traffic within the command) but you cannot use both methods in the same configuration. See the Cisco Security Appliance Command Reference for more information.
+The following commands authenticate, authorize, and account for inside Telnet traffic. Telnet traffic to servers other than 209.165.201.5 can be authenticated alone, but traffic to 209.165.201.5 requires authorization and accounting.
+hostname(config)# aaa-server AuthOutbound protocol tacacs+
+hostname(config-aaa-server-group)# exit
+hostname(config)# aaa-server AuthOutbound (inside) host 10.1.1.1
+hostname(config-aaa-server-host)# key TACPlusUauthKey
+hostname(config-aaa-server-host)# exit
+hostname(config)# access-list TELNET_AUTH extended permit tcp any any eq telnet
+hostname(config)# access-list SERVER_AUTH extended permit tcp any host 209.165.201.5 eq 
+telnet
+hostname(config)# aaa authentication match TELNET_AUTH inside AuthOutbound
+hostname(config)# aaa authorization match SERVER_AUTH inside AuthOutbound
+hostname(config)# aaa accounting match SERVER_AUTH inside AuthOutbound
+
+Using MAC Addresses to Exempt Traffic from Authentication and Authorization
+The security appliance can exempt from authentication and authorization any traffic from specific MAC addresses. For example, if the security appliance authenticates TCP traffic originating on a particular network but you want to allow unauthenticated TCP connections from a specific server, you would use a MAC exempt rule to exempt from authentication and authorization any traffic from the server specified by the rule.
+This feature is particularly useful to exempt devices such as IP phones that cannot respond to authentication prompts.
+To use MAC addresses to exempt traffic from authentication and authorization, perform the following steps:
+Step 1 To configure a MAC list, enter the following command:
+hostname(config)# mac-list id {deny | permit} mac macmask
+
+Where the id argument is the hexadecimal number that you assign to the MAC list. To group a set of MAC addresses, enter the mac-list command as many times as needed with the same ID value. Because you can only use one MAC list for AAA exemption, be sure that your MAC list includes all the MAC addresses you want to exempt. You can create multiple MAC lists, but you can only use one at a time.
+The order of entries matters, because the packet uses the first entry it matches, as opposed to a best match scenario. If you have a permit entry, and you want to deny an address that is allowed by the permit entry, be sure to enter the deny entry before the permit entry.
+The mac argument specifies the source MAC address in 12-digit hexadecimal form; that is, nnnn.nnnn.nnnn.
+The macmask argument specifies the portion of the MAC address that should be used for matching. For example, ffff.ffff.ffff matches the MAC address exactly. ffff.ffff.0000 matches only the first 8 digits.
+Step 2 To exempt traffic for the MAC addresses specified in a particular MAC list, enter the following command:
+hostname(config)# aaa mac-exempt match id
+
+Where id is the string identifying the MAC list containing the MAC addresses whose traffic is to be exempt from authentication and authorization. You can only enter one instance of the aaa mac-exempt command.
+The following example bypasses authentication for a single MAC address:
+hostname(config)# mac-list abc permit 00a0.c95d.0282 ffff.ffff.ffff
+hostname(config)# aaa mac-exempt match abc
+
+The following entry bypasses authentication for all Cisco IP Phones, which have the hardware ID 0003.E3:
+hostname(config)# mac-list acd permit 0003.E300.0000 FFFF.FF00.0000
+hostname(config)# aaa mac-exempt match acd
+
+The following example bypasses authentication for a a group of MAC addresses except for 00a0.c95d.02b2. Enter the deny statement before the permit statement, because 00a0.c95d.02b2 matches the permit statement as well, and if it is first, the deny statement will never be matched.
+hostname(config)# mac-list 1 deny 00a0.c95d.0282 ffff.ffff.ffff
+hostname(config)# mac-list 1 permit 00a0.c95d.0000 ffff.ffff.0000
+hostname(config)# aaa mac-exempt match 1
+
+Was this Document Helpful?
+Yes No
+Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)

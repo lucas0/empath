@@ -1,0 +1,556 @@
+Configuration Examples and TechNotes
+Configuring DDR Backup For ISDN With Dialer Profiles
+Save
+Translations
+Download
+Print
+
+Updated:September 9, 2005
+Document ID:12481
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Conventions
+Configure
+Network Diagram
+Configurations
+Verify
+Troubleshoot
+Troubleshooting Steps
+When Not Using an Administrative Distance
+When Using an Administrative Distance
+Troubleshooting Commands
+Related Information
+Introduction
+This sample configuration shows how you can use an ISDN BRI circuit to back up a leased line, WAN, or serial connection.
+This document uses dialer profiles and the backup interface feature. The backup interface command puts the configured physical or logical interface in standby mode until such times as the primary interface goes down.
+Prerequisites
+Requirements
+There are no specific requirements for this document.
+Components Used
+This configuration uses a BRI circuit to backup a serial link. Router ramses is doing the dial-out since the dialer string is configured on that router. In this configuration:
+A Cisco 2500 router (ramses) is used, connected to a Cisco 2520 router (sphinx). Both routers are also equipped with BRI interfaces that are used for the backup link.
+Both routers are running Cisco IOS Software Release 12.0.7T.
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Conventions
+For more information on document conventions, refer to Cisco Technical Tips Conventions.
+Configure
+In this section, you are presented with the information to configure the features described in this document. These three steps complete this configuration:
+Configure dial-on-demand routing (DDR) with Legacy DDR or dialer profiles. The sample configuration shown in this document uses dialer profiles.
+Use the backup interface command to trigger the dialout call when the primary link fails.
+Define interesting traffic.
+Note: It is recommended that you configure the DDR connection (dialer 1 with BRI0) and verify that is working properly, before you configure the backup interface and backup delay commands. This allows you to effectively manage and troubleshoot dialer profiles, ISDN, PPP and authentication issues before you configure the backup.
+Note: To find additional information on the commands used in this document, use the Command Lookup Tool (registered customers only) .
+Network Diagram
+This document uses this network setup:
+Configurations
+This document uses these configurations:
+ramses (Cisco 2500 Router)
+sphinx (Cisco 2520 Router)
+ramses (Cisco 2500 Router)
+ramses#show running-config
+Building configuration...
+
+Current configuration:
+!
+version 12.0
+service timestamps debug datetime msec
+service timestamps log datetime msec
+!
+hostname ramses
+!
+username sphinx password <password>
+
+!-- password is case sensitive and should be the same on both sides
+
+!
+isdn switch-type basic-net3
+!
+!
+interface Loopback1
+ip address 1.1.1.1 255.255.255.255
+!
+interface Ethernet0
+ip address 10.48.74.45 255.255.254.0
+!
+interface Serial0
+backup delay 10 30
+backup interface Dialer1
+ip address 3.3.3.1 255.255.255.0
+no ip directed-broadcast
+clockrate 125000
+!
+interface BRI0
+no ip address
+no ip directed-broadcast
+encapsulation ppp
+dialer pool-member 2
+isdn switch-type basic-net3
+no cdp enable
+ppp authentication chap callin
+!
+interface Dialer1
+ip unnumbered Loopback1
+no ip directed-broadcast
+encapsulation ppp
+dialer remote-name sphinx
+dialer pool 2
+dialer string 5551000
+dialer-group 1
+ppp authentication chap callin
+!
+ip classless
+ip route 2.2.2.1 255.255.255.255 Dialer1
+ip route 2.2.2.1 255.255.255.255 Serial0
+no ip http server
+!
+dialer-list 1 protocol ip permit
+!
+line con 0
+exec-timeout 0 0
+transport input none
+line aux 0
+line vty 0 4
+exec-timeout 0 0
+password <password>
+login
+!
+ntp server 10.200.20.134
+end
+sphinx (Cisco 2520 Router)
+sphinx#show running-config
+
+Building configuration...
+Current configuration:
+!
+version 12.0
+service timestamps debug datetime msec
+service timestamps log datetime msec
+!
+hostname sphinx
+!
+!
+username ramses password <password>
+
+!-- password is case sensitive and should be the same on both sides
+
+!
+isdn switch-type basic-net3
+interface Loopback1
+ip address 2.2.2.1 255.255.255.255
+!
+interface Serial0
+ip address 3.3.3.2 255.255.255.0
+!
+interface BRI0
+no ip address
+no ip directed-broadcast
+encapsulation ppp
+dialer pool-member 2
+isdn switch-type basic-net3
+no cdp enable
+ppp authentication chap callin
+!
+interface Dialer1
+ip unnumbered Loopback1
+no ip directed-broadcast
+encapsulation ppp
+dialer remote-name ramses
+dialer pool 2
+dialer-group 1
+ppp authentication chap
+!
+ip classless
+ip route 1.1.1.1 255.255.255.255 Serial0
+ip route 1.1.1.1 255.255.255.255 Dialer1 2
+dialer-list 1 protocol ip permit
+!
+line con 0
+exec-timeout 0 0
+transport input none
+line aux 0
+line vty 0 4
+!
+end
+Verify
+This section provides information you can use to confirm your configuration is working properly.
+Certain show commands are supported by the Output Interpreter Tool (registered customers only) , which allows you to view an analysis of show command output.
+show isdn status???Displays the status of all ISDN interfaces or a specific ISDN interface.
+show interface serial???Displays information about a serial interface.
+show interface dialer???Displays information about a dialer interface.
+debug dialer???Displays DDR information about the packets received on the dialer interface.
+debug isdn q931???Shows call setup and tear down of the ISDN network connection (Layer 3) between the router and the ISDN switch.
+debug ppp negotiation???Displays information on PPP traffic and exchanges while negotiating the PPP components including Link Control Protocol (LCP), Authentication, and NCP. A successful PPP negotiation will first open the LCP state, then Authenticate, and finally negotiate NCP.
+debug ppp authentication???Displays the PPP authentication protocol messages, including Challenge Authentication Protocol (CHAP) packet exchanges and Password Authentication Protocol (PAP) exchanges. If you observe a failure, verify that the CHAP username and password are configured correctly.
+Troubleshoot
+This section provides information you can use to troubleshoot your configuration.
+Troubleshooting Steps
+Follow these instructions to troubleshoot your configuration:
+Use the show isdn status command to ensure that the router is communicating properly with the ISDN switch. In the output, verify that:
+Layer 1 Status is ACTIVE
+Layer 2 Status State = MULTIPLE_FRAME_ESTABLISHED
+This command also displays the number of active calls. Let's look at an example:
+   ramses#show isdn status
+   Global ISDN Switchtype = basic-net3
+   ISDN BRI0 interface
+   dsl 0, interface ISDN Switchtype = basic-net3
+   Layer 1 Status:
+   ACTIVE
+   Layer 2 Status:
+   TEI = 97, Ces = 1, SAPI = 0, State = MULTIPLE_FRAME_ESTABLISHED
+   Layer 3 Status:
+   0 Active Layer 3 Call(s)
+   Activated dsl 0 CCBs = 0
+   The Free Channel Mask: 0x80000003
+   Total Allocated ISDN CCBs = 0
+
+   ramses#show interface serial 0
+   Serial0 is up, line protocol is up
+   Hardware is HD64570
+   Internet address is 3.3.3.1/24
+   Backup interface Dialer1, failure delay 10 sec, secondary disable
+   delay 30 sec
+
+   ramses#show interface dialer 1
+   Dialer1 is standby mode, line protocol is down 
+ ! --- In standby mode.
+   Hardware is Unknown
+Since the backup interface is in standby mode, you do not see this information in the output of the show ip route command.
+Let's look at the differences shown in the output when using an administrative distance (AD) and when not using one.
+When Not Using an Administrative Distance
+When not using an AD, you see the following output:
+   sphinx#show interface dialer 1
+   Dialer1 is up (spoofing), line protocol is up (spoofing)
+   Hardware is Unknown
+If you do not use an AD for the dialer on the router sphinx, you see the following output from the show ip route command:
+   sphinx(config)#ip route 1.1.1.1 255.255.255.255 dialer1
+   
+ ! --- No AD used here.
+
+
+   sphinx#show ip route 1.1.1.1
+   Routing entry for 1.1.1.1/32
+   Known via "static", distance 1, metric 0 (connected)
+   Routing Descriptor Blocks:
+   * directly connected, via Dialer1
+   Route metric is 0, traffic share count is 1
+   directly connected, via Serial0
+   Route metric is 0, traffic share count is 1
+The output displayed by the ping command looks similar to the following, in that it is missing one of the pings:
+   sphinx#ping 1.1.1.1
+   Type escape sequence to abort.
+   Sending 5, 100-byte ICMP Echos to 1.1.1.1, timeout is 2 seconds:
+   .!.!.
+When Using an Administrative Distance
+When using an AD, you see the following output:
+   sphinx(config)#ip route 1.1.1.1 255.255.255.255 dialer1 2
+ 
+ ! --- The AD used here is two.
+
+
+   sphinx#show ip route 1.1.1.1
+   Routing entry for 1.1.1.1/32
+   Known via "static", distance 1, metric 0 (connected)
+   Routing Descriptor Blocks:
+   * directly connected, via Serial0
+   Route metric is 0, traffic share count is 1
+
+   sphinx#ping 1.1.1.1
+   Type escape sequence to abort.
+   Sending 5, 100-byte ICMP Echos to 1.1.1.1, timeout is 2 seconds:
+   !!!!! 
+Configure and verify that the DDR connection (between Dialer 1 and BRI0) is working properly before you configure the backup interface and backup delay commands. This allows you to verify that the dialer profile, ISDN, PPP, and authentication is functioning correctly before configuring the backup.
+Once you have verified the DDR connection is working properly, you can proceed to the following backup troubleshooting steps outlined below:
+Bring down the primary link.
+Note: Do not use the shutdown command on the router with the backup interface command configured. This does not cause the Cisco IOS to dial the backup link. You can activate the backup by shutting down the primary interface on the router that does not have the backup interface command.
+Note: In our scenario, the backup interface command is configured on ramses (the Cisco 2500 router). Therefore, performing a shutdown command on the primary interface of sphinx (the Cisco 2520 router) activates the backup link.
+Note: You can physically bring down the primary connection by unplugging the cables, or using some equivalent method, in order to bring up the backup interface.
+You should see a console message indicating that the backup interface (interface dialer 1) is up. This message only appears after the interval time, specified by the backup delay command, has expired. In this configuration, the backup activation delay is 10 seconds.
+If you do not see this console message, check the backup delay timer.
+   *Mar 1 03:54:00.451: %LINEPROTO-5-UPDOWN: Line protocol on Interface
+   Serial0, changed state to down
+   *Mar 1 03:54:11.467: %LINK-3-UPDOWN: Interface Dialer1, changed state to up
+Use the show ip route command to view the routing table with the primary link down. You should observe a directly connected route to Dialer 1.
+Ping the IP address of the remote router's loopback interface. If the link does not dial, verify that your interesting traffic definition permits ICMP traffic (pings).
+Note: In our example, an AD of two is used for the route in the router sphinx (this can be any number other than one).
+ip route 1.1.1.1 255.255.255.255 Dialer1 2
+Note: The reason for this is that, if the primary link is up, half of the pings are lost. Since the both the dialer 1 and serial 0 interfaces are up, the route is installed for both interfaces. However, the dialer interface cannot send the packet since the BRI interface is not up.
+Troubleshooting Commands
+Use the commands shown in this section to troubleshoot your configuration.
+Certain show commands are supported by the Output Interpreter Tool (registered customers only) , which allows you to view an analysis of show command output.
+Note: Before issuing debug commands, refer to Important Information on Debug Commands.
+Try to to ping 2.2.2.1 to create interesting traffic:
+ramses#ping 2.2.2.1
+   *Mar 1 04:53:26.574: %LINK-3-UPDOWN: Interface Serial0, changed state
+   to down
+   *Mar 1 04:53:27.574: %LINEPROTO-5-UPDOWN: Line protocol on Interface
+   Serial0, changed state to down
+   *Mar 1 04:53:38.590: %LINK-3-UPDOWN: Interface Dialer1, changed state
+   to up
+   *Mar 1 04:53:38.606: Di1 LCP: Not allowed on a Dialer Profile.
+   *Mar 1 04:53:40.058: BRI0 DDR: rotor dialout [priority]
+   *Mar 1 04:53:40.062: BRI0 DDR: Dialing cause ip (s=1.1.1.1, d=2.2.2.1)
+   *Mar 1 04:53:40.066: BRI0 DDR: Attempting to dial 5551000
+   *Mar 1 04:53:40.078: ISDN BR0: TX -> SETUP pd = 8 callref = 0x0A
+   *Mar 1 04:53:40.078: Bearer Capability i = 0x8890
+   *Mar 1 04:53:40.082: Channel ID i = 0x83
+   *Mar 1 04:53:40.086: Called Party Number i = 0x80, '5551000'
+   *Mar 1 04:53:40.342: ISDN BR0: RX <- CALL_PROC pd = 8 callref = 0x8A
+   *Mar 1 04:53:40.346: Channel ID i = 0x89
+   *Mar 1 04:53:40.834: ISDN BR0: RX <- CONNECT pd = 8 callref = 0x8A
+   *Mar 1 04:53:40.846: ISDN BR0: TX -> CONNECT_ACK pd = 8 callref =
+   0x0A
+   *Mar 1 04:53:40.854: %LINK-3-UPDOWN: Interface BRI0:1, changed state to
+   up
+   *Mar 1 04:53:40.870: BRI0:1: interface must be fifo queue, force fifo
+   *Mar 1 04:53:40.874: %DIALER-6-BIND: Interface BRI0:1 bound to profile
+   Dialer1
+   *Mar 1 04:53:40.882: %ISDN-6-CONNECT: Interface BRI0:1 is now connected
+   to 5551000
+   *Mar 1 04:53:40.890: BR0:1 PPP: Treating connection as a callout
+   *Mar 1 04:53:40.890: BR0:1 PPP: Phase is ESTABLISHING, Active Open
+   *Mar 1 04:53:40.894: BR0:1 PPP: No remote authentication for call-out
+   *Mar 1 04:53:40.898: BR0:1 LCP: O CONFREQ [Closed] id 18 len 10
+   *Mar 1 04:53:40.902: BR0:1 LCP: MagicNumber 0xE1BD38B8
+   (0x0506E1BD38B8)
+   *Mar 1 04:53:40.930: BR0:1 LCP: I CONFREQ [REQsent] id 22 len 15
+   *Mar 1 04:53:40.934: BR0:1 LCP: AuthProto CHAP (0x0305C22305)
+   *Mar 1 04:53:40.938: BR0:1 LCP: MagicNumber 0xEEBCFA2D
+   (0x0506EEBCFA2D)
+   *Mar 1 04:53:40.942: BR0:1 LCP: O CONFACK [REQsent] id 22 len 15
+   *Mar 1 04:53:40.946: BR0:1 LCP: AuthProto CHAP (0x0305C22305)
+   *Mar 1 04:53:40.950: BR0:1 LCP: MagicNumber 0xEEBCFA2D
+   (0x0506EEBCFA2D)
+   *Mar 1 04:53:40.954: BR0:1 LCP: I CONFACK [ACKsent] id 18 len 10
+   *Mar 1 04:53:40.954: BR0:1 LCP: MagicNumber 0xE1BD38B8
+   (0x0506E1BD38B8)
+   *Mar 1 04:53:40.958: BR0:1 LCP: State is Open
+   *Mar 1 04:53:40.962: BR0:1 PPP: Phase is AUTHENTICATING, by the peer
+   *Mar 1 04:53:40.982: BR0:1 CHAP: I CHALLENGE id 9 len 27 from "sphinx"
+   *Mar 1 04:53:40.986: BR0:1 CHAP: O RESPONSE id 9 len 27 from "ramses"
+   *Mar 1 04:53:41.046: BR0:1 CHAP: I SUCCESS id 9 len 4
+   *Mar 1 04:53:41.050: BR0:1 PPP: Phase is UP
+   *Mar 1 04:53:41.054: BR0:1 IPCP: O CONFREQ [Not negotiated] id 9 len 10
+   *Mar 1 04:53:41.058: BR0:1 IPCP: Address 1.1.1.1 (0x030601010101)
+   *Mar 1 04:53:41.062: BR0:1 CDPCP: O CONFREQ [Not negotiated] id 9 len 4
+   *Mar 1 04:53:41.066: BR0:1 IPCP: I CONFREQ [REQsent] id 6 len 10
+   *Mar 1 04:53:41.070: BR0:1 IPCP: Address 2.2.2.1 (0x030602020201)
+   *Mar 1 04:53:41.074: BR0:1 IPCP: O CONFACK [REQsent] id 6 len 10
+   *Mar 1 04:53:41.078: BR0:1 IPCP: Address 2.2.2.1 (0x030602020201)
+   *Mar 1 04:53:41.082: BR0:1 CDPCP: I CONFREQ [REQsent] id 9 len 4
+   *Mar 1 04:53:41.086: BR0:1 CDPCP: O CONFACK [REQsent] id 9 len 4
+   *Mar 1 04:53:41.110: BR0:1 IPCP: I CONFACK [ACKsent] id 9 len 10
+   *Mar 1 04:53:41.110: BR0:1 IPCP: Address 1.1.1.1 (0x030601010101)
+   *Mar 1 04:53:41.114: BR0:1 IPCP: State is Open
+   *Mar 1 04:53:41.122: BR0:1 CDPCP: I CONFACK [ACKsent] id 9 len 4
+   *Mar 1 04:53:41.126: BR0:1 CDPCP: State is Open
+   *Mar 1 04:53:41.126: BRI0:1 DDR: dialer protocol up
+   *Mar 1 04:53:41.134: Di1 IPCP: Install route to 2.2.2.1
+   *Mar 1 04:53:42.086: %LINEPROTO-5-UPDOWN: Line protocol on Interface
+   BRI0:1, changed state to up
+   *Mar 1 04:53:46.886: %ISDN-6-CONNECT: Interface BRI0:1 is now connected
+   to 5551000 5551000
+
+   ramses#show dialer
+
+   BRI0 - dialer type = ISDN
+
+   Dial String Successes Failures Last DNIS Last status
+   0 incoming call(s) have been screened.
+   0 incoming call(s) rejected for callback.
+
+   BRI0:1 - dialer type = ISDN
+   Idle timer (120 secs), Fast idle timer (20 secs)
+   Wait for carrier (30 secs), Re-enable (15 secs)
+   Dialer state is data link layer up
+   Dial reason: ip (s=1.1.1.1, d=2.2.2.1)
+   ! --- we see dial reason, this is the calling router
+   Interface bound to profile Dialer1
+   Time until disconnect 105 secs
+   Current call connected 00:00:16
+   Connected to 5551000 (5551000)
+
+   BRI0:2 - dialer type = ISDN
+   Idle timer (120 secs), Fast idle timer (20 secs)
+   Wait for carrier (30 secs), Re-enable (15 secs)
+   Dialer state is idle
+
+   Dialer1 - dialer type = DIALER PROFILE
+   Idle timer (120 secs), Fast idle timer (20 secs)
+   Wait for carrier (30 secs), Re-enable (15 secs)
+   Dialer state is data link layer up
+   Number of active calls = 1
+   Number of active circuit switched calls = 0
+
+   Dial String Successes Failures Last DNIS Last status
+   5551000 5 0 00:00:19 successful
+   Default
+
+   Dialer2 - dialer type = NONE
+   Idle timer (120 secs), Fast idle timer (20 secs)
+   Wait for carrier (30 secs), Re-enable (15 secs)
+   Number of active calls = 0
+
+   Dial String Successes Failures Last DNIS Last status
+
+   ramses#show ip route
+   Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+
+   D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+   N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+   E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+   i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS
+   inter area
+   * - candidate default, U - per-user static route, o - ODR
+   P - periodic downloaded static route
+
+   Gateway of last resort is not set
+
+   1.0.0.0/32 is subnetted, 1 subnets
+   C 1.1.1.1 is directly connected, Loopback1
+   2.0.0.0/32 is subnetted, 1 subnets
+   C 2.2.2.1 is directly connected, Dialer1
+   10.0.0.0/23 is subnetted, 1 subnets
+   C 10.48.74.0 is directly connected, Ethernet0
+
+   sphinx(config)#interface serial 0
+   sphinx(config-if)#shutdown
+   sphinx(config-if)#
+   *Mar 3 20:07:40.603: %LINK-5-CHANGED: Interface Serial0, changed state
+   to administratively down
+   *Mar 3 20:07:41.603: %LINEPROTO-5-UPDOWN: Line protocol on Interface
+   Serial0, changed state to down
+   *Mar 3 20:07:54.331: ISDN BR0: RX <- SETUP pd = 8 callref = 0x14
+   *Mar 3 20:07:54.335: Bearer Capability i = 0x8890
+   *Mar 3 20:07:54.339: Channel ID i = 0x89
+   *Mar 3 20:07:54.343: Called Party Number i = 0xC1, '5551000'
+   *Mar 3 20:07:54.355: ISDN BR0: Event: Received a DATA call from
+   <unknown> on B1 at 64 Kb/s
+   *Mar 3 20:07:54.355: BRI0:1: interface must be fifo queue, force fifo
+   *Mar 3 20:07:54.363: %DIALER-6-BIND: Interface BRI0:1 bound to profile
+   Dialer1
+   *Mar 3 20:07:54.383: %LINK-3-UPDOWN: Interface BRI0:1, changed state to
+   up
+   *Mar 3 20:07:54.403: %ISDN-6-CONNECT: Interface BRI0:1 is now connected
+   to <unknown phone number>
+   *Mar 3 20:07:54.411: BR0:1 PPP: Treating connection as a callin
+   *Mar 3 20:07:54.415: BR0:1 PPP: Phase is ESTABLISHING, Passive Open
+   *Mar 3 20:07:54.415: BR0:1 LCP: State is Listen
+   *Mar 3 20:07:54.471: %ISDN-6-LAYER2UP: Layer 2 for Interface BR0, TEI
+   99 changed to up
+   *Mar 3 20:07:54.479: ISDN BR0: TX -> CALL_PROC pd = 8 callref = 0x94
+   *Mar 3 20:07:54.687: ISDN BR0: TX -> CONNECT pd = 8 callref = 0x94
+   *Mar 3 20:07:54.851: ISDN BR0: RX <- CONNECT_ACK pd = 8 callref =
+   0x14
+   *Mar 3 20:07:54.939: BR0:1 LCP: I CONFREQ [Listen] id 18 len 10
+   *Mar 3 20:07:54.939: BR0:1 LCP: MagicNumber 0xE1BD38B8
+   (0x0506E1BD38B8)
+   *Mar 3 20:07:54.943: BR0:1 LCP: O CONFREQ [Listen] id 22 len 15
+   *Mar 3 20:07:54.947: BR0:1 LCP: AuthProto CHAP (0x0305C22305)
+   *Mar 3 20:07:54.951: BR0:1 LCP: MagicNumber 0xEEBCFA2D
+   (0x0506EEBCFA2D)
+   *Mar 3 20:07:54.955: BR0:1 LCP: O CONFACK [Listen] id 18 len 10
+   *Mar 3 20:07:54.959: BR0:1 LCP: MagicNumber 0xE1BD38B8
+   (0x0506E1BD38B8)
+   *Mar 3 20:07:54.987: BR0:1 LCP: I CONFACK [ACKsent] id 22 len 15
+   *Mar 3 20:07:54.987: BR0:1 LCP: AuthProto CHAP (0x0305C22305)
+   *Mar 3 20:07:54.991: BR0:1 LCP: MagicNumber 0xEEBCFA2D
+   (0x0506EEBCFA2D)
+   *Mar 3 20:07:54.995: BR0:1 LCP: State is Open
+   *Mar 3 20:07:54.995: BR0:1 PPP: Phase is AUTHENTICATING, by this end
+   *Mar 3 20:07:54.999: BR0:1 CHAP: O CHALLENGE id 9 len 27 from "sphinx"
+   *Mar 3 20:07:55.027: BR0:1 CHAP: I RESPONSE id 9 len 27 from "ramses"
+   *Mar 3 20:07:55.035: BR0:1 CHAP: O SUCCESS id 9 len 4
+   *Mar 3 20:07:55.039: BR0:1 PPP: Phase is UP
+   *Mar 3 20:07:55.043: BR0:1 IPCP: O CONFREQ [Not negotiated] id 6 len 10
+
+   *Mar 3 20:07:55.047: BR0:1 IPCP: Address 2.2.2.1 (0x030602020201)
+   *Mar 3 20:07:55.051: BR0:1 CDPCP: O CONFREQ [Not negotiated] id 9 len 4
+
+   *Mar 3 20:07:55.115: BR0:1 IPCP: I CONFREQ [REQsent] id 9 len 10
+   *Mar 3 20:07:55.119: BR0:1 IPCP: Address 1.1.1.1 (0x030601010101)
+   *Mar 3 20:07:55.123: BR0:1 IPCP: O CONFACK [REQsent] id 9 len 10
+   *Mar 3 20:07:55.127: BR0:1 IPCP: Address 1.1.1.1 (0x030601010101)
+   *Mar 3 20:07:55.131: BR0:1 CDPCP: I CONFREQ [REQsent] id 9 len 4
+   *Mar 3 20:07:55.135: BR0:1 CDPCP: O CONFACK [REQsent] id 9 len 4
+   *Mar 3 20:07:55.139: BR0:1 IPCP: I CONFACK [ACKsent] id 6 len 10
+   *Mar 3 20:07:55.143: BR0:1 IPCP: Address 2.2.2.1 (0x030602020201)
+   *Mar 3 20:07:55.147: BR0:1 IPCP: State is Open
+   *Mar 3 20:07:55.151: BR0:1 CDPCP: I CONFACK [ACKsent] id 9 len 4
+   *Mar 3 20:07:55.155: BR0:1 CDPCP: State is Open
+   *Mar 3 20:07:55.159: BRI0:1 DDR: dialer protocol up
+   *Mar 3 20:07:55.167: Di1 IPCP: Install route to 1.1.1.1
+   *Mar 3 20:07:56.039: %LINEPROTO-5-UPDOWN: Line protocol on Interface
+   BRI0:1, changed state to up
+   *Mar 3 20:08:00.411: %ISDN-6-CONNECT: Interface BRI0:1 is now connected
+   to <unknown phone number> ramses
+
+   sphinx#show dialer
+
+   BRI0 - dialer type = ISDN
+
+   Dial String Successes Failures Last DNIS Last status
+   0 incoming call(s) have been screened.
+   0 incoming call(s) rejected for callback.
+
+   BRI0:1 - dialer type = ISDN
+   Idle timer (120 secs), Fast idle timer (20 secs)
+   Wait for carrier (30 secs), Re-enable (15 secs)
+   Dialer state is data link layer up
+   Interface bound to profile Dialer1
+   Time until disconnect 95 secs
+   Connected to <unknown phone number> (ramses)
+   
+! --- We see ramses.
+
+   BRI0:2 - dialer type = ISDN
+   Idle timer (120 secs), Fast idle timer (20 secs)
+   Wait for carrier (30 secs), Re-enable (15 secs)
+   Dialer state is idle
+
+   Dialer1 - dialer type = DIALER PROFILE
+   Idle timer (120 secs), Fast idle timer (20 secs)
+   Wait for carrier (30 secs), Re-enable (15 secs)
+   Dialer state is data link layer up
+   Number of active calls = 1
+   Number of active circuit switched calls = 0
+
+   Dial String Successes Failures Last DNIS Last status
+
+   sphinx#show ip route
+   Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+
+   D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+   N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+   E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+   i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS
+   inter area
+   * - candidate default, U - per-user static route, o - ODR
+   P - periodic downloaded static route
+
+   Gateway of last resort is not set
+
+   1.0.0.0/32 is subnetted, 1 subnets
+   C 1.1.1.1 is directly connected, Dialer1
+   2.0.0.0/32 is subnetted, 1 subnets
+   C 2.2.2.1 is directly connected, Loopback1
+   sphinx#
+Related Information
+Access Technology Support Pages
+Technical Support - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+09-Sep-2005
+Initial Release
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Dial-on-Demand Routing (DDR)
+Integrated Services Digital Networks (ISDN), Channel-Associated Signaling (CAS)

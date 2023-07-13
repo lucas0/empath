@@ -1,0 +1,666 @@
+Configuration Examples and TechNotes
+Configuring BRI ISDN Backup With Dialer Watch
+Save
+Translations
+Download
+Print
+
+Updated:September 9, 2005
+Document ID:11048
+Bias-Free Language
+Contents
+Introduction
+Before You Begin
+Conventions
+Prerequisites
+Components Used
+Background Theory
+Configure
+Network Diagram
+Configurations
+Dialer Watch Commands
+Verify
+Troubleshoot
+Troubleshooting Commands
+Sample Troubleshooting Output
+Related Information
+Introduction
+This document demonstrates the use of an ISDN Basic Rate Interface (BRI) line to back up a leased line, WAN, or serial connection using the dialer watch feature. For more information on the features and operation of dialer watch, refer to Evaluating Backup Interfaces, Floating Static Routes, and Dialer Watch for DDR Backup.
+Before You Begin
+Conventions
+For more information on document conventions, see the Cisco Technical Tips Conventions.
+Prerequisites
+Configuring DDR backup involves two distinct steps:
+Configure the DDR with either legacy DDR or dialer profiles. Verify that your DDR connection functions correctly before implementing the backup configuration. This allows you to verify the dial method used, the Point-to-Point Protocol (PPP) negotiation, and authentication are successful before configuring backup.
+Configure the router to initiate the backup DDR connection when the primary link fails. This configuration uses the dialer watch feature to trigger the dialout.
+For more information on the steps necessary to configure backup refer to the document Configuring and Troubleshooting DDR Backup.
+Components Used
+The information in this document is based on the software and hardware versions below.
+Two Cisco 2500 routers (Frame Relay DTEs) running Cisco IOS?? Software Releases 12.2(3) and 12.2(5).
+One Cisco 4500 router, acting as a Frame Relay switch (configuration not shown).
+The information presented in this document was created from devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If you are working in a live network, ensure that you understand the potential impact of any command before using it.
+Background Theory
+This example uses Dialer Profiles for the backup BRI link. You can also use legacy dial-on-demand routing (DDR), which uses the dialer map command for the backup BRI connection. For more information on configuring dialer watch with dialer maps, refer to Configuring DDR Backup using BRIs and Dialer Watch.
+Configure
+In this section, you are presented with the information to configure the features described in this document.
+Note: To find additional information on the commands used in this document, use the Command Lookup tool
+Network Diagram
+This document uses the network setup shown in the diagram below.
+Configurations
+This document uses the configurations shown below.
+krimson (Cisco 2500 Router)
+kevin(2500)
+krimson (Cisco 2500 Router)
+krimson#show running-config
+ Building configuration...
+
+ Current configuration : 5055 bytes
+ !
+ version 12.2
+ service timestamps debug datetime msec
+ service timestamps log datetime msec
+ no service password-encryption
+ !
+ hostname krimson
+ !
+ logging buffered 500000 debugging
+ no logging console
+ enable password <deleted>
+ !
+ username kevin password 0 <deleted>
+ ip subnet-zero
+ no ip domain-lookup
+ !
+ isdn switch-type basic-net3
+ !
+ interface Ethernet0
+  ip address 10.200.16.30 255.255.255.0
+  no ip route-cache
+  no ip mroute-cache
+  no cdp enable
+          
+ ! <<- Unused interface configuration omitted
+ !
+ interface Serial1
+ 
+!--- Primary Link (Frame Relay)
+
+  bandwidth 64
+  no ip address
+  encapsulation frame-relay
+  no ip route-cache
+  no ip mroute-cache
+ !
+ interface Serial1.1 point-to-point
+ 
+!--- Point-to-point Frame Relay subinterface
+
+  ip address 10.5.5.2 255.255.255.0
+  no ip route-cache
+  frame-relay interface-dlci 20 
+ !
+ interface BRI0
+ 
+!--- Backup physical interface
+
+   description Backup ISDN, Nr. 4420038
+   no ip address
+   encapsulation ppp
+   no ip route-cache
+   no ip mroute-cache
+   load-interval 30
+   no keepalive
+   dialer pool-member 1
+ 
+!--- BRI 0 is a member of dialer pool 1
+
+   isdn switch-type basic-net3
+   no fair-queue
+   no cdp enable
+   ppp authentication chap
+ !
+ interface Dialer0
+ 
+!--- Logical interface for the backup
+
+   ip address 10.9.9.1 255.255.255.0
+ 
+!--- The dialer is in the same network as the remote dialer interface
+
+   encapsulation ppp
+   no ip route-cache
+   no ip mroute-cache
+   dialer pool 1
+ 
+!--- Dialer pool 1. BRI 0 is a member of this pool
+
+   dialer remote-name kevin
+ 
+!--- Authenticated remote name of the peer. !--- Verify that this name exactly matches the authenticated name !--- of the remote dialer
+
+   dialer string 6120
+ 
+!--- Number for outbound call. For inbound calls this is not needed
+
+   dialer watch-group 1
+ 
+!--- Enable dialer watch on this backup interface. !--- Watch the route specified with dialer watch-list 1 
+
+   dialer-group 1
+ 
+!--- Apply interesting traffic defined in dialer-list 1 
+
+   no cdp enable
+   ppp authentication chap
+ !
+ !
+ router ospf 10
+   log-adjacency-changes
+   network 10.5.5.0 0.0.0.255 area 0
+   network 10.7.7.0 0.0.0.255 area 0
+   network 10.9.9.0 0.0.0.255 area 0
+ !
+ no ip classless
+ ip route 0.0.0.0 0.0.0.0 10.200.16.1
+ 
+!--- Default route through ethernet 0
+
+ no ip http server
+ !
+ access-list 101 deny ospf any any
+ 
+!--- Mark OSPF as uninteresting. !--- This will prevent OSPF hellos from keeping the link up
+
+ access-list 101 permit ip any any
+ 
+!--- All other IP traffic is interesting
+
+
+ dialer watch-list 1 ip 10.8.8.0 255.255.255.0
+ 
+!--- This defines the route(s) to be watched. !--- This exact route(including subnet mask) must exist in the routing table. !--- Use the dialer watch-group 1 command to apply this list to the backup !--- interface (interface dialer 0)
+
+ dialer-list 1 protocol ip list 101
+ 
+!--- Interesting traffic is defined by access-list 101. !--- This is applied to BRI0 using dialer-group 1 
+
+ !
+ line con 0
+   exec-timeout 0 0
+   privilege level 15
+ line aux 0
+   transport input all
+ line vty 0 4
+   exec-timeout 0 0
+   password <deleted>
+   login
+  !
+ end
+kevin(2500)
+kevin#show running-config
+ version 12.2
+ service timestamps debug datetime msec
+ service timestamps log datetime msec
+ !
+ hostname kevin
+ !
+ username krimson password 0 <password>
+ !
+ isdn switch-type basic-net3
+ !
+ !
+ interface Loopback0
+  ip address 10.8.8.1 255.255.255.0
+ 
+!--- This is the network the remote side is watching
+
+  ip ospf network point-to-point
+ !
+ interface Loopback1
+  ip address 172.19.0.1 255.255.255.255
+ !
+ interface Ethernet0
+  ip address 10.200.17.26 255.255.255.0
+ !
+ interface Serial0
+  no ip address
+  encapsulation frame-relay
+ !
+ interface Serial0.1 point-to-point
+ 
+!--- Primary link (Frame Relay sub-interface)
+
+  ip address 10.5.5.1 255.255.255.0
+  frame-relay interface-dlci 20 
+ !
+ interface BRI0
+ 
+!--- Physical interface
+
+  no ip address
+  encapsulation ppp
+  dialer pool-member 1
+ 
+!--- Member of dialer pool 1
+
+  isdn switch-type basic-net3
+  no cdp enable
+  ppp authentication chap
+ !
+ interface Dialer0
+ 
+!--- Logical interface for incoming call
+
+ ip address 10.9.9.2 255.255.255.0
+ 
+!--- The dialer is in the same network as the remote dialer interface
+
+ encapsulation ppp
+ dialer pool 1
+ 
+!--- Dialer pool 1. BRI 0 is a member of this pool
+
+ dialer remote-name krimson
+ 
+!--- Authenticated remote name of the peer. !--- Verify that this name exactly matches the authenticated name !--- of the remote dialer.
+
+ dialer-group 1
+ 
+!--- Apply interesting traffic defined in dialer-list 1
+
+ no cdp enable
+ ppp authentication chap
+ !
+ router ospf 10
+  log-adjacency-changes
+  network 10.5.5.0 0.0.0.255 area 0
+  network 10.8.8.0 0.0.0.255 area 0
+ 
+!--- Advertise the network the remote router is watching
+
+  network 10.9.9.0 0.0.0.255 area 0
+ !
+ ip classless
+ ip route 0.0.0.0 0.0.0.0 10.200.17.1
+ no ip http server
+ !
+ dialer-list 1 protocol ip permit
+ 
+!--- Interesting traffic definition. All IP traffic is interesting. !--- This is applied to BRI0 using dialer-group 1. !--- Since the remote router activates and deactivates the backup, this router !--- does not need to restrict interesting traffic
+
+ no cdp run
+ !
+ line con 0
+  exec-timeout 0 0
+ line aux 0
+  modem InOut
+ line vty 0 4
+  exec-timeout 0 0
+  password <password>
+  login
+ !
+ end
+Note:  The configuration of maui-nas-05 does not include any backup-related commands. For maui-nas-05, the backup link is just another dialin client. This can simplify the configuration of the central site in situations where many devices establish a backup link to the same central site. In backup scenarios, it is ideal to have only one side initiate the dial, while the other side only accepts calls.
+Dialer Watch Commands
+The following is a list of the commands available for dialer watch. Some of these commands have been included in the configuration above, while others are provided for reference.
+dialer watch-list group-number ip ip-address address-mask : Defines the IP addresses or networks to be watched. The address or network (with the correct mask) that is configured must exist in the routing table. You can also watch multiple routes with the dialer watch-list command. An example is shown:
+dialer watch-list 1 ip 10.1.1.0 255.255.255.0
+dialer watch-list 1 ip 10.1.2.0 255.255.255.0
+dialer watch-list 1 ip 10.1.3.0 255.255.255.0
+dialer watch-group group-number : Enable dialer watch on the backup interface. The group number used here matches the group number of the dialer watch-list command defining the routes to be watched. The dialer watch-group command with a particular group number can only be configured on one interface. This means that the router cannot use multiple interfaces to provide backup for a particular route. However, one interface can have multiple dialer watch-group commands, with different group-numbers. Therefore, one interface can be used to provide backup for multiple routes.
+dialer watch-disable seconds : Apply a disable delay time to the interface. After the primary interface recovers, this delay prevents disconnecting the backup interface for the specified time period. This delay timer is started when the idle timer expires, and the status of the primary route is checked and found to be up. This delay can ensure stability, especially for flapping interfaces or interfaces experiencing frequent route changes.
+dialer watch-list group-number delay route-check initial seconds : This command enables the router to check whether the primary route is up after the initial startup of the router is complete and the timer (in seconds) expires. Without this command, dialer watch is only triggered when the primary route is removed from the routing table. If the primary link fails to come up during initial startup of the router, the route is never added to the routing table and hence cannot be watched. Therefore, with this command, dialer watch will dial the backup link in the event of a primary link failure during the initial start up of the router.
+Verify
+This section provides information you can use to confirm your configuration is working properly.
+Certain show commands are supported by the Output Interpreter tool, which allows you to view an analysis of show command output.
+show interfaces serial - Displays information about the multicast data-link connection identifier (DLCI), the DLCIs used on the interface, and the DLCI used for the Local Management Interface (LMI). Use this to verify that the primary interface is up or down.
+show interface dialer - Displays the status of the dialer interface.
+show ip route - Displays IP routing table entries. Verify that the watched network exists in the routing table (when primary link is up). When the primary link goes down and the backup is dialed the routing table should reconverge and the watched network should reappear (with next hop as the dialer interface).
+Troubleshoot
+This section provides information you can use to troubleshoot your configuration.
+The Frame Relay configuration used here (with point-to-point subinterfaces and using Open Shortest Path First (OSPF) as a routing protocol) is specific to this setup. However, the troubleshooting steps given below are more general and can be used with different configurations like Frame Relay point-to-multipoint or primary link with High-Level Data Link Control (HDLC) and Point to Point Protocol (PPP) encapsulation, regardless of the routing protocol being used.
+To verify the backup functionality, we have placed one of the interfaces on the Cisco 4500 router that is acting as a Frame Relay switch in shutdown state, in order to simulate problems within the Frame Relay network. Consequently, this leads to the PVC inactive state being conducted to the DTE router via the Frame Relay network, and a Frame Relay subinterface down event. The watched route consequently disappears and the backup link is activated.
+For information on Troubleshooting Dialer Watch refer to the document Configuring and Troubleshooting DDR Backup.
+Troubleshooting Commands
+Certain show commands are supported by the Output Interpreter tool, which allows you to view an analysis of show command output.
+Note: Before issuing debug commands, please see Important Information on Debug Commands.
+debug isdn q931 - Displays information about call setup and teardown of ISDN network connections (Layer 3) between the local router (user side) and the network.
+debug backup - Debugs backup events.
+debug dialer - Displays debugging information about the packets or events on a dialer interface.
+debug ppp negotiation - Causes the debug ppp command to display PPP packets transmitted during PPP startup, where PPP options are negotiated.
+debug ppp authentication - Causes the debug ppp command to display authentication protocol messages, including Challenge Authentication Protocol (CHAP) packet exchanges and Password Authentication Protocol (PAP) exchanges.
+debug ip ospf events - Displays information on OSPF-related events, such as adjacencies, flooding information, designated router selection, and shortest path first (SPF) calculation.
+debug frame-relay events - Displays debugging information about Frame Relay Address Resolution Protocol (ARP) replies on networks that support a multicast channel and use dynamic addressing.
+Sample Troubleshooting Output
+In the output below, the Frame Relay interface is up.
+krimson#show ip route
+   Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+   Gateway of last resort is 10.200.16.1 to network 0.0.0.0
+
+   10.0.0.0/24 is subnetted, 6 subnets
+   C 10.5.5.0 is directly connected, Serial1.1
+   O 10.8.8.0 [110/1563] via 10.5.5.1, 00:01:31, Serial1.1 
+   
+!--- Initial state through the primary Frame Relay interface, !--- before line failure occurred
+
+   C 10.9.9.0 is directly connected, Dialer0
+   C 10.7.7.0 is directly connected, Loopback0
+   C 10.200.16.0 is directly connected, Ethernet0
+   S* 0.0.0.0/0 [1/0] via 10.200.16.1
+
+   krimson#
+   *Apr 17 01:00:50.591: OSPF: Rcv hello from 172.19.0.1 area 0 
+   from Serial1.1 10.5.5.1
+   *Apr 17 01:00:50.595: OSPF: End of hello processing
+   *Apr 17 01:00:51.127: %SYS-5-CONFIG_I: Configured from console by console
+   *Apr 17 01:01:00.591: OSPF: Rcv hello from 172.19.0.1 area 0 from Serial1.1    
+   10.5.5.1
+   *Apr 17 01:01:00.595: OSPF: End of hello processing
+   *Apr 17 01:01:05.243: %LINK-3-UPDOWN: Interface Serial1, changed state to down    
+   
+!--- Frame Relay failure simulated by shutting down the interface on !--- the Cisco 4500 router(acting as switch)
+
+   *Apr 17 01:01:05.251: OSPF: Interface Serial1.1 going Down
+   *Apr 17 01:01:05.255: %OSPF-5-ADJCHG: Process 10, Nbr 172.19.0.1 on Serial1.1    
+   from FULL to DOWN, Neighbor Down: Interface down or detached
+   *Apr 17 01:01:05.399: DDR: Dialer Watch: watch-group = 1
+   *Apr 17 01:01:05.403: DDR: network 10.8.8.0/255.255.255.0 DOWN,
+   
+!--- Watched network is down
+
+   *Apr 17 01:01:05.407: DDR: primary DOWN
+   *Apr 17 01:01:05.407: DDR: Dialer Watch: Dial Reason: Primary of group 1 DOWN
+   *Apr 17 01:01:05.411: DDR: Dialer Watch: watch-group = 1, 
+   *Apr 17 01:01:05.411: BR0 DDR: rotor dialout [priority]
+   *Apr 17 01:01:05.411: DDR: dialing secondary by dialer string 6120 on Di0
+   
+!--- router dials 6120 on interface Dialer 1
+
+   *Apr 17 01:01:05.415: BR0 DDR: Attempting to dial 6120
+   *Apr 17 01:01:05.523: ISDN BR0: TX -> SETUP pd = 8 callref = 0x43
+   *Apr 17 01:01:05.531: Bearer Capability i = 0x8890
+   *Apr 17 01:01:05.535: Channel ID i = 0x83
+   *Apr 17 01:01:05.543: Called Party Number i = 0x80, '6120', Plan:Unknown, 
+   Type:Unknown
+   *Apr 17 01:01:05.599: ISDN BR0: RX <- CALL_PROC pd = 8 callref = 0xC3
+   *Apr 17 01:01:05.603: Channel ID i = 0x89
+   *Apr 17 01:01:05.855: ISDN BR0: RX <- CONNECT pd = 8 callref = 0xC3
+   *Apr 17 01:01:05.875: %LINK-3-UPDOWN: Interface BRI0:1, changed state to up
+   *Apr 17 01:01:05.875: BR0:1 DDR: Dialer Watch: resetting call in progress
+   *Apr 17 01:01:05.883: %DIALER-6-BIND: Interface BR0:1 bound to profile Di0
+   *Apr 17 01:01:05.891: BR0:1 PPP: Treating connection as a callout
+   *Apr 17 01:01:05.895: BR0:1 PPP: Phase is ESTABLISHING, Active Open 
+   [0 sess, 0 load]
+   *Apr 17 01:01:05.899: BR0:1 LCP: O CONFREQ [Closed] id 54 len 15
+   *Apr 17 01:01:05.903: BR0:1 LCP: AuthProto CHAP (0x0305C22305)
+   *Apr 17 01:01:05.903: BR0:1 LCP: MagicNumber 0xF24F182E (0x0506F24F182E)
+   *Apr 17 01:01:05.911: ISDN BR0: TX -> CONNECT_ACK pd = 8 callref = 0x43
+   *Apr 17 01:01:05.939: BR0:1 LCP: I CONFREQ [REQsent] id 88 len 15
+   *Apr 17 01:01:05.943: BR0:1 LCP: AuthProto CHAP (0x0305C22305)
+   *Apr 17 01:01:05.943: BR0:1 LCP: MagicNumber 0x9B15A6B0 (0x05069B15A6B0)
+   *Apr 17 01:01:05.947: BR0:1 LCP: O CONFACK [REQsent] id 88 len 15
+   *Apr 17 01:01:05.951: BR0:1 LCP: AuthProto CHAP (0x0305C22305)
+   *Apr 17 01:01:05.955: BR0:1 LCP: MagicNumber 0x9B15A6B0 (0x05069B15A6B0)
+   *Apr 17 01:01:05.959: BR0:1 LCP: I CONFACK [ACKsent] id 54 len 15
+   *Apr 17 01:01:05.963: BR0:1 LCP: AuthProto CHAP (0x0305C22305)
+   *Apr 17 01:01:05.963: BR0:1 LCP: MagicNumber 0xF24F182E (0x0506F24F182E)
+   *Apr 17 01:01:05.967: BR0:1 LCP: State is Open
+   *Apr 17 01:01:05.967: BR0:1 PPP: Phase is AUTHENTICATING, by both 
+   [0 sess, 0 load]
+   *Apr 17 01:01:05.971: BR0:1 CHAP: O CHALLENGE id 54 len 28 from "krimson"
+   *Apr 17 01:01:06.051: BR0:1 CHAP: I CHALLENGE id 56 len 26 from "kevin"
+   *Apr 17 01:01:06.055: BR0:1 CHAP: O RESPONSE id 56 len 28 from "krimson"
+   *Apr 17 01:01:06.151: BR0:1 CHAP: I SUCCESS id 56 len 4
+   *Apr 17 01:01:06.167: BR0:1 CHAP: I RESPONSE id 54 len 26 from "kevin"
+   *Apr 17 01:01:06.175: BR0:1 CHAP: O SUCCESS id 54 len 4
+   *Apr 17 01:01:06.179: BR0:1 PPP: Phase is UP [0 sess, 0 load]
+   *Apr 17 01:01:06.183: BR0:1 IPCP: O CONFREQ [Not negotiated] id 46 len 10
+   *Apr 17 01:01:06.187: BR0:1 IPCP: Address 10.9.9.1 (0x03060A090901)
+   *Apr 17 01:01:06.279: BR0:1 IPCP: I CONFREQ [REQsent] id 34 len 10
+   *Apr 17 01:01:06.283: BR0:1 IPCP: Address 10.9.9.2 (0x03060A090902)
+   *Apr 17 01:01:06.287: BR0:1 IPCP: O CONFACK [REQsent] id 34 len 10
+   *Apr 17 01:01:06.291: BR0:1 IPCP: Address 10.9.9.2 (0x03060A090902)
+   *Apr 17 01:01:06.295: BR0:1 IPCP: I CONFACK [ACKsent] id 46 len 10
+   *Apr 17 01:01:06.299: BR0:1 IPCP: Address 10.9.9.1 (0x03060A090901)
+   *Apr 17 01:01:06.303: BR0:1 IPCP: State is Open
+   *Apr 17 01:01:06.315: %LINEPROTO-5-UPDOWN: Line protocol on Interface Serial1,    
+   changed state to down
+   *Apr 17 01:01:06.319: BR0:1 DDR: dialer protocol up
+   *Apr 17 01:01:06.327: Di0 IPCP: Install route to 10.9.9.2
+   *Apr 17 01:01:07.175: %LINEPROTO-5-UPDOWN: Line protocol on Interface BRI0:1,    
+   changed state to up
+   
+!--- Call connects
+
+   *Apr 17 01:01:10.775: OSPF: Rcv hello from 172.19.0.1 area 0 from Dialer0 10.9.9.2
+   
+!--- OSPF hello from the peer
+
+   *Apr 17 01:01:10.779: OSPF: End of hello processing
+   *Apr 17 01:01:11.891: %ISDN-6-CONNECT: Interface BRI0:1 is now connected to 6120 
+   
+   kevin#show interface serial 1.1
+   Serial1.1 is down, line protocol is down 
+   
+!--- Primary link is still down
+
+   Hardware is HD64570
+   Internet address is 10.5.5.2/24
+   MTU 1500 bytes, BW 64 Kbit, DLY 20000 usec, 
+   reliability 255/255, txload 1/255, rxload 1/255
+   Encapsulation FRAME-RELAY
+   
+   krimson#show interface dialer 0 
+   
+!--- Backup interface is up and active
+
+   Dialer0 is up, line protocol is up (spoofing)
+   Hardware is Unknown
+   Internet address is 10.9.9.1/24
+   MTU 1500 bytes, BW 56 Kbit, DLY 20000 usec, 
+   reliability 255/255, txload 1/255, rxload 1/255
+   Encapsulation PPP, loopback not set
+   DTR is pulsed for 1 seconds on reset
+   Interface is bound to BR0:1
+   Last input 1w6d, output never, output hang never
+   Last clearing of "show interface" counters 6w5d
+   Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+   Queueing strategy: weighted fair
+   Output queue: 0/1000/64/0 (size/max total/threshold/drops) 
+   Conversations 0/1/16 (active/max active/max total)
+   Reserved Conversations 0/0 (allocated/max allocated)
+   Available Bandwidth 42 kilobits/sec
+   5 minute input rate 0 bits/sec, 0 packets/sec
+   5 minute output rate 0 bits/sec, 0 packets/sec
+   882 packets input, 69656 bytes
+   892 packets output, 70436 bytes
+   Bound to:
+   BRI0:1 is up, line protocol is up 
+   Hardware is BRI
+   MTU 1500 bytes, BW 64 Kbit, DLY 20000 usec, 
+   
+   reliability 255/255, txload 1/255, rxload 1/255
+   Encapsulation PPP, loopback not set
+   Keepalive not set
+   DTR is pulsed for 1 seconds on reset
+   Time to interface disconnect: idle 00:01:38
+   Interface is bound to Di0 (Encapsulation PPP)
+   LCP Open
+   Open: IPCP
+   Last input 00:00:03, output 00:00:01, output hang never
+   Last clearing of "show interface" counters never
+   Queueing strategy: fifo
+   Output queue 0/40, 0 drops; input queue 0/75, 0 drops
+   30 second input rate 0 bits/sec, 0 packets/sec
+   30 second output rate 0 bits/sec, 0 packets/sec
+   4213 packets input, 414529 bytes, 0 no buffer
+   Received 0 broadcasts, 0 runts, 0 giants, 0 throttles
+   29 input errors, 18 CRC, 0 frame, 0 overrun, 0 ignored, 11 abort
+   3922 packets output, 242959 bytes, 0 underruns
+   0 output errors, 0 collisions, 27 interface resets
+   0 output buffer failures, 0 output buffers swapped out
+   622 carrier transitions
+   
+   krimson#show ip route
+   Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+   D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
+   N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+   E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+   i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+   * - candidate default, U - per-user static route, o - ODR
+   P - periodic downloaded static route
+
+   Gateway of last resort is 10.200.16.1 to network 0.0.0.0
+
+   192.168.64.0/30 is subnetted, 1 subnets
+   C 192.168.64.0 is directly connected, Dialer4
+   10.0.0.0/8 is variably subnetted, 6 subnets, 2 masks
+   C 10.9.9.2/32 is directly connected, Dialer0
+   O 10.8.8.0/24 [110/1786] via 10.9.9.2, 00:00:25, Dialer0 
+   
+!--- New route to the same destination (through dialer 0). !--- Network now points to backup interface
+
+   C 10.9.9.0/24 is directly connected, Dialer0
+   C 10.7.7.0/24 is directly connected, Loopback0
+   C 10.9.8.0/24 is directly connected, Dialer1
+   C 10.200.16.0/24 is directly connected, Ethernet0
+   S* 0.0.0.0/0 [1/0] via 10.200.16.1
+In the output below, the Frame Relay interface is coming up.
+*Apr 17 01:02:50.631: %LINEPROTO-5-UPDOWN: Line protocol 
+   on Interface Serial1,
+    changed state to up 
+   
+!--- Primary is UP again
+
+   *Apr 17 01:02:50.975: OSPF: Rcv hello from 172.19.0.1 area 0 
+   from Dialer0 10.9.9.2
+   *Apr 17 01:02:50.979: OSPF: End of hello processing
+
+   *Apr 17 01:03:00.975: OSPF: Rcv hello from 172.19.0.1 area 0 
+   from Dialer0 10.9.9.2
+   *Apr 17 01:03:00.979: OSPF: End of hello processing
+   *Apr 17 01:03:05.887: BR0:1 DDR: idle timeout
+   *Apr 17 01:03:05.887: DDR: Dialer Watch: watch-group = 1
+   *Apr 17 01:03:05.887: DDR: network 10.8.8.0/255.255.255.0 UP, 
+   
+!--- Watched route is UP
+
+   *Apr 17 01:03:05.891: DDR: primary DOWN
+   *Apr 17 01:03:10.551: OSPF: Rcv hello from 172.19.0.1 area 0 
+   from Serial1.1
+    10.5.5.1
+   *Apr 17 01:03:10.555: OSPF: End of hello processing
+   *Apr 17 01:03:10.975: OSPF: Rcv hello from 172.19.0.1 area 0 
+   from Dialer0 10.9.9.2
+   *Apr 17 01:03:10.979: OSPF: End of hello processing
+   
+   krimson#show ip route
+   Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+   D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
+   N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+   E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+   i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+   * - candidate default, U - per-user static route, o - ODR
+   P - periodic downloaded static route
+
+   Gateway of last resort is 10.200.16.1 to network 0.0.0.0
+
+   10.0.0.0/8 is variably subnetted, 7 subnets, 2 masks
+   C 10.9.9.2/32 is directly connected, Dialer0
+   C 10.5.5.0/24 is directly connected, Serial1.1
+   O 10.8.8.0/24 [110/1563] via 10.5.5.1, 00:00:01, Serial1.1 
+   
+! -- Route entry to destination network via primary has been installed again.
+
+   C 10.9.9.0/24 is directly connected, Dialer0
+   C 10.7.7.0/24 is directly connected, Loopback0
+   C 10.9.8.0/24 is directly connected, Dialer1
+   C 10.200.16.0/24 is directly connected, Ethernet0
+   S* 0.0.0.0/0 [1/0] via 10.200.16.1
+
+   krimson#show isdn active
+   --------------------------------------------------------------------------------
+   ISDN ACTIVE CALLS
+   --------------------------------------------------------------------------------
+   Call  Calling Called Remote Seconds Seconds Seconds Charges
+   Type  Number  Number Name   Used    Left    Idle    Units/Currency
+   --------------------------------------------------------------------------------
+   Out   6120           kevin  149     90      29      0 
+   --------------------------------------------------------------------------------
+The seconds idle field points out that that no more traffic is passing though the backup interface and the idle time is increasing.
+krimson# show isdn active
+   --------------------------------------------------------------------------------
+   ISDN ACTIVE CALLS
+   --------------------------------------------------------------------------------
+   Call Calling Called Remote Seconds Seconds Seconds Charges
+   Type Number  Number Name   Used    Left    Idle    Units/Currency
+   --------------------------------------------------------------------------------
+   Out          6120   kevin  165      74      45      0 
+   --------------------------------------------------------------------------------
+   
+   krimson# show isdn active
+   --------------------------------------------------------------------------------
+   ISDN ACTIVE CALLS
+   --------------------------------------------------------------------------------
+   Call Calling Called Remote Seconds Seconds Seconds  Charges
+   Type Number  Number Name   Used    Left    Idle     Units/Currency
+   --------------------------------------------------------------------------------
+   Out          6120   kevin   224    15      104       0 
+   --------------------------------------------------------------------------------
+
+   krimson#show isdn active
+   --------------------------------------------------------------------------------
+   ISDN ACTIVE CALLS
+   --------------------------------------------------------------------------------
+   Call Calling Called Remote Seconds Seconds Seconds Charges
+   Type Number Number Name Used Left Idle Units/Currency
+   --------------------------------------------------------------------------------
+   --------------------------------------------------------------------------------
+
+   krimson#show ip route
+   Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+   D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
+   N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+   E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+   i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+   * - candidate default, U - per-user static route, o - ODR
+   P - periodic downloaded static route
+
+   Gateway of last resort is 10.200.16.1 to network 0.0.0.0
+
+   192.168.64.0/30 is subnetted, 1 subnets
+   C 192.168.64.0 is directly connected, Dialer4
+   10.0.0.0/24 is subnetted, 6 subnets
+   C 10.5.5.0 is directly connected, Serial1.1
+   O 10.8.8.0 [110/1563] via 10.5.5.1, 00:01:52, Serial1.1
+   C 10.9.9.0 is directly connected, Dialer0
+   C 10.7.7.0 is directly connected, Loopback0
+   C 10.9.8.0 is directly connected, Dialer1
+   C 10.200.16.0 is directly connected, Ethernet0
+   S* 0.0.0.0/0 [1/0] via 10.200.16.1
+Related Information
+Access Technology Support Pages
+Technical Support - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+09-Sep-2005
+Initial Release
+Contributed by
+npanicke
+pdetroye
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Dial-on-Demand Routing (DDR)
+Integrated Services Digital Networks (ISDN), Channel-Associated Signaling (CAS)

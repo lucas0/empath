@@ -1,0 +1,660 @@
+Configuration Examples and TechNotes
+Configure FTP/TFTP Services: ASA 9.X
+Save
+Translations
+Download
+Print
+
+
+
+Updated:June 8, 2023
+Document ID:200194
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Background Information
+Advanced Protocol Handling
+Configuration
+Scenario 1. FTP Client Configured for Active Mode
+Network Diagram
+Scenario 2. FTP Client Configured for Passive Mode
+Network Diagram
+Scenario 3. FTP Client Configured for Active Mode
+Network Diagram
+Scenario 4. FTP Client Running Passive Mode
+Network Diagram
+Configure Basic FTP Application Inspection
+Configure FTP Protocol Inspection on Non-Standard TCP Port
+Verify
+TFTP
+Configure Basic TFTP Application Inspection
+Network Diagram
+Verify
+Troubleshoot
+Client in Inside Network
+Client in Outside Network
+Introduction
+This document describes different FTP and TFTP inspection scenarios on the ASA, ASA FTP/TFTP inspection configuration, and basic troubleshooting.
+Prerequisites
+Requirements
+Cisco recommends knowledge of these topics:
+Basic communication between required interfaces
+Configuration of the FTP server located in the DMZ network
+Components Used
+This document describes different FTP and TFTP inspection scenarios on the Adaptive Security Appliance (ASA) and it also covers ASA FTP/TFTP inspection configuration and basic troubleshooting.
+The information in this document is based on these software and hardware versions:
+ASA 5500 or ASA 5500-X Series ASA that runs the 9.1(5) software image
+Any FTP Server
+Any FTP Client
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, ensure that you understand the potential impact of any command.
+Background Information
+The Security Appliance supports application inspection through the Adaptive Security Algorithm function.
+Through the stateful application inspection used by the Adaptive Security Algorithm, the Security Appliance tracks each connection that traverses the firewall and ensures that they are valid.
+The firewall, through stateful inspection, also monitors the state of the connection to compile information to place in a state table.
+With the use of the state table in addition to administrator-defined rules, filtering decisions are based on context that is established by packets previously passed through the firewall.
+The implementation of application inspections consists of these actions:
+Identify the traffic
+Apply inspections to the traffic
+Activate inspections on an interface
+There are two forms of FTP as shown in the image.
+Active mode
+Passive mode
+Active FTP
+In Active FTP mode, the client connects from a random unprivileged port (N>1023) to the command port (21) of the FTP server. Then the client starts to listen to port N>1023 and sends the FTP command port N>1023 to the FTP server. The server then connects back to the specified data ports of the client from its local data port, which is port 20.
+Passive FTP
+In Passive FTP mode, the client initiates both connections to the server, which solves the problem of a firewall that filters the incoming data port connection to the client from the server. When an FTP connection is opened, the client opens two random unprivileged ports locally. The first port contacts the server on port 21. But instead of running a port command and allowing the server to connect back to its data port, the client issues the PASV command. The result of this is that the server then opens a random unprivileged port (P>1023) and sends the port P command back to the client. The client then initiates the connection from port N>1023 to port P on the server to transfer data. Without the inspection command configuration on the Security Appliance, FTP from inside users headed outbound works only in Passive mode. Also, users outside headed inbound to your FTP server are denied access.
+TFTP
+TFTP, as described in RFC 1350, is a simple protocol to read and write files between a TFTP server and client. TFTP uses UDP port 69.
+Advanced Protocol Handling
+Why do you need FTP inspection?
+Some applications require special handling by the Cisco Security Appliance application inspections function. These types of applications typically embed IP addressing information in the user data packet or open secondary channels on dynamically assigned ports. The application inspection function works with Network Address Translation (NAT) in order to help identify the location of embedded addressing information.
+In addition to the identification of embedded addressing information, the application inspection function monitors sessions in order to determine the port numbers for secondary channels. Many protocols open secondary TCP or UDP ports to improve performance. The initial session on a well-known port is used to negotiate dynamically assigned port numbers.
+The application inspection function monitors these sessions, identifies the dynamic port assignments and permits data exchange on these ports for the duration of the specific sessions. Multimedia and FTP applications exhibit this kind of behavior.
+    If the FTP inspection has not been enabled on the Security Appliance, this request is discarded and the FTP sessions do not transmit any requested data.
+If the FTP inspection is enabled on the ASA, then the ASA monitors the control channel and tries to recognize a request to open the data channel. The FTP protocol embeds the data-channel port specifications in the control channel traffic, requiring the Security Appliance to inspect the control channel for data-port changes.
+Once the ASA recognizes a request, it temporarily creates an opening for the data-channel traffic that lasts for the life of the session. In this way, the FTP inspection function monitors the control channel, identifies a data-port assignment, and allows data to be exchanged on the data port for the length of the session.
+ASA inspects port 21 connections for FTP traffic by default through the global-inspection class-map. The Security Appliance also recognizes the difference between an active and a passive FTP session.
+If the FTP sessions support passive FTP data transfer, the ASA through the inspect ftp command, recognizes the data port request from the user and opens a new data port greater than 1023.
+The inspect ftp command inspection inspects FTP sessions and performs four tasks:
+Prepares a dynamic secondary data connection
+Tracks the FTP command-response sequence
+Generates an audit trail
+Translates the embedded IP address using NAT
+FTP application inspection prepares secondary channels for FTP data transfer. The channels are allocated in response to a file upload, a file download, or a directory listing event, and they must be pre-negotiated. The port is negotiated through the PORT or PASV (227) commands.
+Configuration 
+Note: All the network scenarios are explained with FTP inspection enabled on the ASA.
+Scenario 1. FTP Client Configured for Active Mode
+Client connected to Inside Network of the ASA and Server in Outside Network.
+Network Diagram
+Note: The IP addressing schemes used in this configuration are not legally routable on the Internet.
+As shown in this image, the network setup used has the ASA with Client in the Inside Network with IP 172.16.1.5. Server is in Outside Network with IP 192.168.1.15. Client has a mapped IP 192.168.1.5 in the Outside Network .
+There is no need to permit any Access-list on Outside Interface as FTP inspection opens Dynamic Port Channel.
+Configuration Example:
+ ASA Version 9.1(5) 
+!
+hostname ASA
+domain-name corp. com
+enable password WwXYvtKrnjXqGbu1 encrypted
+names
+!
+interface GigabitEthernet0/0 
+  nameif Outside 
+  security-level 0 
+  ip address 192.168.1.2 255.255.255.0 
+ ! 
+ interface GigabitEthernet0/1 
+  nameif Inside 
+  security-level 50 
+  ip address 172.16.1.12 255.255.255.0 
+ ! 
+ interface GigabitEthernet0/2 
+  shutdown 
+  no nameif 
+  no security-level 
+  no ip address 
+ ! 
+ interface GigabitEthernet0/3 
+  shutdown 
+  no nameif 
+  no security-level 
+  no ip address 
+ ! 
+ interface Management0/0 
+  management-only 
+  shutdown 
+  no nameif 
+  no security-level 
+  no ip address 
+ 
+
+ !--- Output is suppressed. 
+  
+
+ !--- Object groups is created to define the host.  
+  
+object network obj-172.16.1.5
+ subnet 172.16.1.0 255.255.255.0
+
+
+ !--- Object NAT is created to map Inside Client to Outside subnet IP. 
+
+object network obj-172.16.1.5
+ nat (Inside,Outside) dynamic 192.168.1.5
+class-map inspection_default
+ match default-inspection-traffic
+!
+!
+policy-map type inspect dns preset_dns_map
+ parameters
+  message-length maximum 512
+
+policy-map global_policy
+ class inspection_default
+  inspect dns preset_dns_map 
+  inspect ftp 
+  inspect h323 h225 
+  inspect h323 ras 
+  inspect netbios 
+  inspect rsh 
+  inspect rtsp 
+  inspect skinny 
+  inspect esmtp 
+  inspect sqlnet 
+  inspect sunrpc 
+  inspect tftp 
+  inspect sip 
+  inspect xdmcp 
+!
+
+ !--- This command tells the device to 
+!--- use the "global_policy" policy-map on all interfaces. 
+  
+service-policy global_policy global
+prompt hostname context 
+Cryptochecksum:4b2f54134e685d11b274ee159e5ed009
+: end
+ASA(config)#                                                             
+Verify
+Connection
+ Client in Inside Network running ACTIVE FTP:   
+
+ Ciscoasa(config)# sh conn 
+ 3 in use, 3 most used 
+
+ TCP Outside 192.168.1.15:20 inside 172.16.1.5:61855, idle 0:00:00, bytes 145096704, flags UIB <--- Dynamic Connection Opened 
+
+ TCP Outside 192.168.1.15:21 inside 172.16.1.5:61854, idle 0:00:00, bytes 434, flags UIO         
+Here the client in Inside initiates the connection with source port 61854 to the destination port 21. Client then sends Port command with 6 tuple value. Server in turn initiates the Secondary/Data connection with Source Port of 20 and Destination Port is calculated from the steps mentioned after these captures.
+Capture Inside Interface as shown in this image.
+Capture Outside Interface as shown in this image.
+Port Value is calculated using last two touple out of six. Left 4 tuple are IP address and 2 touple are for Port. As shown in this image, IP address is 192.168.1.5 and 241*256 + 159 = 61855.
+Capture also shows that the values with Port Commands are changed when FTP inspection is enabled. Inside Interface Capture shows the real value of IP and the port sent by Client for Server to connect to Client for Data Channel and Outside Interface Capture shows mapped address.
+Scenario 2. FTP Client Configured for Passive Mode
+Client in Inside Network of the ASA and Server in Outside Network.
+Network Diagram
+Connection
+ Client in Inside Network running Passive Mode FTP:   
+
+ ciscoasa(config)# sh conn 
+ 3 in use, 3 most used 
+
+ TCP Outside 192.168.1.15:60142 inside 172.16.1.5:61839, idle 0:00:00, bytes 184844288, flags UI <--- Dynamic Connection Opened. 
+
+ TCP Outside 192.168.1.15:21 inside 172.16.1.5:61838, idle 0:00:00, bytes 451, flags UIO 
+
+         Here the client in inside initiates a connection with Source Port 61838 the Destination Port of 21. As it is a Passive FTP, client initiates both the connections. Therefore, after Client Sends PASV command, server replies with its 6 tuple value and client connects to that Socket for Data connection.
+Capture Inside Interface as shown in this image.
+Capture Outside Interface as shown in this image.
+Calculation for the Ports remains the same.
+As mentioned earlier, the ASA re-writes the embedded IP values if FTP inspection is enabled. Also, it does open a dynamic port channel for data connection.
+These are the connection details if FTP Inspection is Disabled
+Connection:
+ ciscoasa(config)# sh conn 
+ 2 in use, 3 most used 
+
+ TCP Outside 192.168.1.15:21 inside 172.16.1.5:61878, idle 0:00:09, bytes 433, flags UIO 
+ TCP Outside 192.168.1.15:21 inside 172.16.1.5:61875, idle 0:00:29, bytes 259, flags UIO 
+
+         Without FTP inspection, It only tries to send port command again and again but there is no reply as outside receives the PORT with Original IP not NATTed one. Same has been shown in the dump.
+FTP inspection can be disabled with no fixup protocol ftp 21 command in configuration terminal mode.
+Without FTP inspection, only PASV command works when client is in Inside as there is there is no port command coming from Inside which needs to be embedded and both the connections are initiated from Inside.
+Scenario 3. FTP Client Configured for Active Mode
+Client in Outside Network of the ASA and Server in DMZ Network.
+Network Diagram
+  Configuration:
+ ASA(config)#show running-config 
+
+ ASA Version 9.1(5) 
+!
+hostname ASA
+domain-name corp .com
+enable password WwXYvtKrnjXqGbu1 encrypted
+names
+!
+interface GigabitEthernet0/0 
+  nameif Outside 
+  security-level 0 
+  ip address 192.168.1.2 255.255.255.0 
+ ! 
+ interface GigabitEthernet0/1 
+  nameif DMZ 
+  security-level 50 
+  ip address 172.16.1.12 255.255.255.0 
+ ! 
+ interface GigabitEthernet0/2 
+  shutdown 
+  no nameif 
+  no security-level 
+  no ip address 
+ ! 
+ interface GigabitEthernet0/3 
+  shutdown 
+  no nameif 
+  no security-level 
+  no ip address 
+ ! 
+ interface Management0/0 
+  management-only 
+  shutdown 
+  no nameif 
+  no security-level 
+  no ip address 
+ 
+ !--- Output is suppressed. 
+  
+ !--- Permit inbound FTP control traffic.  
+
+access-list 100 extended permit tcp any host 192.168.1.5 eq ftp
+ !--- Object groups are created to define the hosts.  
+  
+object network obj-172.16.1.5
+ host 172.16.1.5
+
+ !--- Object NAT is created to map FTP server with IP of Outside Subnet. 
+
+object network obj-172.16.1.5
+ nat (DMZ,Outside) static 192.168.1.5
+
+access-group 100 in interface outside
+class-map inspection_default
+ match default-inspection-traffic
+!
+!
+policy-map type inspect dns preset_dns_map
+ parameters
+  message-length maximum 512
+
+policy-map global_policy
+ class inspection_default
+  inspect dns preset_dns_map 
+  inspect ftp 
+  inspect h323 h225 
+  inspect h323 ras 
+  inspect netbios 
+  inspect rsh 
+  inspect rtsp 
+  inspect skinny 
+  inspect esmtp 
+  inspect sqlnet 
+  inspect sunrpc 
+  inspect tftp 
+  inspect sip 
+  inspect xdmcp 
+!
+ !--- This command tells the device to 
+!--- use the "global_policy" policy-map on all interfaces. 
+  
+service-policy global_policy global
+prompt hostname context 
+Cryptochecksum:4b2f54134e685d11b274ee159e5ed009
+: end
+ASA(config)#                                                               
+Verify
+Connection:
+Client in Outside Network running in Active Mode FTP:  
+
+ ciscoasa(config)# sh conn 
+ 3 in use, 3 most used 
+
+ TCP outside 192.168.1.15:55836 DMZ 172.16.1.5:21,     idle 0:00:00, bytes 470, flags UIOB 
+
+ TCP outside 192.168.1.15:55837 DMZ 172.16.1.5:20, idle 0:00:00, bytes 225595694, flags UI <--- Dynamic Port channel
+Capture DMZ Interface as shown in this image.
+Capture Outside Interface as shown in this image.
+   Here, the client is runs Active Mode Client 192.168.1.15 and initiates connection to server in DMZ on port 21. Client then sends port command with six tuple value to server to connect to that specific dynamic port. Server then initiates the data connection with Source Port as 20.
+Scenario 4. FTP Client Running Passive Mode
+Client in Outside Network of the ASA and Server in DMZ Network.
+Network Diagram
+Connection
+ Client in Outside Network running in Passive Mode FTP:   
+
+ ciscoasa(config)# sh conn 
+ 3 in use, 3 most used 
+
+ TCP Outside 192.168.1.15:60071 DMZ 172.16.1.5:61781, idle 0:00:00, bytes 184718032, flags UOB <--- Dynamic channel Open 
+
+ TCP Outside 192.168.1.15:60070 DMZ 172.16.1.5:21, idle 0:00:00, bytes 413, 
+flags UIOB
+          Capture DMZ Interface as shown in this image.
+Capture Outside Interface as shown in this image.
+Configure Basic FTP Application Inspection
+By default, the configuration includes a policy that matches all default application inspection traffic and applies inspection to the traffic on all interfaces (a global policy). Default application inspection traffic includes traffic to the default ports for each protocol.
+You can only apply one global policy, so if you want to alter the global policy, for example, to apply inspection to non-standard ports, or to add inspections that are not enabled by default, you need to either edit the default policy or disable it and apply a new one. For a list of all default ports, refer to the Default Inspection Policy.
+Run the policy-map global_policy command.
+ ASA(config)#policy-map global_policy
+   
+Run the class inspection_default command.
+ ASA(config-pmap)#class inspection_default
+   
+Run the inspect FTP command.
+ ASA(config-pmap-c)#inspect FTP
+   
+There is an option to use the inspect FTP strict command. This command increases the security of protected networks by preventing a web browser from sending embedded commands in FTP requests.
+After you enable the strict option on an interface, FTP inspection enforces this behavior:
+An FTP command must be acknowledged before the Security Appliance allows a new command
+The Security Appliance drops a connection that sends embedded commands
+The 227 and PORT commands are checked to ensure that they do not appear in an error string
+Warning: The use of the strict option possibly causes the failure of FTP clients that are not strictly compliant with FTP RFCs. Refer to Using the strict Option for more information on the use of the strict option.
+Configure FTP Protocol Inspection on Non-Standard TCP Port
+You can configure the FTP Protocol Inspection for non-standard TCP ports with these configuration lines (replace XXXX with the new port number):
+ access-list ftp-list extended permit tcp any any eq XXXX
+!
+class-map ftp-class
+  match access-list ftp-list
+!
+policy-map global_policy
+  class ftp-class
+   inspect ftp   
+Verify
+In order to ensure that the configuration has successfully taken, run the show service-policy command. Also, limit the output to the FTP inspection by running the show service-policy inspect ftp command.
+ ASA#show service-policy inspect ftp
+         Global Policy:
+          Service-policy: global_policy
+           Class-map: inspection_default
+            Inspect: ftp, packet 0, drop 0, reste-drop 0
+        ASA#   
+TFTP
+TFTP inspection is enabled by default.
+The security appliance inspects TFTP traffic and dynamically creates connections and translations, if necessary, to permit file transfer between a TFTP client and server. Specifically, the inspection engine inspects TFTP Read Requests (RRQ), Write Requests (WRQ), and Error Notifications (ERROR).
+A dynamic secondary channel and a PAT translation, if necessary, are allocated on a reception of a valid RRQ or WRQ. This secondary channel is subsequently used by TFTP for file transfer or error notification.
+Only the TFTP server can initiate traffic over the secondary channel, and at most one incomplete secondary channel can exist between the TFTP client and server. An error notification from the server closes the secondary channel.
+TFTP inspection must be enabled if fstatic PAT is used to redirect TFTP traffic.
+Configure Basic TFTP Application Inspection
+By default, the configuration includes a policy that matches all default application inspection traffic and applies inspection to the traffic on all interfaces (a global policy). Default application inspection traffic includes traffic to the default ports for each protocol.
+You can only apply one global policy. So if you want to alter the global policy, for example, to apply inspection to non-standard ports, or to add inspections that are not enabled by default, you need to either edit the default policy or disable it and apply a new one. For a list of all default ports, refer to the Default Inspection Policy.
+Run the policy-map global_policy command.
+ ASA(config)#policy-map global_policy
+   
+Run the class inspection_default command.
+ ASA(config-pmap)#class inspection_default
+   
+Run the inspect TFTP command.
+ ASA(config-pmap-c)#inspect TFTP
+  
+Network Diagram
+Here the client in configured in Outside Network. TFTP server is placed in DMZ Network. Server is mapped to the IP 192.168.1.5 which is in Outside Subnet.
+Configuration Example:
+ ASA(config)#show running-config 
+
+ ASA Version 9.1(5) 
+!
+hostname ASA
+domain-name corp. com
+enable password WwXYvtKrnjXqGbu1 encrypted
+names
+!
+interface GigabitEthernet0/0
+ nameif Outside
+ security-level 0
+ ip address 192.168.1.2 255.255.255.0
+!
+interface GigabitEthernet0/1
+ nameif DMZ
+ security-level 50
+ ip address 172.16.1.12 255.255.255.0
+!
+interface GigabitEthernet0/2
+ shutdown
+ no nameif
+ security-level 100
+ ip address 10.1.1.1 255.255.255.0
+!
+interface GigabitEthernet0/3
+ shutdown
+ no nameif
+ no security-level
+ no ip address
+!
+interface Management0/0
+ management-only
+ shutdown
+ no nameif
+ no security-level
+ no ip address
+ !--- Output is suppressed. 
+
+
+ !--- Permit inbound TFTP traffic.  
+
+access-list 100 extended permit udp any host 192.168.1.5 eq tftp
+!
+
+ !--- Object groups are created to define the hosts.  
+
+object network obj-172.16.1.5
+ host 172.16.1.5
+
+ !--- Object NAT     to map TFTP server to IP in Outside Subnet.   
+
+object network obj-172.16.1.5
+ nat (DMZ,Outside) static 192.168.1.5
+
+ access-group 100 in interface outside
+ 
+class-map inspection_default
+
+match default-inspection-traffic
+
+!
+!
+policy-map type inspect dns preset_dns_map
+ parameters
+ message-length maximum 512
+
+policy-map global_policy
+ class inspection_default
+ inspect dns preset_dns_map 
+ inspect ftp 
+ inspect h323 h225 
+ inspect h323 ras 
+ inspect netbios 
+ inspect rsh 
+ inspect rtsp 
+ inspect skinny 
+ inspect esmtp 
+ inspect sqlnet 
+ inspect sunrpc 
+ inspect tftp 
+ inspect sip 
+ inspect xdmcp 
+!
+
+!--- This command tells the device to 
+!--- use the "global_policy" policy-map on all interfaces.
+
+service-policy global_policy global
+prompt hostname context 
+Cryptochecksum:4b2f54134e685d11b274ee159e5ed009
+: end
+ASA(config)#        
+Verify
+In order to ensure the configuration has successfully taken, run the show service-policy command. Also, limit the output to the TFTP inspection only by running the show service-policy inspect tftp command.
+ ASA#show service-policy inspect tftp
+         Global Policy:
+          Service-policy: global_policy
+           Class-map: inspection_default
+            Inspect: tftp, packet 0, drop 0, reste-drop 0
+        ASA#   
+Troubleshoot
+This section provides information you can use in order to troubleshoot your configuration.
+Packet Tracer
+Client in Inside Network
+ FTP client Inside - Packet Tracer for Control Connection : Same Flow for Active and Passive.   
+
+ # packet-tracer input inside tcp 172.16.1.5 12345 192.168.1.15 21 det 
+
+  -----Omitted------    
+
+ Phase: 5 
+ Type: INSPECT 
+ Subtype: inspect-ftp   
+ Result: ALLOW 
+ Config: 
+ class-map inspection_default 
+  match default-inspection-traffic 
+ policy-map global_policy 
+  class inspection_default 
+  inspect ftp 
+ service-policy global_policy global 
+ Additional Information: 
+  Forward Flow based lookup yields rule: 
+  in id=0x76d9a120, priority=70, domain=inspect-ftp, deny=false 
+  hits=2, user_data=0x76d99a30, cs_id=0x0, use_real_addr, flags=0x0, protocol=6 
+  src ip/id=0.0.0.0, mask=0.0.0.0, port=0 
+  dst ip/id=0.0.0.0, mask=0.0.0.0, port=21, dscp=0x0 
+  input_ifc=inside, output_ifc=any 
+
+
+ Phase: 6 
+ Type: NAT 
+ Subtype: 
+ Result: ALLOW 
+ Config: 
+object network obj-172.16.1.5
+ nat (inside,outside) static 192.168.1.5
+Additional Information:
+NAT divert to egress interface DMZ
+translate 172.16.1.5/21 to 192.168.1.5/21
+
+
+ Phase: 7 
+ Type: NAT 
+ Subtype: rpf-check   
+ Result: ALLOW   
+ Config:   
+object network obj-172.16.1.5
+ nat (inside,outside) static 192.168.1.5
+Additional Information:
+ Forward Flow based lookup yields rule:
+ out id=0x76d6e308, priority=6, domain=nat-reverse, deny=false
+ hits=15, user_data=0x76d9ef70, cs_id=0x0, use_real_addr, flags=0x0, protocol=0
+ src ip/id=0.0.0.0, mask=0.0.0.0, port=0
+ dst ip/id=172.16.1.5, mask=255.255.255.255, port=0, dscp=0x0
+ input_ifc=inside, output_ifc=outside
+
+ ----Omitted---- 
+
+ Result: 
+ input-interface: inside 
+ input-status: up 
+ input-line-status: up 
+ output-interface: Outside 
+ output-status: up 
+ output-line-status: up 
+ Action: allow 
+
+                                                                       Client in Outside Network
+ FTP client Outside - Packet Tracer for Control Connection : Same Flow for Active and Passive 
+
+
+ # packet-tracer input outside tcp 192.168.1.15 12345 192.168.1.5 21 det   
+
+ Phase: 1 
+ Type: UN-NAT 
+ Subtype: static 
+ Result: ALLOW 
+ Config:   
+ object network obj-172.16.1.5   
+  nat (DMZ,outside) static 192.168.1.5   
+ Additional Information: 
+ NAT divert to egress interface DMZ 
+ Untranslate 192.168.1.5/21 to 172.16.1.5/21 
+
+  -----Omitted-----    
+
+ Phase: 4 
+ Type: INSPECT 
+ Subtype: inspect-ftp 
+ Result: ALLOW 
+ Config: 
+ class-map inspection_default 
+  match default-inspection-traffic 
+ policy-map global_policy 
+  class inspection_default 
+  inspect ftp 
+ service-policy global_policy global 
+ Additional Information: 
+  Forward Flow based lookup yields rule: 
+  in id=0x76d84700, priority=70, domain=inspect-ftp, deny=false 
+  hits=17, user_data=0x76d84550, cs_id=0x0, use_real_addr, flags=0x0, protocol=6 
+  src ip/id=0.0.0.0, mask=0.0.0.0, port=0 
+  dst ip/id=0.0.0.0, mask=0.0.0.0, port=21, dscp=0x0 
+  input_ifc=outside, output_ifc=any 
+
+ Phase: 5 
+ Type: NAT 
+ Subtype: rpf-check   
+ Result: ALLOW   
+ Config:   
+ object network obj-172.16.1.5   
+  nat (DMZ,outside) static 192.168.1.5   
+ Additional Information: 
+  Forward Flow based lookup yields rule: 
+  out id=0x76d6e308, priority=6, domain=nat-reverse, deny=false 
+  hits=17, user_data=0x76d9ef70, cs_id=0x0, use_real_addr, flags=0x0, protocol=0 
+  src ip/id=0.0.0.0, mask=0.0.0.0, port=0 
+  dst ip/id=172.16.1.5, mask=255.255.255.255, port=0, dscp=0x0 
+  input_ifc=outside, output_ifc=DMZ 
+
+  ----Omitted-----     
+
+ Result: 
+ input-interface: Outside 
+ input-status: up 
+ input-line-status: up 
+ output-interface: DMZ 
+ output-status: up 
+ output-line-status: up 
+ Action: allow 
+
+
+                                                                                           As seen in both the packet-tracers, the traffic hits their respective NAT statements and FTP inspection Policy. They also leave their required interfaces.
+During troubleshooting, you can try to capture the ASA Ingress and Egress interfaces and see if the ASA Embedded IP address re-write is working fine and check the connection if the dynamic port is being allowed on ASA.
+Revision History
+Revision Publish Date Comments
+2.0
+08-Jun-2023
+recertification
+1.0
+19-Oct-2015
+Initial Release
+Contributed by Cisco Engineers
+Akshay Rastogi
+Cisco TAC Engineer
+Raghunath Kulkarni
+Cisco TAC Engineer
+Prashant Joshi
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+ASA: How to download images using TFTP, FTP, HTTP, HTTPS and SCP
+ASA 8.3 and Later: Enable FTP/TFTP Services Configuration Example
+ftp passive mode
++ Show 2 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)

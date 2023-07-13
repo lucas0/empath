@@ -1,0 +1,268 @@
+Troubleshooting TechNotes
+Configure a Next Hop IP Address for Static Routes
+Save
+Translations
+Download
+Print
+
+
+
+Updated:July 10, 2023
+Document ID:118263
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Background Information
+Conventions
+Static Route to Interface without Next Hop IP Address
+Floating Static Route Example
+Problem
+Solution
+Conclusion
+Introduction
+This document describes static routes and uses a problem scenario to demonstrate when it is desirable to specify how to reach the next hop IP address.
+Prerequisites
+Requirements
+There are no specific requirements for this document.
+Components Used
+This document is not restricted to specific software and hardware versions.
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, ensure that you understand the potential impact of any command.
+Background Information
+Static routes are used for a variety of reasons and are often used when there is no dynamic route to the destination IP address, or to override the dynamically learned route.
+By default, static routes have an administrative distance of one, which gives them precedence over routes from any dynamic routing protocol. When the administrative distance is increased to a value greater than the dynamic routing protocol, the static route can be a safety net when dynamic routing fails. For example, Enhanced Interior Gateway Routing Protocol (EIGRP) derived routes have a default administrative distance of 90 for internal routes, and 170 for external routes. To configure a static route that is overridden by an EIGRP route, specify an administrative distance that is greater than 170 for the static route.
+A static route with a high administrative distance is called a floating static route. It is installed in the routing table only when the dynamically learned route disappears. An example of a floating static route is: ip route 172.31.10.0 255.255.255.0 10.10.10.2 101.
+Note: An administrative distance of 255 is considered unreachable, and static routes with an administrative distance of 255 are never entered into the routing table.
+Conventions
+For more information on document conventions, refer to Cisco Technical Tips Conventions.
+Static Route to Interface without Next Hop IP Address
+If configured to point as a static route to an interface, do not specify the next hop IP address. The route is inserted into the routing table only when the interface is active. This configuration is not recommended because when the static route points to an interface and has no next hop information, the router considers each host within the range of the route to be directly connected through that interface. An example of such a static route is: ip route 0.0.0.0 0.0.0.0 Ethernet0.
+With this type of configuration, a router performs Address Resolution Protocol (ARP) on the Ethernet for every destination the router finds through the default route because the router considers all these destinations to be directly connected to Ethernet 0. This static route type, especially if it is used by many packets to many different destination subnets, can cause high processor use and a very large ARP cache (along with memory allocation failures). Therefore, this kind of static route is not recommended.
+When the next hop address is specified on a directly-connected interface, the router does not perform ARP for each destination address. An example is IP route 0.0.0.0 0.0.0.0 Ethernet0 192.168.1.1. Only the directly connected next hop address is specified, but this is not recommended for the reasons described in this document. There is no need to specify the directly-connected next hop address. But the remote next hop address and the interface to which the remote next hop recurses can be specified.
+If there is the possibility the interface with the next hop goes down and the next hop would become reachable through a recursive route, then specify both the next hop IP address and the alternate interface through which the next hop can be found. For example, IP route 10.0.0.1 255.255.255.255 Serial 3/3 192.168.20.1. The addition of the alternate interface enables the static route installation to become more deterministic.
+Floating Static Route Example
+This example describes the use of floating static routes and illustrates the need to both specify the outbound interface, and the next hop address with the static route command.
+Problem
+With the network configuration illustrated in this image, one host 172.31.10.1 has connectivity to the internet. In this example, the host makes a connection to remote internet host 10.100.1.1:
+With this configuration, the primary link is the link between serial port 1/0 on R1 to serial port 1/0 on R2 for traffic to and from the host 172.31.10.1 to the internet. The host 10.100.1.1 is used as an example of an internet host. The link between serial port 2/0 on R1 to serial port 2/0 on R2 is the backup link. The backup link is only used if the primary link fails. This is deployed with the use of static routes that point to the primary link and the use of floating static routes that point to the backup link.
+There are two static routes to the same destination (172.31.10.0/24) on R1. One route is the regular static route and the other route is the floating static route, which is the backup, or redundant path to the destination network on the LAN. The problem in this scenario is the floating static route is never installed in the routing table when the primary link is down.
+This is the configuration on R1:
+hostname R1
+!
+interface Serial1/0
+ ip address 10.10.10.1 255.255.255.252
+!
+interface Serial2/0
+ ip address 10.10.20.1 255.255.255.252
+!
+ip route 10.0.0.0 255.0.0.0 192.168.10.2
+ 
+! This is the primary route to get to hosts on the internet.
+ 
+ip route 172.31.10.0 255.255.255.0 10.10.10.2
+ 
+! This is the preferred route to the LAN.
+ 
+ip route 172.31.10.0 255.255.255.0 10.10.20.2 250
+ 
+! This is the floating static route to the LAN.
+This is the configuration on R2:
+hostname R2
+!
+interface Serial1/0
+ ip address 10.10.10.2 255.255.255.252
+!
+interface Serial2/0
+ ip address 10.10.20.2 255.255.255.252
+!
+ip route 0.0.0.0 0.0.0.0 10.10.10.1
+ip route 0.0.0.0 0.0.0.0 10.10.20.1 250
+!
+This is the routing table for R1:
+R1#show ip route
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2
+       i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+       ia - IS-IS inter area, * - candidate default, U - per-user static route
+       o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+       a - application route
+       + - replicated route, % - next hop override
+ 
+Gateway of last resort is not set
+ 
+     10.0.0.0/8 is variably subnetted, 5 subnets, 3 masks
+S       10.0.0.0/8 [1/0] via 192.168.10.2
+C       10.10.10.0/30 is directly connected, Serial1/0
+L       10.10.10.1/32 is directly connected, Serial1/0
+C       10.10.20.0/30 is directly connected, Serial2/0
+L       10.10.20.1/32 is directly connected, Serial2/0
+     172.31.0.0/24 is subnetted, 1 subnets
+S       172.31.10.0 [1/0] via 10.10.10.2
+     192.168.10.0/24 is variably subnetted, 2 subnets, 2 masks
+C       192.168.10.0/30 is directly connected, Serial3/0
+L       192.168.10.1/32 is directly connected, Serial3/0
+When a ping is performed from the host to the internet host 10.100.1.1, it functions as expected.
+host#ping 10.100.1.1
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 10.100.1.1, timeout is 2 seconds:
+!!!!!
+Success rate is 100 percent (5/5), round-trip min/avg/max = 73/78/80 ms
+A traceroute from the host to the internet host 10.100.1.1 shows:
+host#traceroute 10.100.1.1
+Type escape sequence to abort.
+Tracing the route to 10.100.1.1
+VRF info: (vrf in name/id, vrf out name/id)
+1 172.31.10.2 1 msec 1 msec 1 msec
+2 10.10.10.1 31 msec 39 msec 39 msec
+3 192.168.10.2 80 msec * 80 msec
+The primarily link 10.10.10.0/30 is used.
+If you shut down serial port 1/0 on R1 to test the failover, expect R1 to install the floating static route to the local LAN 172.31.10.0, and for R2 to install the floating static route to 0.0.0.0 through 10.10.20.1. Also expect traffic to flow over the backup link.
+R1#conf t
+Enter configuration commands, one per line. End with CNTL/Z.
+R1(config)#interface serial1/0
+R1(config-if)#shutdown
+R1(config-if)#end
+R1#
+However, the static route for the LAN 172.31.10.0/24 remains in the routing table for R1:
+R1#show ip route
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2
+       i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+       ia - IS-IS inter area, * - candidate default, U - per-user static route
+       o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+       a - application route
+       + - replicated route, % - next hop override
+ 
+Gateway of last resort is not set
+ 
+     10.0.0.0/8 is variably subnetted, 3 subnets, 3 masks
+S       10.0.0.0/8 [1/0] via 192.168.10.2
+C       10.10.20.0/30 is directly connected, Serial2/0
+L       10.10.20.1/32 is directly connected, Serial2/0
+     172.31.0.0/24 is subnetted, 1 subnets
+S       172.31.10.0 [1/0] via 10.10.10.2
+     192.168.10.0/24 is variably subnetted, 2 subnets, 2 masks
+C       192.168.10.0/30 is directly connected, Serial3/0
+L       192.168.10.1/32 is directly connected, Serial3/0
+R1#show ip route 172.31.10.0
+Routing entry for 172.31.10.0/24
+Known via "static", distance 1, metric 0
+Routing Descriptor Blocks:
+* 10.10.10.2
+     Route metric is 0, traffic share count is 1
+ 
+R1#show ip route 10.10.10.2
+Routing entry for 10.0.0.0/8
+Known via "static", distance 1, metric 0
+Routing Descriptor Blocks:
+* 192.168.10.2
+     Route metric is 0, traffic share count is 1
+The ping and traceroute from the host no longer work:
+host#ping 10.100.1.1    
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 10.100.1.1, timeout is 2 seconds:
+.....
+Success rate is 0 percent (0/5)
+ 
+host#traceroute 10.100.1.1
+Type escape sequence to abort.
+Tracing the route to 10.100.1.1
+VRF info: (vrf in name/id, vrf out name/id)
+1 172.31.10.2 1 msec 1 msec 1 msec
+2 * * *
+3 * * *
+4 * * *
+5 * * *
+6 * * *
+7 * * *
+8 * * *
+9 * * *
+10 * * *
+11 * * *
+…
+The floating static route is not installed on R1 and the primary static route is still in the routing table for R1, even though the serial port 1/0 link is shut down. This occurs because static routes are recursive in nature. Always keep the static route in the routing table as long as you have a route to the next hop.
+In this problem scenario, you can expect that because the primary link is down, you have the floating static route with administrative distance 250 installed in the routing table on R1. However, the floating static route is not installed in the routing table because the regular static route remains in the routing table. The next hop IP address 10.10.10.2 is successfully recursed to (to 192.168.10.2) through the static route 10.0.0.0/8, which is present in the routing table.
+Solution
+Configure a static route on R1 where the next hop cannot be recursive to another static route. Cisco recommends to configure both the outbound interface and the next hop IP address for a static route. For a serial interface, the specification of the outbound interface is sufficient because a serial interface is a point-to-point interface. If the outbound interface is an Ethernet interface, then configure both the outbound interface and the next hop IP address.
+This example is a static route for the LAN configured with the specification of the outbound interface:
+R1#conf t
+Enter configuration commands, one per line. End with CNTL/Z.
+R1(config)#no ip route 172.31.10.0 255.255.255.0 10.10.10.2
+R1(config)#ip route 172.31.10.0 255.255.255.0 Serial1/0
+R1(config)#end
+R1#show ip route
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2
+       i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+       ia - IS-IS inter area, * - candidate default, U - per-user static route
+       o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+       a - application route
+       + - replicated route, % - next hop override
+ 
+Gateway of last resort is not set
+ 
+     10.0.0.0/8 is variably subnetted, 3 subnets, 3 masks
+S       10.0.0.0/8 [1/0] via 192.168.10.2
+C       10.10.20.0/30 is directly connected, Serial2/0
+L       10.10.20.1/32 is directly connected, Serial2/0
+     172.31.0.0/24 is subnetted, 1 subnets
+S       172.31.10.0 [250/0] via 10.10.20.2
+     192.168.10.0/24 is variably subnetted, 2 subnets, 2 masks
+C       192.168.10.0/30 is directly connected, Serial3/0
+L       192.168.10.1/32 is directly connected, Serial3/0
+The ping and traceroute from the host to the internet host now work and the backup link is used:
+R1#show ip route 172.31.10.0
+Routing entry for 172.31.10.0/24
+Known via "static", distance 250, metric 0 (connected)
+Routing Descriptor Blocks:
+* 10.10.20.2
+     Route metric is 0, traffic share count is 1
+host#ping 10.100.1.1
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 10.100.1.1, timeout is 2 seconds:
+!!!!!
+Success rate is 100 percent (5/5), round-trip min/avg/max = 76/79/80 ms
+ 
+host#traceroute 10.100.1.1
+Type escape sequence to abort.
+Tracing the route to 10.100.1.1
+VRF info: (vrf in name/id, vrf out name/id)
+1 172.31.10.2 1 msec 1 msec 1 msec
+2 10.10.20.1 38 msec 39 msec 40 msec
+3 192.168.10.2 80 msec * 80 msec
+Conclusion
+Cisco highly recommends you specify the outbound interface and the next hop IP address when static routes are configured. When the outbound interface is a point-to-point type of link (for example, a serial link), specification of the next hop IP address is not needed.
+Revision History
+Revision Publish Date Comments
+3.0
+10-Jul-2023
+Updated Article Description, Background Information, Style Requirements and Formatting.
+2.0
+20-Jul-2022
+Recertification
+1.0
+02-Sep-2014
+Initial Release
+Contributed by Cisco Engineers
+Luc De Ghein
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Cisco Nexus 3000 Series NX-OS Unicast Routing Configuration Guide, Release 5.0(3)U1(2) --- Configuring Static Routing
+Configure a Gateway of Last Resort that Uses IP Commands
+Configure InterVLAN Routing on Layer 3 Switches
++ Show 2 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+IP Routing

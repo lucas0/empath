@@ -1,0 +1,167 @@
+Troubleshooting TechNotes
+ASR5x00 Series: Sessmgr WARN State Due To Huge Number Of HTTP Flows
+Save
+Translations
+Download
+Print
+
+
+
+Updated:September 6, 2016
+Document ID:200646
+Bias-Free Language
+Contents
+Introduction
+Problem
+Troubleshoot
+Solution
+Introduction
+This document describes the issue on sessmgr going to  WARN state due to huge number of HTTP flows. This issue is reported on Cisco Aggregrated Service Routers (ASR) 5x00.
+Problem
+Sessmgr status is WARN and high memory utilization.
+******** show task resources *******
+Thursday July 24 17:44:58 IST 2014
+                   task   cputime        memory     files      sessions
+ cpu facility      inst used allc   used  alloc used allc  used  allc S status
+----------------------- --------- ------------- --------- ------------- ------
+4/0 sessmgr          3  26% 100%  1.86G  1.86G   34  500  1766 28160 I   warn
+These Error logs are generated in the process.There is no subscriber impact due to this error log. As per design once the call is rejected from sessmgr which is in WARN state, system tries at different sessmgrs and call goes through.
+[sessmgr 10018 error] [4/0/6812 <sessmgr:3> sessmgr_func.c:44683] [software internal system syslog] Sessmgr-3 full (35200 effective number of calls, 1777 calllines in use, 51146 free flows, 31221 free aaa_sessions, 1777 used-mem-credits, 1777 used-sess-credits, 1948360 mem-usage, 1945600 mem-limit, 0 ecs-queue-usage, 70400 ecs-queue-limit, 16850 ecs-num-flows, 400000 ecs-max-flows, 2334720 ecs-mem-limit[ecs-flow/mem-values:valid], 0x86 limit-flags) - call rejected
+Troubleshoot
+Capture show support details output and check for the command outputs to troubleshoot further.
+The memory problem is related with the amount of flows that the sessmgr handles. The correlation can be seen between sessmgr having high memory consumption and high amount of flows.
+ ******** debug acsmgr show memory usage *******
+Thursday July 24 17:50:06 IST 2014
+
+------------------------------------------------------------------------------
+                !                !               Caches Count              !
+Instance Memory !      Flows     !   Callline    Data-Session  TCP OOO     !
+                ! Current    Max ! Total   Free  Total   Free  Total   Free!
+--------------------------------------------------------------------------------
+       1 865.68M  43365  64360     5500   1178  56140  12775   1102   1064
+       2 852.05M  43879  64767     5500   1178  60150  16271   1102   1067
+       3 1902.68M  17252 276519    4400   2631  44110  26858    551    541
+For affected sessmgrs (and for one unaffected), collect these command outputs, where x is the Sessmgr instance.
+    show messenger proclet facility sessmgr instance <x> heap
+    show messenger proclet facility sessmgr instance <x> system heap
+    task core facility sessmgr instance <x>
+    show active-charging flows instance <x>
+    show profile facility sessmgr active depth 8 head 201
+    show task resources faciltity sessmgr instance <x> max 
+Check if  unoptimized rules and group of ruledefs consume lot of memory.
+    debug acsmgr show rule-optimization-information
+    debug acsmgr show grp-of-rdef-optimization-information
+The highest memory consumption is due to these functions based on the command outputs.
+acs_http_pkt_inspection()
+acsmgr_alloc_buffer()
+snx_add_dbufs()
+sn_aaa_alloc_session_block()
+sgx_imsa_bind_user()
+You can also check Max No of Simultaneous HTTP Flows attained by Call lines
+ ******** debug acsmgr show flow-stats max-simultaneous-flows http *******
+Thursday July 24 17:50:04 IST 2014
+
+        Histogram of Max No of Simultaneous HTTP Flows attained by Calllines
+
+                No Of Flows             No Of Calllines
+                1 to 10                 964712518
+                11 to 20                384105002
+                21 to 40                232987189
+                41 to 100               148938918
+                101 to 200              115919586
+                201 to 500              86729303
+                501 to 1000             69975385
+                1001 to 2000            59635906
+                2001 to 5000            50743511
+                5001 to 10000           44566999
+                > 10000                 1044671491
+
+
+ ******** debug acsmgr show flow-stats cumulative http *******
+Thursday July 24 17:50:03 IST 2014
+
+        Histogram of Total Cumulative HTTP Flows by Calllines
+
+                No Of Flows             No Of Calllines
+                1 to 10                 964712485
+                11 to 20                384104980
+                21 to 40                232987175
+                41 to 100               148938911
+                101 to 200              115919583
+                201 to 500              86729297
+                501 to 1000             69975377
+                1001 to 2000            59635907
+                2001 to 5000            50743509
+                5001 to 10000           44567004
+                > 10000                 1044671452
+You can conclude that there are huge number of HTTP sessions being allocated and this could be due to the heavy HTTP traffic. Also there are almost 1044671491 Calllines, which have greater than 10000 HTTP flows at a time. This leads to high memory usage.
+Solution
+You have the CLI to limit the number of flows per subscriber
+flow limit-across-applications 
+
+Cisco would recommend to configure flow limit-across-applications to 5000 as recommended under all affected Rule-bases where huge number of HTTP Traffic can be seen.
+This is the procedure to configure the command
+In local context under Global configuration.
+# active-charging service ECS
+(config-acs)# rulebase GOLIVE
+(config-rule-base)# flow limit-across-applications 5000
+
+More information about this command.
+flow limit-across-applications
+This command allows you to limit the total number of simultaneous flows per Subscriber/APN sent to a rulebase regardless of the flow type, or limit flows based on the protocol type under the Session Control feature.
+Product:
+ACS
+
+Privilege:
+Security Administrator, Administrator
+
+Mode:
+Exec > ACS Configuration> Rulebase Configuration
+
+active-charging service service_name > rulebase rulebase_name
+
+Entering the above command sequence results in the following prompt:
+
+[local]host_name(config-rule-base)#
+
+ 
+Syntax
+flow limit-across-applications { limit | non-tcp limit | tcp limit }no flow limit-across-applications [ non-tcp | tcp ] no
+If previously configured, deletes the flow limit-across-applications configuration from the current rulebase.
+flow limit-across-applications limit
+Specifies the maximum number of flows across all applications for the rulebase.
+limit must be an integer from 1 through 4000000000.
+Default: No limits
+non-tcp limit
+Specifies the maximum limit of non-TCP type flows.
+limit must be an integer from 1 through 4000000000.
+Default: No limits
+tcp limit
+Specifies the maximum limit of TCP flows.
+limit must be an integer from 1 through 4000000000.
+Default: No limits
+
+Usage:
+Use this command to limit the total number of flows allowed for a rulebase regardless of flow type, or limit flows based on the protocol—non-TCP (connection-less) or TCP (connection-oriented).
+If a subscriber attempts to exceed these limits system discards the packets of new flow. This limit processing of this command has following aspects for UDP, TCP, ICMP and some of the exempted flows:
+UDP/ICMP: System waits for the flow timeout before updating the counter and removing it from the count of number of flows.
+TCP: After a TCP flow ends, system waits for a short period of time to accommodate the retransmission of any missed packet from one end. TCP flows those are ended, but are still in wait period for timeout are exempted for this limit processing.
+Exempted flows: System exempts all the other flows specified with the flow limit-for-flow-type command in the ACS Charging Action Configuration Mode set to no.
+
+Example:
+This command defines the maximum number of 200000 flows for the rulebase:
+flow limit-across-applications 200000
+Contributed by Cisco Engineers
+Krishna Kishore DV
+Cisco TAC Engineer
+Naveen Kumar S
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+ASR 5000 Series
+GGSN Gateway GPRS Support Node
+PGW Packet Data Network Gateway

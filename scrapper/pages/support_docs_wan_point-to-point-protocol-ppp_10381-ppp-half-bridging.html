@@ -1,0 +1,617 @@
+Configuration Examples and TechNotes
+Using PPP Half-Bridging to Connect Routed and Bridged Networks
+Save
+Translations
+Download
+Print
+
+Updated:February 4, 2010
+Document ID:10381
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Related Products
+Conventions
+Background Information
+Configure
+Network Diagram
+Configurations
+Verify
+Show Commands on Venus After Dialing into Saturn
+Show Commands on Saturn After Venus Dials In
+Troubleshoot
+Troubleshooting Resources
+Troubleshooting Commands
+Debug Commands on Venus when Interesting Traffic Arrives
+Related Information
+Introduction
+This document provides a sample configuration for using PPP half-bridging to connect routed and bridged networks.
+Prerequisites
+Requirements
+There are no specific requirements for this document.
+Components Used
+The information in this document is based on these software and hardware versions:
+Cisco IOS® Software Release 12.2(7b).
+Two Cisco 2500 series routers. Each has at least one ISDN BRI interface.
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Related Products
+This configuration can also be used with these hardware and software versions:
+Any serial interface, such as serial, Basic Rate Interface (BRI), Primary Rate Interface (PRI), and so on.
+Cisco IOS Software Release 11.2.
+Any router running Cisco IOS software as mentioned above, and at least one ISDN-BRI port. However, the half-bridge feature can be used on a router with a serial interface.
+Conventions
+For more information on document conventions, refer to Cisco Technical Tips Conventions.
+Background Information
+The bridge sends bridge packets to the PPP half-bridge that converts them to routed packets and forwards them to other router processes. Likewise, the PPP half-bridge converts routed packets to Ethernet bridge packets, and sends them to the bridge on the same Ethernet subnetwork.
+Note: This configuration does not cover a full bridge on both sides. For such a configuration refer to the Bridging Across ISDN document.
+Be aware that bridging on an ISDN connection tends to keep the connection active for very long periods, if not permanently. If the Telco charges for ISDN based on connection time, this can result in a very large bill. Consequently, this scenario is recommended for those who have unlimited-usage ISDN lines.
+Note: An interface cannot function as both a half-bridge and a bridge. Cisco IOS software supports no more than one PPP half-bridge per Ethernet subnetwork.
+Configure
+In this section, you are presented with the information to configure the features described in this document.
+Note: To find additional information on the commands used in this document, use the Command Lookup Tool (registered customers only) .
+Network Diagram
+This document uses this network setup:
+Configurations
+This document uses these configurations:
+Venus
+This router is configured as a full bridge with IP routing disabled. The device dials when any bridged traffic arrives.
+Saturn
+This router has been configured as a half bridge. Note that the dialer string, dialer group, and dialer list commands are not configured on this side. So this router will never dial, but will accept incoming calls. This prevents the router from dialing the remote router. We have turned IP routing on here. Full bridging software is not configured on this router. PPP half bridge is running on the BRI interface, so commands like show bridge and show spanning-tree do not yield any output on this router.
+Venus
+Venus#show running-config
+!
+version 12.2
+!
+hostname Venus
+!
+username Saturn password 0 same 
+
+!--- Required for PPP CHAP authentication during dialup
+
+ip subnet-zero
+no ip routing 
+
+!--- Turn off routing
+
+no ip domain-lookup
+!
+isdn switch-type basic-5ess
+
+!--- The ISDN switchtype for this circuit. Obtain this information from the !--- Telco. This ISDN switch type is USA specific and could be changed !--- depending on the country and TELCO requirements
+
+!
+interface Ethernet0
+ip address 10.1.1.2 255.0.0.0 
+
+!--- This is for management purpose only
+
+no ip route-cache
+no ip mroute-cache
+bridge-group 1
+
+!--- Assign this interface to Bridge Group 1 !--- Frames are bridged only among interfaces in the same group !--- Note: the dialer1 interface is also in this bridge-group 1
+
+interface BRI0
+no ip address
+no ip route-cache
+no ip mroute-cache
+dialer pool-member 1  
+
+!--- Dialer profiles configured with same dialer pool # !--- (in this case, dialer1) will bind to this interface
+
+isdn switch-type basic-5ess
+
+!--- Check with your Telco for the correct values
+
+!
+interface Dialer1 
+
+!--- Configure the Dialer profile
+
+description ISDN to Saturn
+ip address 10.1.1.2 255.0.0.0
+encapsulation ppp
+dialer pool 1
+
+!--- Use physical interfaces configured with same pool # !--- (in this case, bri0) during dialup
+
+dialer remote-name Saturn 
+
+!--- Specifies remote CHAP name
+
+dialer string 5552000 
+
+!--- Specifies the number to dial when interesting traffic arrives
+
+dialer-group 1 
+
+!--- Defines the interesting traffic as configured in the dialer-list
+
+ppp authentication chap 
+
+!--- Use CHAP as the authentication method
+
+bridge-group 1 
+
+!--- Assign this interface to Bridge Group 1. !--- Frames are bridged only among interfaces in the same group. !--- Note: the Ethernet interface 0 is also in this bridge-group 1
+
+
+ip default-gateway 10.1.1.3      
+
+!--- All default traffic from Venus should go through Saturn
+
+dialer-list 1 protocol bridge permit 
+
+!--- Defines the interesting traffic. In this case, all bridged traffic
+
+bridge 1 protocol ieee
+
+!--- Define the type of Spanning-Tree Protocol used for the interface in !--- bridge-group 1. Here we use the IEEE spanning tree protocol. The IEEE 802.1D !--- Spanning-Tree Protocol is the preferred way of running the bridge.
+
+!
+Saturn
+Saturn#show running-config
+!
+version 12.2
+!
+hostname Saturn
+!
+username Venus password 0 same 
+
+!--- Required for PPP CHAP authentication during dialup
+
+ip subnet-zero
+no ip domain-lookup
+!
+isdn switch-type basic-5ess
+
+!--- The ISDN switchtype for this circuit. Obtain this information from the !--- Telco. This ISDN switch type is USA specific and could be changed !--- depending on the country and Telco requirements
+
+!
+interface Ethernet0
+ip address 192.168.1.1 255.255.0.0
+!
+interface BRI0
+no ip address
+no ip mroute-cache
+dialer pool-member 1
+
+!--- Dialer profiles configured with same dialer pool # !--- (in this case, dialer1) will bind to this interface
+
+isdn switch-type basic-5ess
+!
+interface Dialer1 
+
+!--- Configure the Dialer profile
+
+description ISDN to Venus
+ip address 10.1.1.3 255.0.0.0 
+
+!--- IP address is required to route the bridged traffic from Venus !--- This ip address MUST be in the same subnet as the remote bridge network
+
+encapsulation ppp 
+dialer pool 1
+
+!--- Use physical interfaces configured with same pool # !--- (in this case, bri0) during dialup
+
+dialer remote-name Venus
+pulse-time 0
+ppp bridge ip 
+
+!--- Configures half bridge 
+
+ppp authentication chap                                                          
+
+!--- Use CHAP as the authentication method
+
+!
+Verify
+This section provides information you can use to confirm your configuration is working properly.
+Certain show commands are supported by the Output Interpreter Tool (registered customers only) , which allows you to view an analysis of show command output.
+show isdn status—displays the L1, L2, and L3 status of the ISDN interfaces.
+show dialer—displays the status of the dialer, and the individual status of the ISDN channels.
+show bridge—displays classes of entries in the bridge forwarding database, in privileged EXEC mode.
+show interface—displays the status of various interfaces, including the Serial and BRI interfaces.
+show arp—checks the ARP mapping. ARP is a protocol used to map the Layer 2 address (MAC address) to a Layer 3 address (IP address).
+show spanning-tree—displays the spanning-tree topology known to the router.
+Show Commands on Venus After Dialing into Saturn
+Venus#show isdn status
+Global ISDN Switchtype = basic-5ess
+ISDN BRI0 interface
+        dsl 0, interface ISDN Switchtype = basic-5ess
+    Layer 1 Status:
+        ACTIVE
+    Layer 2 Status:
+        TEI = 107, Ces = 1, SAPI = 0, State = MULTIPLE_FRAME_ESTABLISHED
+    Layer 3 Status:
+        1 Active Layer 3 Call(s)
+        CCB:callid=800E, sapi=0, ces=1, B-chan=2, calltype=DATA    
+Active dsl 0 CCBs = 1
+    The Free Channel Mask:
+  0x80000001
+    Number of L2 Discards = 0, L2 Session ID = 17
+    Total Allocated ISDN CCBs = 1
+Venus#show dialer
+BRI0 - dialer type = ISDN
+
+Dial String Successes Failures Last DNIS Last status
+   0 incoming call(s) have been screened.
+   0 incoming call(s) rejected for callback.
+
+BRI0:1 - dialer type = ISDN
+   Idle timer (120 secs), Fast idle timer (20 secs)
+   Wait for carrier (30 secs), Re-enable (15 secs)
+   Dialer state is idle
+
+BRI0:2 - dialer type = ISDN
+   Idle timer (120 secs), Fast idle timer (20 secs)
+   Wait for carrier (30 secs), Re-enable (15 secs)
+   Dialer state is data link layer up
+   Dial reason: bridge (0x0800)
+   Interface bound to profile Di1
+   Time until disconnect 90 secs
+   Current call connected 00:00:31
+
+Di1 - dialer type = DIALER PROFILE
+   Idle timer (120 secs), Fast idle timer (20 secs)
+   Wait for carrier (30 secs), Re-enable (15 secs)
+   Dialer state is data link layer up
+   Number of active calls = 1
+   Dial String Successes Failures Last DNIS  Last status
+   5552000   5   1   00:00:34  Successful Default
+Venus#show interface bri0:2
+   BRI0:2 is up, line protocol is up
+   Hardware is BRI
+   MTU 1500 bytes, BW 64 Kbit, DLY 20000 usec,
+   reliability 255/255, txload 1/255, rxload 1/255
+   Encapsulation PPP, loopback not set
+   Keepalive set (10 sec)
+   Time to interface disconnect: idle 00:01:18
+   Interface is bound to Di1 (Encapsulation PPP)
+   LCP Open
+   Closed: IPCP
+   Open: BRIDGECP, CDPCP                     
+   
+!--- Bridge Control Protocol is open
+
+   Last input 00:00:42, output 00:00:00, output hang never
+   Last clearing of "show interface" counters never
+   Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+   Queueing strategy: fifo
+   Output queue :0/40 (size/max)
+   5 minute input rate 0 bits/sec, 0 packets/sec
+   5 minute output rate 0 bits/sec, 0 packets/sec
+   161 packets input, 9796 bytes, 0 no buffer
+   Received 0 broadcasts, 0 runts, 0 giants, 0 throttles
+   0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+   328 packets output, 16659 bytes, 0 underruns
+   0 output errors, 0 collisions, 7 interface resets
+   0 output buffer failures, 0 output buffers swapped out
+   16 carrier transitions
+Venus#show bridge
+Total of 300 station blocks, 298 free
+   Codes: P - permanent, S - self
+
+Bridge Group 1:
+
+ Address Action Interface Age RX count TX count
+   00d0.58ad.ae13 forward Ethernet0 0 74 58
+   0060.5cf4.a955 forward Dialer1 0 58 72
+
+Venus#show arp
+   Protocol Address Age (min) Hardware Addr Type Interface
+   Internet 10.1.1.2 - 0060.5cf4.a9a8 ARPA Ethernet0
+   Internet 10.1.1.3 0 0060.5cf4.a955 ARPA Dialer1
+
+Venus#show spanning-tree
+ 
+Bridge group 1 is executing the ieee compatible Spanning Tree protocol
+   Bridge Identifier has priority 32768, address 0060.5cf4.a9a8
+   Configured hello time 2, max age 20, forward delay 15
+   Current root has priority 32768, address 0009.7c2e.ba00
+   Root port is 2 (Ethernet0), cost of root path is 100
+   Topology change flag not set, detected flag not set
+   Number of topology changes 1 last change occurred 22:09:28 ago
+   from Ethernet0
+   Times: hold 1, topology change 35, notification 2
+   hello 2, max age 20, forward delay 15
+   Timers: hello 0, topology change 0, notification 0, aging 300
+ 
+Port 2 (Ethernet0) of Bridge group 1 is forwarding
+   Port path cost 100, Port priority 128, Port Identifier 128.2.
+   Designated root has priority 32768, address 0009.7c2e.ba00
+   Designated bridge has priority 32768, address 0009.7c2e.ba00
+   Designated port id is 128.13, designated path cost 0
+   Timers: message age 2, forward delay 0, hold 0
+   Number of transitions to forwarding state: 1
+   BPDU: sent 1, received 39911
+
+ Port 8 (Dialer1) of Bridge group 1 is forwarding
+   Port path cost 17857, Port priority 128, Port Identifier 128.8.
+   Designated root has priority 32768, address 0009.7c2e.ba00
+   Designated bridge has priority 32768, address 0060.5cf4.a9a8
+   Designated port id is 128.8, designated path cost 100
+   Timers: message age 0, forward delay 0, hold 0
+   Number of transitions to forwarding state: 1
+   BPDU: sent 39879, received 0
+Show Commands on Saturn After Venus Dials In
+Saturn#show dialer
+BRI0 - dialer type = ISDN
+Dial String Successes Failures Last DNIS Last status
+   0 incoming call(s) have been screened.
+
+   0 incoming call(s) rejected for callback.
+
+BRI0:1 - dialer type = ISDN
+   Idle timer (120 secs), Fast idle timer (20 secs)
+   Wait for carrier (30 secs), Re-enable (15 secs)
+   Dialer state is idle
+
+BRI0:2 - dialer type = ISDN
+   Idle timer (120 secs), Fast idle timer (20 secs)
+   Wait for carrier (30 secs), Re-enable (15 secs)
+   Dialer state is data link layer up
+   Interface bound to profile Di1
+   Time until disconnect 45 secs
+   Connected to <unknown phone number> (Venus)
+
+Di1 - dialer type = DIALER PROFILE
+   Idle timer (120 secs), Fast idle timer (20 secs)
+   Wait for carrier (30 secs), Re-enable (15 secs)
+   Dialer state is data link layer up   Number of active calls = 1
+
+Dial String Successes Failures Last DNIS Last status
+
+Saturn#show isdn status
+   Global ISDN Switchtype = basic-5ess
+   ISDN BRI0 interface
+   dsl 0, interface ISDN Switchtype = basic-5ess
+   Layer 1 Status:
+   ACTIVE
+   Layer 2 Status:
+   TEI = 105, Ces = 1, SAPI = 0, State = MULTIPLE_FRAME_ESTABLISHED
+   I_Queue_Len 0, UI_Queue_Len 0
+   Layer 3 Status:
+   1 Active Layer 3 Call(s)
+   CCB:callid=2B, sapi=0, ces=1, B-chan=2, calltype=DATA
+   Active dsl 0 CCBs = 1
+   The Free Channel Mask: 0x80000001
+   Number of L2 Discards = 0, L2 Session ID = 37
+   Total Allocated ISDN CCBs = 1
+
+Saturn#show arp
+   Protocol Address Age (min) Hardware Addr Type Interface
+   Internet 10.1.1.2 27 0060.5cf4.a9a8 ARPA Dialer1
+   Internet 10.1.1.1 63 00d0.58ad.ae13 ARPA Dialer1
+   Internet 192.168.1.1 - 0060.5cf4.a955 ARPA Ethernet0
+   Internet 192.168.1.2 53 0000.0c76.2882 ARPA Ethernet0
+
+Saturn#show spanning-tree
+No spanning tree instances exist. 
+
+!--- This router does not run full bridge, !--- so spanning tree does not run on this router
+
+
+Saturn#show ip route
+   Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+   D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+   N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+   E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+   i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+   * - candidate default, U - per-user static route, o - ODR
+   P - periodic downloaded static route
+Gateway of last resort is not set
+C 10.0.0.0/8 is directly connected, Dialer1 
+C 192.168.0.0/16 is directly connected, Ethernet0
+Troubleshoot
+This section provides information you can use to troubleshoot your configuration.
+Troubleshooting Resources
+Troubleshooting procedures for incoming and outgoing ISDN calls are explained in the Dialup Technology: Troubleshooting Techniques document. Additional information on how to troubleshoot ISDN layer 1, layer 2 and layer 3 issues are given in Using the show isdn status Command for BRI Troubleshooting and Troubleshooting ISDN BRI Layer 3 using the debug isdn q931 Command.
+Troubleshooting Commands
+Certain show commands are supported by the Output Interpreter Tool (registered customers only) , which allows you to view an analysis of show command output.
+Note: Before issuing debug commands, refer to Important Information on Debug Commands.
+debug dialer—indicates when interesting traffic has been detected, and when dialing is initiated.
+debug isdn event—indicates ISDN activity occurring on the user side of the ISDN interface, and is similar to debug isdn q931.
+debug isdn q931—provides information about call setup and teardown of ISDN network connections (Layer 3), between the local router (user side) and the network.
+debug isdn q921—displays the data link layer (Layer 2) access procedures that are taking place at the router on the D-channel (LAPD) of its ISDN interface.
+debug ppp negotiation—performs negotiation of PPP options and Network Control Protocol (NCP) parameters.
+debug ppp authentication—allows the exchange of Challenge Authentication Protocol (CHAP) and Password Authentication Protocol (PAP) packets.
+Debug Commands on Venus when Interesting Traffic Arrives
+Venus#
+*Mar  1 22:00:14.838: BR0 DDR: rotor dialout [priority]
+*Mar  1 22:00:14.838: BR0 DDR: Dialing cause bridge (0x0800)
+*Mar  1 22:00:14.842: BR0 DDR: Attempting to dial 5552000
+*Mar  1 22:00:14.846: ISDN BR0: Outgoing call id = 0x8006, dsl 0
+*Mar  1 22:00:14.846: ISDN BR0: Event: Call to 5552000 at 64 Kb/s
+*Mar  1 22:00:14.850: ISDN BR0: process_bri_call(): call id 0x8006, 
+called_number 5552000, speed 64, call type DATA
+*Mar  1 22:00:14.854: CCBRI_Go Fr Host InPkgInfo (Len=22) :
+*Mar  1 22:00:14.858: 1 0 1 80 6 0 4 2 88 90 18 1 83 2C 7 35 35 35 32 30 30 30
+*Mar  1 22:00:14.866:
+*Mar  1 22:00:14.870: CC_CHAN_GetIdleChanbri: dsl 0
+*Mar  1 22:00:14.870:     Found idle channel B1
+*Mar  1 22:00:14.886: ISDN BR0: TX -> INFOc sapi=0 tei=106 ns=0 nr=0 
+i=0x08010605040288901801832C0735353532303030
+*Mar  1 22:00:14.906:     SETUP pd = 8  callref = 0x06
+*Mar  1 22:00:14.914:         Bearer Capability i = 0x8890
+*Mar  1 22:00:14.918:         Channel ID i = 0x83
+*Mar  1 22:00:14.92Venus#6:         Keypad Facility i = '5552000'
+*Mar  1 22:00:15.190: ISDN BR0: RX <- INFOc sapi=0 tei=106 ns=0 nr=1 
+i=0x0801860218018A
+*Mar  1 22:00:15.198:     CALL_PROC pd = 8  callref = 0x86
+*Mar  1 22:00:15.206:         Channel ID i = 0x8A
+*Mar  1 22:00:15.222: ISDN BR0: TX -> RRr sapi=0 tei=106 nr=1
+*Mar  1 22:00:15.230: CCBRI_Go Fr L3 pkt (Len=7) :
+*Mar  1 22:00:15.230: 2 1 6 98 18 1 8A
+*Mar  1 22:00:15.234:
+*Mar  1 22:00:15.238: ISDN BR0: LIF_EVENT: ces/callid 1/0x8006 
+HOST_PROCEEDING
+*Mar  1 22:00:15.238: ISDN BR0: HOST_PROCEEDING
+*Mar  1 22:00:15.242: ISDN BR0: HOST_MORE_INFO
+*Mar  1 22:00:15.658: ISDN BR0: RX <- INFOc sapi=0 tei=106 ns=1 
+nr=1 i=0x08018607
+*Mar  1 22:00:15.666:     CONNECT pd = 8  callref = 0x86
+*Mar  1 22:00:15.678: ISDN BR0: TX -> RRr sapi=0 tei=106 nr=2
+*Mar  1 22:00:15.686: CCBRI_Go Fr L3 pkt (Len=4) :
+*Mar  1 22:00:15.690: 7 1 6 91
+*Mar  1 22:00:15.690:
+*Mar  1 22:00:15.694: ISDN BR0: LIF_EVENT: ces/callid 1/0x8006 HOST_CONNECT
+22:00:15: %LINK-3-UPDOWN: Interface BRI0:2, changed state to up
+*Mar  1 22:00:15.702: BR0:2 PPP: Phase is DOWN, Setup [0 sess, 0 load]
+*Mar  1 22:00:15.706: BR0:2 PPP: No remote authentication for call-out
+*Mar  1 22:00:15.710: BR0:2 PPP: Phase is ESTABLISHING [0 sess, 0 load]
+*Mar  1 22:00:15.710: BR0:2 PPP: Treating connection as a callout
+*Mar  1 22:00:15.714: BR0:2 PPP: No remote authentication for call-out
+*Mar  1 22:00:15.718: BR0:2 LCP: O CONFREQ [Closed] id 1 len 10
+*Mar  1 22:00:15.722: BR0:2 LCP:    MagicNumber 0x6515B12A (0x05066515B12A)
+*Mar  1 22:00:15.722: BR0:2: interface must be fifo queue, force fifo
+22:00:15: %DIALER-6-BIND: Interface BR0:2 bound to profile Di1
+*Mar  1 22:00:15.742: ISDN: get_isdn_service_state(): idb 0x1A2DBC bchan 3 
+is_isdn 1 Not a Pri
+*Mar  1 22:00:15.746: BR0:2 PPP: Treating connection as a callout
+*Mar  1 22:00:15.746: ISDN BR0: Event: Connected to 5552000 on B2 at 64 Kb/s
+*Mar  1 22:00:15.762: ISDN BR0: TX -> INFOc sapi=0 tei=106 ns=1 nr=2 i=0x0801060F
+*Mar  1 22:00:15.766:     CONNECT_ACK pd = 8  callref = 0x06
+*Mar  1 22:00:15.774: BR0:2 LCP: I CONFREQ [REQsent] id 1 len 15
+*Mar  1 22:00:15.778: BR0:2 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  1 22:00:15.782: BR0:2 LCP:    MagicNumber 0x788C6F8F (0x0506788C6F8F)
+*Mar  1 22:00:15.786: BR0:2 LCP: O CONFACK [REQsent] id 1 len 15
+*Mar  1 22:00:15.790: BR0:2 LCP:    AuthProto CHAP (0x0305C22305)
+*Mar  1 22:00:15.790: BR0:2 LCP:    MagicNumber 0x788C6F8F (0x0506788C6F8F)
+*Mar  1 22:00:15.798: BR0:2 LCP: I CONFACK [ACKsent] id 1 len 10
+*Mar  1 22:00:15.798: BR0:2 LCP:    MagicNumber 0x6515B12A (0x05066515B12A)
+*Mar  1 22:00:15.802: BR0:2 LCP: State is Open
+*Mar  1 22:00:15.806: BR0:2 PPP: Phase is AUTHENTICATING, by the peer 
+[0 sess, 1 load]
+*Mar  1 22:00:15.870: ISDN BR0: RX <- RRr sapi=0 tei=106 nr=2
+*Mar  1 22:00:15.882: BR0:2 CHAP: I CHALLENGE id 31 len 27 from "Saturn"
+*Mar  1 22:00:15.890: BR0:2 CHAP: O RESPONSE id 31 len 26 from "Venus"
+*Mar  1 22:00:15.914: BR0:2 CHAP: I SUCCESS id 31 len 4
+*Mar  1 22:00:15.918: BR0:2 PPP: Phase is UP [0 sess, 1 load]
+*Mar  1 22:00:15.922: BR0:2 BNCP: O CONFREQ [Closed] id 1 len 4
+*Mar  1 22:00:15.926: BR0:2 IPCP: O CONFREQ [Closed] id 1 len 10
+*Mar  1 22:00:15.930: BR0:2 IPCP:    Address 10.1.1.2 (0x03060A010102)
+*Mar  1 22:00:15.934: BR0:2 CDPCP: O CONFREQ [Closed] id 1 len 4
+*Mar  1 22:00:15.942: BR0:2 BNCP: I CONFREQ [REQsent] id 1 len 4
+*Mar  1 22:00:15.946: BR0:2 BNCP: O CONFACK [REQsent] id 1 len 4
+*Mar  1 22:00:15.950: BR0:2 CDPCP: I CONFREQ [REQsent] id 1 len 4
+*Mar  1 22:00:15.954: BR0:2 CDPCP: O CONFACK [REQsent] id 1 len 4
+*Mar  1 22:00:15.958: BR0:2 BNCP: I CONFACK [ACKsent] id 1 len 4
+*Mar  1 22:00:15.958: BR0:2 BNCP: State is Open
+*Mar  1 22:00:15.966: BR0:2 LCP: I PROTREJ [Open] id 2 len 16 protocol IPCP 
+(0x80210101000A03060A010102)
+*Mar  1 22:00:15.970: BR0:2 IPCP: State is Closed
+*Mar  1 22:00:15.974: BR0:2 CDPCP: I CONFACK [ACKsent] id 1 len 4
+*Mar  1 22:00:15.978: BR0:2 CDPCP: State is Open
+*Mar  1 22:00:15.978: BR0:2 DDR: dialer protocol up
+22:00:16: %LINEPROTO-5-UPDOWN: Line protocol on Interface BRI0:2, 
+changed state to up
+22:00:21: %ISDN-6-CONNECT: Interface BRI0:2 is now connected to 5552000
+Venus#
+Saturn#
+4d16h: ISDN BR0: RX <- UI c/r=1 sapi=0 tei=127 
+i=0x080141050402889018018A7008C135353532303030
+4d16h:     SETUP pd = 8  callref = 0x41
+4d16h:         Bearer Capability i = 0x8890
+4d16h:         Channel ID i = 0x8A
+4d16h:         Called Party Number i = 0xC1, '5552000', Plan:ISDN, 
+Type:Subscriber(local)
+4d16h: CCBRI_Go Fr L3 pkt (Len=21) :
+4d16h: 5 1 C1 90 4 2 88 90 18 1 8A 70 8 C1 35 35 35 32 30 30 30
+4d16h:
+4d16h: ISDN BR0: Incoming call id = 0x002B, dsl 0
+4d16h: ISDN BR0: LIF_EVENT: ces/callid 1/0x2B HOST_INCOMING_CALL
+4d16h: ISDN BR0: HOST_INCOMING_CALL: (non-POTS) DATA
+4d16h: ISDN BR0: HOST_INCOMING_CALL: (1) call_type = DATA
+4d16h: ISDN BR0: HOST_INCOMING_CALL: voice_answer_data = FALSE call type is DATA
+4d16h: ISDN BR0: Event: Received a DATA call from <unknown> on B2 at 64 Kb/s
+4d16h: ISDN BR0: Event: Accepting the call id 0x2B
+4d16h: BR0:2 PPP: Phase is DOWN, Setup [0 sess, 1 load]
+4d16h: BR0:2 PPP: Phase is ESTABLISHING [0 sess, 1 load]
+4d16h: BR0:2: inteSarface must be fifo queue, force fifo
+4d16h: %DIALER-6-BIND: Interface BR0:2 bound to profile Di1
+4d16h: ISDN BR0: RM returned call_type 0 resource type 0 response 1
+4d16h: CCBRI_Go Fr Host InPkgInfo (Len=9) :
+4d16h: 7 0 1 0 2B 3 18 1 8A
+4d16h:
+4d16h: ISDN BR0: isdn_send_connect(): msg 4, call id 0x2B, ces 1 bchan 1, c
+all type DATA
+4d16h: %LINK-3-UPDOWN: Interface BRI0:2, changed state to up
+4d16h: ISDN: get_isdn_service_state(): idb 0x1A2EAC bchan 3 is_isdn 1 Not a Pri
+4d16h: BR0:2 PPP: Treating connection as a callin
+4d16h: BR0:2 LCP: State is Listen
+4d16h: CCBRI_Go Fr Host InPkgInfo (Len=6) :
+4d16h: 4 0 1 0 2B 0
+4d16h:
+4d16h: ISDN BR0: TX -> INFOc sapi=0 tei=105 ns=7 nr=5 i=0x0801C10218018A
+4d16h:     CALL_PROC pd = 8  callref = 0xC1
+4d16h:         Channel ID i = 0x8A
+4d16h: ISDN BR0: RX <- RRr sapi=0 tei=105 nr=8
+4d16h: ISDN BR0: TX -> INFOc sapi=0 tei=105 ns=8 nr=5 i=0x0801C107
+4d16h:     CONNECT pd = 8  callref = 0xC1
+4d16h: ISDN BR0: RX <- INFOc sapi=0 tei=105 ns=5 nr=9 i=0x0801410F
+4d16h:     CONNECT_ACK pd = 8  callref = 0x41
+4d16h: ISDN BR0: TX -> RRr sapi=0 tei=105 nr=6
+4d16h: CCBRI_Go Fr L3 pkt (Len=4) :
+4d16h: F 1 C1 92
+4d16h:
+4d16h: ISDN BR0: LIF_EVENT: ces/callid 1/0x2B HOST_CONNECT
+4d16h: ISDN BR0: Event: Connected to <unknown> on B2 at 64 Kb/s
+4d16h: BR0:2 LCP: I CONFREQ [Listen] id 1 len 10
+4d16h: BR0:2 LCP:    MagicNumber 0x6515B12A (0x05066515B12A)
+4d16h: BR0:2 LCP: O CONFREQ [Listen] id 1 len 15
+4d16h: BR0:2 LCP:    AuthProto CHAP (0x0305C22305)
+4d16h: BR0:2 LCP:    MagicNumber 0x788C6F8F (0x0506788C6F8F)
+4d16h: BR0:2 LCP: O CONFACK [Listen] id 1 len 10
+4d16h: BR0:2 LCP:    MagicNumber 0x6515B12A (0x05066515B12A)
+4d16h: BR0:2 LCP: I CONFACK [ACKsent] id 1 len 15
+4d16h: BR0:2 LCP:    AuthProto CHAP (0x0305C22305)
+4d16h: BR0:2 LCP:    MagicNumber 0x788C6F8F (0x0506788C6F8F)
+4d16h: BR0:2 LCP: State is Open
+4d16h: BR0:2 PPP: Phase is AUTHENTICATING, by this end [0 sess, 0 load]
+4d16h: BR0:2 CHAP: O CHALLENGE id 31 len 27 from "Saturn"
+4d16h: BR0:2 CHAP: I RESPONSE id 31 len 26 from "Venus"
+4d16h: BR0:2 CHAP: O SUCCESS id 31 len 4
+4d16h: BR0:2 PPP: Phase is UP [0 sess, 0 load]
+4d16h: BR0:2 BNCP: O CONFREQ [Closed] id 1 len 4
+4d16h: BR0:2 CDPCP: O CONFREQ [Closed] id 1 len 4
+4d16h: BR0:2 BNCP: I CONFREQ [REQsent] id 1 len 4
+4d16h: BR0:2 BNCP: O CONFACK [REQsent] id 1 len 4: BR0:2 IPCP: I CONFREQ 
+[Not negotiated] id 1 len 10
+4d16h: BR0:2 IPCP:    Address 10.1.1.2 (0x03060A010102)
+4d16h: BR0:2 LCP: O PROTREJ [Open] id 2 len 16 protocol IPCP 
+(0x80210101000A03060A010102)
+4d16h: BR0:2 CDPCP: I
+4d16h CONFREQ [REQsent] id 1 len 4
+4d16h: BR0:2 CDPCP: O CONFACK [REQsent] id 1 len 4
+4d16h: BR0:2 BNCP: I CONFACK [ACKsent] id 1 len 4
+4d16h: BR0:2 BNCP: State is Open
+4d16h: BR0:2 CDPCP: I CONFACK [ACKsent] id 1 len 4
+4d16h: BR0:2 CDPCP: State is Open
+4d16h: BR0:2 DDR: dialer protocol up
+4d16h: %LINEPROTO-5-UPDOWN: Line protocol on Interface BRI0:2, changed state to up
+4d16h: %ISDN-6-CONNECT: Interface BRI0:2 is now connected to 
+<unknown phone number> Venus   
+
+!--- Unknown phone number because of no dialer string on Saturn
+
+Saturn#
+Related Information
+More Information on Dial-Backup Commands
+Cisco Technology Support - Dial
+Technical Support - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+04-Feb-2010
+Initial Release
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Point-to-Point Protocol (PPP)
