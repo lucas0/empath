@@ -1,0 +1,158 @@
+Configuration Examples and TechNotes
+ISE 2.0: ASA CLI TACACS+ Authentication and Command Authorization Configuration Example
+Save
+Translations
+Download
+Print
+
+
+
+Updated:October 23, 2015
+Document ID:200207
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Configure
+Network Diagram
+Configurations
+Configure ISE for Authentication and Authorization
+Add Network Device
+Configuring User Identity Groups
+Configuring Users
+Enable Device Admin Service
+Configuring TACACS Command Sets
+Configuring TACACS Profile
+Configuring TACACS Authorization Policy
+Configure the Cisco ASA Firewall for Authentication and Authorization
+Verify
+Cisco ASA Firewall Verification
+ISE 2.0 Verification
+Troubleshoot
+Related Information
+Related Cisco Support Community Discussions
+Introduction
+This document describes how to configure TACACS+ Authentication and Command Authorization on Cisco Adaptive Security Appliance (ASA) with Identity Service Engine (ISE) 2.0 and later. ISE uses local identity store to store resources such as users, groups, and endpoints.
+Prerequisites
+Requirements
+Cisco recommends that you have knowledge of these topics:
+ ASA Firewall is fully operational
+Connectivity between ASA and ISE
+ISE Server is bootstrapped
+Components Used
+The information in this document is based on these software and hardware versions:
+Cisco Identity Service Engine 2.0
+Cisco ASA Software Release 9.5(1)
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Refer to Cisco Technical Tips Conventions for more information on document conventions.
+Configure
+The aim of the configuration is to:
+Authenticate ssh user via Internal Identity Store
+Authorize ssh user so it will be placed into privileged EXEC mode after the login
+Check and send every executed command to ISE for verification
+Network Diagram
+Configurations
+Configure ISE for Authentication and Authorization
+Two users are created. User administrator is a part of Network Admins local Identity Group on ISE. This user has full CLI privileges. User user is a part of Network Maintenance Team local Identity Group on ISE. This user is allowed to do only show commands and ping.
+Add Network Device
+Navigate to Work Centers > Device Administration > Network Resources > Network Devices. Click Add. Provide Name, IP Address, select TACACS+ Authentication Settings checkbox and provide Shared Secret key. Optionally device type/location can be specified.
+Configuring User Identity Groups
+Navigate to Work Centers > Device Administration > User Identity Groups. Click Add. Provide Name and click Submit.
+Repeat the same step to configure Network Maintenace Team User Identity Group.
+Configuring Users
+Navigate to Work Centers > Device Administration > Identities > Users. Click Add. Provide Name, Login Password specify User Group and click Submit.
+Repeat the steps to configure user user and assign Network Maintenace Team User Identity Group.
+Enable Device Admin Service
+Navigate to Administration > System > Deployment. Select required Node. Select Enable Device Admin Service checkbox and click Save.
+Note: For TACACS you need to have separate license installed.
+Configuring TACACS Command Sets
+Two command sets are configured. First PermitAllCommands for the administrator user which allow all commands on the device. Second PermitPingShowCommands for user user which allow only show and ping commands.
+1. Navigate to Work Centers > Device Administration > Policy Results > TACACS Command Sets. Click Add. Provide the Name PermitAllCommands, select Permit any command that is not listed below checkbox and click Submit.
+2. Navigate to Work Centers > Device Administration > Policy Results > TACACS Command Sets. Click Add. Provide the Name PermitPingShowCommands, click Add and permit show, ping and exit commands. By default if Arguments are left blank, all arguments are included. Click Submit. 
+Configuring TACACS Profile
+Single TACACS Profile will be configured. Actual command enforcement will be done via command sets. Navigate to Work Centers > Device Administration > Policy Results > TACACS Profiles. Click Add. Provide Name ShellProfile, select Default Privilege checkbox and enter the value of 15. Click Submit.
+Configuring TACACS Authorization Policy
+Authentication Policy by default points to All_User_ID_Stores, which includes the Local Store as well, so it is left unchanged.
+Navigate to Work Centers > Device Administration > Policy Sets > Default > Authorization Policy > Edit > Insert New Rule Above.
+ Two authorization rulesare configured, first rule assigns TACACS profile ShellProfile and command Set PermitAllCommands based on Network Admins User Identity Group membership. Second rule assigns TACACS profile ShellProfile and command Set PermitPingShowCommands based on Network Maintenance Team User Identity Group membership.
+Configure the Cisco ASA Firewall for Authentication and Authorization
+1. Create a local user with full privilege for fallback with the username command as shown here
+ciscoasa(config)# username cisco password cisco privilege 15
+2. Define TACACS server ISE, specify interface, protocol ip address, and tacacs key.
+aaa-server ISE protocol tacacs+
+aaa-server ISE (mgmt) host 10.48.17.88
+ key cisco
+Note: Server key should match the one define on ISE Server earlier.
+3. Test the TACACS server reachability with the test aaa command as shown.
+ciscoasa# test aaa authentication ISE host 10.48.17.88 username administrator Krakow123
+INFO: Attempting Authentication test to IP address <10.48.17.88> (timeout: 12 seconds)
+INFO: Authentication Successful
+The output of the previous command shows that the TACACS server is reachable and the user has been successfully authenticated.
+4. Configure authentication for ssh, exec authorization and command authorizations as shown below. With aaa authorization exec authentication-server auto-enable you will be placed in privileged EXEC mode automatically.
+aaa authentication ssh console ISE 
+aaa authorization command ISE 
+aaa authorization exec authentication-server auto-enable
+Note: With the commands above, authentication is done on ISE, user is placed directly into the privilege mode and command authorization takes place.
+5. Allow shh on the mgmt interface.
+ssh 0.0.0.0 0.0.0.0 mgmt
+Verify
+Cisco ASA Firewall Verification
+1. Ssh to the ASA Firewall as administrator who belongs to the full-access User Identity Group. Network Admins group is mapped to ShellProfile and PermitAllCommands Command set on the ISE. Try to run any command to ensure full access.
+EKORNEYC-M-K04E:~ ekorneyc$ ssh administrator@10.48.66.202
+administrator@10.48.66.202's password:
+Type help or '?' for a list of available commands.
+ciscoasa#
+ciscoasa# configure terminal
+ciscoasa(config)# crypto ikev1 policy 10
+ciscoasa(config-ikev1-policy)# encryption aes
+ciscoasa(config-ikev1-policy)# exit
+ciscoasa(config)# exit
+ciscoasa#
+2. Ssh to the ASA Firewall as user who belongs to the limited access User Identity Group. Network Maintenance group is mapped to ShellProfile and PermitPingShowCommands Command set on the ISE. Try to run any command to ensure that only show and ping commands can be issued.
+EKORNEYC-M-K04E:~ ekorneyc$ ssh user@10.48.66.202
+administrator@10.48.66.202's password:
+Type help or '?' for a list of available commands.
+ciscoasa#
+ciscoasa# show version | include Software
+Cisco Adaptive Security Appliance Software Version 9.5(1)
+ciscoasa# ping 8.8.8.8
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 8.8.8.8, timeout is 2 seconds:
+!!!!!
+Success rate is 100 percent (5/5), round-trip min/avg/max = 20/24/30 ms
+ciscoasa# configure terminal
+Command authorization failed
+ciscoasa# traceroute 8.8.8.8
+Command authorization failed
+ISE 2.0 Verification
+1. Navigate to Operations > TACACS Livelog. Ensure that attempts done above are seen.
+2. Click on the details of one of the red reports, failed command executed earlier can be seen.
+Troubleshoot
+Error: Failed-Attempt: Command Authorization failed
+Check the SelectedCommandSet attributes to verify that the expected Command Sets were selected by the Authorization policy
+Related Information
+Technical Support & Documentation - Cisco Systems
+ISE 2.0 Release Notes
+ISE 2.0 Hardware Installation Guide
+ISE 2.0 Upgrade Guide
+ACS to ISE Migration Tool Guide
+ISE 2.0 Active Directory Integration Guide
+ISE 2.0 Engine Administrator Guide
+Contributed by Cisco Engineers
+Eugene Korneychuk
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Cisco ASA TACACS+ with ISE
+Configure EAP-TLS Authentication with ISE
+Perform Password Recovery for ISE Command Line Interface (CLI)
++ Show 1 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine
+Secure Firewall ASA

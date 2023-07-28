@@ -1,0 +1,622 @@
+Configuration Examples and TechNotes
+Configure TrustSec Multiple Matrices on ISE 2.2
+Save
+Translations
+Download
+Print
+
+
+
+Updated:February 14, 2017
+Document ID:200971
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Background Information
+Multiple Matrices
+DefCon Matrices
+Configure
+Network Diagram
+Configurations
+1. Basic switch configuration for RADIUS/CTS
+2. CTS PAC
+3. CTS configuration on a switch.
+4. Basic CTS configuration on ISE.
+5. Multiple matrices and DefCon configuration on ISE.
+6. SGT classification
+7. CTS policy download
+Verify
+Multiple Matrices
+DefCon deployment
+Troubleshoot
+PAC provisioning
+Environment data download
+CTS policies
+Introduction
+This document describes the use of multiple TrustSec matrices and DefCon matrices in Cisco Identity Services Engine (ISE) 2.2. This is a new TrustSec feature introduced in ISE 2.2 for better granularity in the network.
+Prerequisites
+Requirements
+Cisco recommends that you have knowledge of these topics:
+
+Basic knowledge of Cisco TrustSec (CTS) components
+Basic knowledge of CLI configuration of Catalyst switches
+Experience with Identity Services Engine (ISE) configuration
+Components Used
+The information in this document is based on these software and hardware versions:
+
+Identity Services Engine 2.2
+Cisco Catalyst Switch 3850 03.07.03.E
+Cisco Catalyst Switch 3750X 15.2(4)E1
+Windows 7 machines
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+
+Background Information
+In ISE 2.0 there is a possibility to use only one production TrustSec matrix for all network devices. ISE 2.1 added feature called staging matrix that can be used for testing and implementation purposes. Policies created in staging matrix are applied only to network devices used for tests. The rest of the devices still use production matrix. Once staging matrix is confirmed to work fine, all other devices can be moved to it and it becomes new production matrix.
+ISE 2.2 comes with two new TrustSec features:
+
+Multiple matrices - ability to assign different matrices to network devices
+DefCon matrix - this matrix is pushed to all network devices in particular situation, triggered by administrator
+It is possible to use either single matrix feature or production and staging matrix feature in ISE 2.2.
+Multiple Matrices
+In order to use multiple matrices, you have to enable this option under Work Centers > TrustSec > Settings > Work Process Settings, as shown in the image:
+Once this is enabled, you can create new matrices and later on assign network devices to the specific matrix.
+DefCon Matrices
+DefCon matrices are special matrices, ready to be deployed at any time. When deployed, all network devices are automatically assigned to this matrix. ISE still remembers the last production matrix for all network devices, so this change can be reverted back at any point when DefCon is deactivated. You can define up to four different DefCon matrices:
+DefCon1 - Critical
+DefCon2 - Severe
+DefCon3 - Substantial
+DefCon4 - Moderate
+DefCon matrices can be used in combination with all three work process options:
+Configure
+Network Diagram
+Configurations
+In order to use multiple matrices, you have to enable it under Work Process Settings. In this example, enable also DefCon matrix.
+1. Basic switch configuration for RADIUS/CTS
+radius server ISE
+ address ipv4 10.48.17.161 auth-port 1812 acct-port 1813
+ pac key cisco
+
+aaa group server radius ISE
+ server name ISE
+ ip radius source-interface FastEthernet0
+
+ip radius source-interface FastEthernet0 
+
+aaa server radius dynamic-author
+ client 10.48.17.161 server-key cisco
+aaa new-model
+aaa authentication dot1x default group ISE
+aaa accounting dot1x default start-stop group ISE 
+In order to obtain CTS information, you have to create CTS authorization list:
+cts authorization list LIST
+aaa authorization network LIST group ISE
+2. CTS PAC
+To receive CTS PAC (Protected Access Credentials) from ISE, you have to configure the same credentials on switch and ISE under Advanced TrustSec configuration for network device:
+cts credentials id GALA password cisco 
+Once this is configured, a switch is able to download CTS PAC. One part of it (PAC-Opaque) is being sent as AV-pair in every RADIUS request to ISE, so ISE can verify if PAC for this network device is still valid:
+GALA#show cts pacs 
+  AID: E6796CD7BBF2FA4111AD9FB4FEFB5A50
+  PAC-Info:
+    PAC-type = Cisco Trustsec
+    AID: E6796CD7BBF2FA4111AD9FB4FEFB5A50
+    I-ID: GALA
+    A-ID-Info: Identity Services Engine
+    Credential Lifetime: 17:05:50 CEST Apr 5 2017
+  PAC-Opaque: 000200B00003000100040010E6796CD7BBF2FA4111AD9FB4FEFB5A50000600940003010012FABE10F3DCBCB152C54FA5BFE124CB00000013586BB31500093A809E11A93189C7BE6EBDFB8FDD15B9B7252EB741ADCA3B2ACC5FD923AEB7BDFE48A3A771338926A1F48141AF091469EE4AFC8C3E92A510BA214A407A33F469282A780E8F50F17A271E92D1FEE1A29ED427B985F9A0E00D6CDC934087716F4DEAF84AC11AA05F7587E898CA908463BDA9EC7E65D827
+  Refresh timer is set for 11y13w 
+3. CTS configuration on a switch.
+Once PAC is downloaded, the switch can request additional CTS information (environment-data and policies):
+GALA#cts refresh environment-data
+
+GALA#show cts environment-data 
+CTS Environment Data
+====================
+Current state = COMPLETE
+Last status = Successful
+Local Device SGT:
+  SGT tag = 0-06:Unknown
+Server List Info:
+Installed list: CTSServerList1-0001, 1 server(s):
+ *Server: 10.48.17.161, port 1812, A-ID E6796CD7BBF2FA4111AD9FB4FEFB5A50
+          Status = ALIVE
+          auto-test = TRUE, keywrap-enable = FALSE, idle-time = 60 mins, deadtime = 20 secs
+Multicast Group SGT Table:
+Security Group Name Table:
+    0-ce:Unknown
+    2-ce:TrustSec_Devices
+    3-ce:Network_Services
+    4-ce:Employees
+    5-ce:Contractors
+    6-ce:Guests
+    7-ce:Production_Users
+    8-ce:Developers
+    9-ce:Auditors
+    10-ce:Point_of_Sale_Systems
+    11-ce:Production_Servers
+    12-ce:Development_Servers
+    13-ce:Test_Servers
+    14-ce:PCI_Servers
+    15-ce:BYOD
+    255-ce:Quarantined_Systems
+Environment Data Lifetime = 86400 secs 
+Last update time = 07:48:41 CET Mon Jan 2 2006
+Env-data expires in   0:23:56:02 (dd:hr:mm:sec)
+Env-data refreshes in 0:23:56:02 (dd:hr:mm:sec)
+Cache data applied           = NONE
+State Machine is running
+GALA#cts refresh policy
+
+GALA#show cts role-based permissions 
+RBACL Monitor All for Dynamic Policies : FALSE
+RBACL Monitor All for Configured Policies : FALSE
+You might see that there are no policies being downloaded from ISE, the reason is that CTS enforcement is not enabled on the switch:
+cts role-based enforcement
+cts role-based enforcement vlan-list 1-4094
+
+GALA#show cts role-based permissions 
+IPv4 Role-based permissions default:
+ Permit IP-00
+RBACL Monitor All for Dynamic Policies : FALSE
+RBACL Monitor All for Configured Policies : FALSE
+In both outputs, you could see default values - SGTs created by default (0, 2-15, 255) and default Permit IP policy.
+4. Basic CTS configuration on ISE.
+Create new Security Group Tags (SGTs) and few policies on ISE in order to use them later on. Navigate to Work Centers > TrustSec > Components > Security Groups, click Add to create new SGT:
+To create Security Group Access Control List (SGACL) for traffic filtering, choose Security Group ACLs, as shown in the image:
+Similarly, you can create other SGTs and SGACLs. Once SGTs and SGACLs are created, you can tie them together in CTS policies, to do so navigate to Work Centers > TrustSec > TustSec Policy > Egress Policy > Source Tree, as shown in the image:
+5. Multiple matrices and DefCon configuration on ISE.
+In this example, you have configured policies for matrix ForGALA. In order to switch between matrices, you can use the drop-down menu. In order to enable multiple matrices, navigate to Work Centers > TrustSec > Settings > Work Process Settings and enable Multiple Matrices and DefCon matrices, as shown in the image:
+When this option is enabled, there is default Production matrix available, although you may create other matrices. Navigate to Work Centers > TrustSec > TrustSec Policy > Egress Policy > Matrices List and click Add:
+There is an option to copy policies that should become part of the new one from the already existing matrix. Create two matrices - one for 3750X switch, another one for 3850 switch. Once matrices are created, you have to assign network devices to those matrices, because by default all TrustSec enabled network access devices are assigned to Production matrix.
+To assign NADs, click Assign NADs option under Matrices List, check the device you would like to assign the matrix to and pick the created matrix from the drop-down menu and click Assign, as shown in the image:
+You can do the same for other devices, followed by the click on Assign button:
+Once all changes are performed, click on Close&Send, which sends all updates to devices to perform a refresh of CTS policies in order to download new ones. Similarly, create DefCon matrix, which you can copy from existing matrices:
+The final policies look like:
+6. SGT classification
+There are two options for tags to clients assignments (create IP-SGT mappings):
+static - with cts role-based sgt-map IP_address sgt tag
+dynamic - via dot1x authentication (tag is assigned as a result of successful authentication)
+Use both options here, two windows machines obtain SGT tag via dot1x authentication and loopback interfaces with static SGT tag. To deploy dynamic mapping, create authorization policies for end clients:
+To create static IP-SGT mapping, use commands (example for GALA switch):
+interface Loopback7
+ ip address 7.7.7.7 255.255.255.0
+
+interface Loopback2
+ ip address 2.2.2.2 255.255.255.0
+
+cts role-based sgt-map 2.2.2.2 sgt 15
+cts role-based sgt-map 7.7.7.7 sgt 10 
+After successful authentication, client hits authorization policy with specific SGT tag in a result:
+GALA#show authentication sessions interface Gi1/0/11 details 
+            Interface:  GigabitEthernet1/0/11
+          MAC Address:  0050.5699.5bd9
+         IPv6 Address:  Unknown
+         IPv4 Address:  10.0.10.2
+            User-Name:  00-50-56-99-5B-D9
+               Status:  Authorized
+               Domain:  DATA
+       Oper host mode:  single-host
+     Oper control dir:  both
+      Session timeout:  N/A
+      Restart timeout:  N/A
+    Common Session ID:  0A30489C000000120002330D
+      Acct Session ID:  0x00000008
+               Handle:  0xCE000001
+       Current Policy:  POLICY_Gi1/0/11
+
+Local Policies:
+ Service Template: DEFAULT_LINKSEC_POLICY_SHOULD_SECURE (priority 150)
+      Security Policy:  Should Secure
+      Security Status:  Link Unsecure
+
+Server Policies:
+            SGT Value:  16 
+          
+Method status list: 
+       Method           State 
+
+       mab              Authc Success
+You can check all IP-SGT mappings with command show cts role-based sgt-map all, where you see the source of every mapping (LOCAL - via dot1x authentication, CLI - static assignment):
+GALA#show cts role-based sgt-map all
+Active IPv4-SGT Bindings Information
+
+IP Address              SGT     Source
+============================================
+2.2.2.2                 15      CLI
+7.7.7.7                 10      CLI
+10.0.10.2               16      LOCAL
+
+IP-SGT Active Bindings Summary
+============================================
+Total number of CLI      bindings = 2
+Total number of LOCAL    bindings = 1
+Total number of active   bindings = 3 
+7. CTS policy download
+Once the switch has CTS PAC and environment data is downloaded, it can request CTS policies. The switch does not download all policies, but only ones that are required - policies for traffic destined to known SGT tags - in case of GALA switch, it requests from ISE those policies:
+policy for traffic to SGT 15
+policy for traffic to SGT 10
+policy for traffic to SGT 16
+The output of all policies for GALA switch:
+GALA#show cts role-based permissions 
+IPv4 Role-based permissions default:
+ Permit IP-00
+IPv4 Role-based permissions from group 10:Point_of_Sale_Systems to group 15:BYOD:
+ denyIP-20
+IPv4 Role-based permissions from group 17:VLAN20 to group 16:VLAN10:
+ denyIP-20
+RBACL Monitor All for Dynamic Policies : FALSE
+RBACL Monitor All for Configured Policies : FALSE
+Switch obtains policies in two ways:
+CTS refresh from the switch itself:
+GALA#cts refresh policy 
+Manual push from ISE:
+Verify
+Multiple Matrices
+The final SGT-IP mappings and CTS policies on both switches for this example:
+GALA switch:
+GALA#show cts role-based sgt-map all
+Active IPv4-SGT Bindings Information
+
+IP Address              SGT     Source
+============================================
+2.2.2.2                 15      CLI
+7.7.7.7                 10      CLI
+10.0.10.2               16      LOCAL
+
+IP-SGT Active Bindings Summary
+============================================
+Total number of CLI      bindings = 2
+Total number of LOCAL    bindings = 1
+Total number of active   bindings = 3
+
+GALA#show cts role-based permissions 
+IPv4 Role-based permissions default:
+    Permit IP-00
+IPv4 Role-based permissions from group 10:Point_of_Sale_Systems to group 15:BYOD:
+    denyIP-20
+IPv4 Role-based permissions from group 17:VLAN20 to group 15:BYOD:
+    permitIP-20
+IPv4 Role-based permissions from group 17:VLAN20 to group 16:VLAN10:
+    permitIP-20
+RBACL Monitor All for Dynamic Policies : FALSE
+RBACL Monitor All for Configured Policies : FALSE
+
+GALA#show cts rbacl | s permitIP
+  name   = permitIP-20
+    permit ip
+
+GALA#show cts rbacl | s deny  
+  name   = denyIP-20
+    deny ip
+DRARORA switch:
+DRARORA#show cts role-based sgt-map all
+Active IPv4-SGT Bindings Information
+
+IP Address              SGT     Source
+============================================
+10.0.20.3               17      LOCAL
+10.10.10.10             10      CLI
+15.15.15.15             15      CLI
+
+IP-SGT Active Bindings Summary
+============================================
+Total number of CLI      bindings = 2
+Total number of LOCAL    bindings = 1
+Total number of active   bindings = 3
+
+DRARORA#show cts role-based permissions 
+IPv4 Role-based permissions default:
+    Permit IP-00
+IPv4 Role-based permissions from group 17:VLAN20 to group 10:Point_of_Sale_Systems:
+    permitIP-20
+IPv4 Role-based permissions from group 10:Point_of_Sale_Systems to group 15:BYOD:
+    permitIP-20
+IPv4 Role-based permissions from group 17:VLAN20 to group 15:BYOD:
+    permitIP-20
+IPv4 Role-based permissions from group 10:Point_of_Sale_Systems to group 17:VLAN20:
+    denyIP-20
+IPv4 Role-based permissions from group 16:VLAN10 to group 17:VLAN20:
+    permitIP-20
+RBACL Monitor All for Dynamic Policies : FALSE
+RBACL Monitor All for Configured Policies : FALSE
+Observe that policies for both switches are different (even the same policy from 10 to 15 is different for GALA and DRARORA switch). This means that traffic from SGT 10 to 15 is allowed on DRARORA, but blocked on GALA:
+DRARORA#ping 15.15.15.15 source Loopback 10
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 15.15.15.15, timeout is 2 seconds:
+Packet sent with a source address of 10.10.10.10 
+!!!!!
+Success rate is 100 percent (5/5), round-trip min/avg/max = 1/1/1 ms
+
+GALA#ping 2.2.2.2 source Loopback 7
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 2.2.2.2, timeout is 2 seconds:
+Packet sent with a source address of 7.7.7.7 
+U.U.U
+Success rate is 0 percent (0/5)
+Similarly, from one window, you can access another one (SGT 17 -> SGT 16):
+And another way (SGT 16 -> SGT 17):
+To confirm that correct CTS policy was applied, check show cts role-based counters output:
+GALA#sh cts role-based counters
+Role-based IPv4 counters
+# '-' in hardware counters field indicates sharing among cells with identical policies
+From    To      SW-Denied       HW-Denied       SW-Permitted    HW-Permitted   
+
+17      16      0               0               0               8              
+17      15      0               -               0               -              
+
+10      15      4               0               0               0              
+
+*       *       0               0               127             26  
+GALA has 8 permitted packets (4 from ping 17->16 and 4 from ping 16->17).
+DefCon deployment
+When required, deploy DefCon matrix under Work Centers > TrustSec > TrustSec Policy > Egress Policy > Matrices List, check DefCon matrix you would like to activate and click on Activate:
+Once DefCon is activated, menu on ISE looks like this:
+And polices on switches:
+GALA#show cts role-based permissions 
+IPv4 Role-based permissions default:
+ Permit IP-00
+IPv4 Role-based permissions from group 15:BYOD to group 10:Point_of_Sale_Systems:
+ denyIP-20
+IPv4 Role-based permissions from group 15:BYOD to group 16:VLAN10:
+ denyIP-20
+IPv4 Role-based permissions from group 17:VLAN20 to group 16:VLAN10:
+ denyIP-20
+RBACL Monitor All for Dynamic Policies : FALSE
+RBACL Monitor All for Configured Policies : FALSE
+
+DRARORA#show cts role-based permissions 
+IPv4 Role-based permissions default:
+ Permit IP-00
+IPv4 Role-based permissions from group 15:BYOD to group 10:Point_of_Sale_Systems:
+ denyIP-20
+IPv4 Role-based permissions from group 10:Point_of_Sale_Systems to group 17:VLAN20:
+ permitIP-20
+RBACL Monitor All for Dynamic Policies : FALSE
+RBACL Monitor All for Configured Policies : FALSE
+Traffic from SGT 15 to SGT 10 is not allowed on both switches:
+DRARORA#ping 10.10.10.10 source Loopback 15
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 10.10.10.10, timeout is 2 seconds:
+Packet sent with a source address of 15.15.15.15 
+U.U.U
+Success rate is 0 percent (0/5)
+
+GALA#ping 7.7.7.7 source Loopback 2
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 7.7.7.7, timeout is 2 seconds:
+Packet sent with a source address of 2.2.2.2 
+U.U.U
+Success rate is 0 percent (0/5)
+Once deployment is stable again, you can deactivate DefCon and switches request the old policies. To deactivate DefCon, navigate to Work Centers > TrustSec > TrustSec Policy > Egress Policy > Matrices List, check active DefCon matrix and click on Deactivate:
+Both switches request old policies immediately:
+DRARORA#show cts role-based permissions
+IPv4 Role-based permissions default:
+ Permit IP-00
+IPv4 Role-based permissions from group 17:VLAN20 to group 10:Point_of_Sale_Systems:
+ permitIP-20
+IPv4 Role-based permissions from group 10:Point_of_Sale_Systems to group 15:BYOD:
+ permitIP-20
+IPv4 Role-based permissions from group 17:VLAN20 to group 15:BYOD:
+ permitIP-20
+IPv4 Role-based permissions from group 10:Point_of_Sale_Systems to group 17:VLAN20:
+ denyIP-20
+IPv4 Role-based permissions from group 16:VLAN10 to group 17:VLAN20:
+ permitIP-20
+RBACL Monitor All for Dynamic Policies : FALSE
+RBACL Monitor All for Configured Policies : FALSE
+
+GALA#show cts role-based permissions 
+IPv4 Role-based permissions default:
+ Permit IP-00
+IPv4 Role-based permissions from group 10:Point_of_Sale_Systems to group 15:BYOD:
+ denyIP-20
+IPv4 Role-based permissions from group 17:VLAN20 to group 15:BYOD:
+ permitIP-20
+IPv4 Role-based permissions from group 17:VLAN20 to group 16:VLAN10:
+ permitIP-20
+RBACL Monitor All for Dynamic Policies : FALSE
+RBACL Monitor All for Configured Policies : FALSE
+Troubleshoot
+PAC provisioning
+This is part of successful PAC provisioning:
+GALA#debug cts provisioning packets 
+GALA#debug cts provisioning events
+
+*Jan  2 04:39:05.707: %SYS-5-CONFIG_I: Configured from console by console
+*Jan  2 04:39:05.707: CTS-provisioning: Starting new control block for server 10.48.17.161:
+*Jan  2 04:39:05.707: CTS-provisioning: cts_provi_init_socket: Checking for any vrf associated with 10.48.17.161
+*Jan  2 04:39:05.707: CTS-provisioning: New session socket: src=10.48.72.156:65242 dst=10.48.17.161:1812
+*Jan  2 04:39:05.716: CTS-provisioning: cts_provi_init_socket: Checking for any vrf associated with 10.48.17.161
+*Jan  2 04:39:05.716: CTS-provisioning: cts_provi_init_socket: Adding vrf-tableid: 0 to socket
+*Jan  2 04:39:05.716: CTS-provisioning: New session socket: src=10.48.72.156:65242 dst=10.48.17.161:1812
+*Jan  2 04:39:05.716: CTS-provisioning: Sending EAP Response/Identity to 10.48.17.161
+*Jan  2 04:39:05.716: CTS-provisioning: OUTGOING RADIUS msg to 10.48.17.161:
+1E010EE0:          01010090 64BCBC01 7BEF347B
+1E010EF0: 1E32C02E 8402A83D 010C4354 5320636C
+1E010F00: 69656E74 04060A30 489C3D06 00000000
+1E010F10: 06060000 00021F0E 30303037 37643862
+1E010F20: 64663830 1A2D0000 00090127 4141413A
+1E010F30: 73657276 6963652D 74797065 3D637473
+1E010F40: 2D706163 2D70726F 76697369 6F6E696E
+1E010F50: 674F1102 00000F01 43545320 636C6965
+1E010F60: 6E745012 73EBE7F5 CDA0CF73 BFE4AFB6
+1E010F70: 40D723B6 00                        
+*Jan  2 04:39:06.035: CTS-provisioning: INCOMING RADIUS msg from 10.48.17.161:
+1EC68460:          0B0100B5 E4C3C3C1 ED472766
+1EC68470: 183F41A9 026453ED 18733634 43504D53
+1EC68480: 65737369 6F6E4944 3D306133 30313161
+1EC68490: 314C3767 78484956 62414976 37316D59
+1EC684A0: 525F4D56 34517741 4C362F69 73517A72
+1EC684B0: 7A586132 51566852 79635638 3B343353
+1EC684C0: 65737369 6F6E4944 3D766368 72656E65
+1EC684D0: 6B2D6973 6532322D 3432332F 32373238
+1EC684E0: 32373637 362F3137 37343B4F 1C017400
+1EC684F0: 1A2B2100 040010E6 796CD7BB F2FA4111
+1EC68500: AD9FB4FE FB5A5050 124B76A2 E7D34684
+1EC68510: DD8A1583 175C2627 9F00             
+*Jan  2 04:39:06.035: CTS-provisioning: Received RADIUS challenge from 10.48.17.161.
+*Jan  2 04:39:06.035: CTS-provisioning: A-ID for server 10.48.17.161 is "e6796cd7bbf2fa4111ad9fb4fefb5a50"
+*Jan  2 04:39:06.043: CTS-provisioning: Received TX_PKT from EAP method
+*Jan  2 04:39:06.043: CTS-provisioning: Sending EAPFAST response to 10.48.17.161
+*Jan  2 04:39:06.043: CTS-provisioning: OUTGOING RADIUS msg to 10.48.17.161:
+<...>
+*Jan  2 04:39:09.549: CTS-provisioning: INCOMING RADIUS msg from 10.48.17.161:
+1EC66C50:          0309002C 1A370BBB 58B828C3
+1EC66C60: 3F0D490A 4469E8BB 4F06047B 00045012
+1EC66C70: 7ECF8177 E3F4B9CB 8B0280BD 78A14CAA
+1EC66C80: 4D                                 
+*Jan  2 04:39:09.549: CTS-provisioning: Received RADIUS reject from 10.48.17.161.
+*Jan  2 04:39:09.549: CTS-provisioning: Successfully obtained PAC for A-ID e6796cd7bbf2fa4111ad9fb4fefb5a50
+RADIUS reject is expected since PAC provisioning is finished successfully.
+Environment data download
+This shows the successful environment data download from the switch:
+GALA#debug cts environment-data
+
+GALA#
+*Jan  2 04:33:24.702: CTS env-data: Force environment-data refresh
+*Jan  2 04:33:24.702: CTS env-data: download transport-type = CTS_TRANSPORT_IP_UDP
+*Jan  2 04:33:24.702:     cts_env_data START: during state env_data_complete, got event 0(env_data_request)
+
+*Jan  2 04:33:24.702: cts_aaa_attr_add: AAA req(0x5F417F8)
+*Jan  2 04:33:24.702:   username = #CTSREQUEST#
+*Jan  2 04:33:24.702: cts_aaa_context_add_attr: (CTS env-data SM)attr(GALA)
+*Jan  2 04:33:24.702:   cts-environment-data = GALA
+*Jan  2 04:33:24.702: cts_aaa_attr_add: AAA req(0x5F417F8)
+*Jan  2 04:33:24.702: cts_aaa_context_add_attr: (CTS env-data SM)attr(env-data-fragment)
+*Jan  2 04:33:24.702:   cts-device-capability = env-data-fragment
+*Jan  2 04:33:24.702: cts_aaa_req_send: AAA req(0x5F417F8) successfully sent to AAA.
+*Jan  2 04:33:25.474: cts_aaa_callback: (CTS env-data SM)AAA req(0x5F417F8) response success
+*Jan  2 04:33:25.474: cts_aaa_context_fragment_cleanup: (CTS env-data SM)attr(GALA)
+*Jan  2 04:33:25.474: cts_aaa_context_fragment_cleanup: (CTS env-data SM)attr(env-data-fragment)
+
+*Jan  2 04:33:25.474:   AAA attr: Unknown type (450).
+*Jan  2 04:33:25.474:   AAA attr: Unknown type (274).
+*Jan  2 04:33:25.474:   AAA attr: server-list = CTSServerList1-0001.
+*Jan  2 04:33:25.482:   AAA attr: security-group-tag = 0000-10.
+*Jan  2 04:33:25.482:   AAA attr: environment-data-expiry = 86400.
+*Jan  2 04:33:25.482:   AAA attr: security-group-table = 0001-19.
+*Jan  2 04:33:25.482: CTS env-data: Receiving AAA attributes
+  CTS_AAA_SLIST
+    slist name(CTSServerList1) received in 1st Access-Accept
+    slist name(CTSServerList1) created
+  CTS_AAA_SECURITY_GROUP_TAG - SGT = 0-10:unicast-unknown
+  CTS_AAA_ENVIRONMENT_DATA_EXPIRY = 86400.
+  CTS_AAA_SGT_NAME_LIST
+    table(0001) received in 1st Access-Accept
+    need a 2nd request for the SGT to SG NAME entries
+    new name(0001), gen(19)
+  CTS_AAA_DATA_END
+
+*Jan  2 04:33:25.784: cts_aaa_callback: (CTS env-data SM)AAA req(0x8853E60) response success
+*Jan  2 04:33:25.784: cts_aaa_context_fragment_cleanup: (CTS env-data SM)attr(0001)
+*Jan  2 04:33:25.784:   AAA attr: Unknown type (450).
+*Jan  2 04:33:25.784:   AAA attr: Unknown type (274).
+*Jan  2 04:33:25.784:   AAA attr: security-group-table = 0001-19.
+*Jan  2 04:33:25.784:   AAA attr: security-group-info = 0-10-00-Unknown.
+*Jan  2 04:33:25.784:   AAA attr: security-group-info = ffff-13-00-ANY.
+*Jan  2 04:33:25.784:   AAA attr: security-group-info = 9-10-00-Auditors.
+*Jan  2 04:33:25.784:   AAA attr: security-group-info = f-32-00-BYOD.
+*Jan  2 04:33:25.784:   AAA attr: security-group-info = 5-10-00-Contractors.
+*Jan  2 04:33:25.784:   AAA attr: security-group-info = 8-10-00-Developers.
+*Jan  2 04:33:25.784:   AAA attr: security-group-info = c-10-00-Development_Servers.
+*Jan  2 04:33:25.784:   AAA attr: security-group-info = 4-10-00-Employees.
+*Jan  2 04:33:25.784:   AAA attr: security-group-info = 6-10-00-Guests.
+*Jan  2 04:33:25.784:   AAA attr: security-group-info = 3-10-00-Network_Services.
+*Jan  2 04:33:25.784:   AAA attr: security-group-info = e-10-00-PCI_Servers.
+*Jan  2 04:33:25.784:   AAA attr: security-group-info = a-23-00-Point_of_Sale_Systems.
+*Jan  2 04:33:25.784:   AAA attr: security-group-info = b-10-00-Production_Servers.
+*Jan  2 04:33:25.793:   AAA attr: security-group-info = 7-10-00-Production_Users.
+*Jan  2 04:33:25.793:   AAA attr: security-group-info = ff-10-00-Quarantined_Systems.
+*Jan  2 04:33:25.793:   AAA attr: security-group-info = d-10-00-Test_Servers.
+*Jan  2 04:33:25.793:   AAA attr: security-group-info = 2-10-00-TrustSec_Devices.
+*Jan  2 04:33:25.793:   AAA attr: security-group-info = 10-24-00-VLAN10.
+*Jan  2 04:33:25.793:   AAA attr: security-group-info = 11-22-00-VLAN20.
+*Jan  2 04:33:25.793:  CTS env-data: Receiving AAA attributes
+  CTS_AAA_SGT_NAME_LIST
+    table(0001) received in 2nd Access-Accept
+    old name(0001), gen(19)
+    new name(0001), gen(19)
+  CTS_AAA_SGT_NAME_INBOUND - SGT = 0-68:unicast-unknown
+   flag (128) sgname (Unknown) added
+   name (0001), request (1), receive (1)
+cts_env_data_aaa_sgt_sgname, name = 0001, req = 1, rcv = 1
+   Setting SG Name receving bit CTS_ENV_DATA_SGT_NAME_ENTRY on
+  CTS_AAA_SGT_NAME_INBOUND - SGT = 65535-68:unicast-default
+   flag (128) sgname (ANY) added
+   name (0001), request (1), receive (1)
+cts_env_data_aaa_sgt_sgname, name = 0001, req = 1, rcv = 1
+   Setting SG Name receving bit CTS_ENV_DATA_SGT_NAME_ENTRY on
+  CTS_AAA_SGT_NAME_INBOUND - SGT = 9-68
+   flag (128) sgname (Auditors) added
+   name (0001), request (1), receive (1)
+cts_env_data_aaa_sgt_sgname, name = 0001, req = 1, rcv = 1
+   Setting SG Name receving bit CTS_ENV_DATA_SGT_NAME_ENTRY on
+  CTS_AAA_SGT_NAME_INBOUND - SGT = 15-68
+   flag (128) sgname (BYOD) added
+   name (0001), request (1), receive (1)
+cts_env_data_aaa_sgt_sgname, name = 0001, req = 1, rcv = 1
+   Setting SG Name receving bit CTS_ENV_DATA_SGT_NAME_ENTRY on
+  CTS_AAA_SGT_NAME_INBOUND - SGT = 5-68
+   flag (128) sgname (Contractors) added
+   name (0001), request (1), receive (1)
+cts_env_data_aaa_sgt_sgname, name = 0001, req = 1, rcv = 1
+   Setting SG Name receving bit CTS_ENV_DATA_SGT_NAME_ENTRY on
+  CTS_AAA_SGT_NAME_INBOUND - SGT = 8-68
+   flag (128) sgname (Developers) added
+   name (0001), request (1), receive (1)
+cts_env_data_aaa_sgt_sgname, name = 0001, req = 1, rcv = 1
+   Setting SG Name receving bit CTS_ENV_DATA_SGT_NAME_ENTRY on
+  CTS_AAA_SGT_NAME_INBOUND - SGT = 12-68
+   flag (128) sgname (Development_Servers) added
+   name (0001), request (1), receive (1)
+cts_env_data_aaa_sgt_sgname, name = 0001, req = 1, rcv = 1
+   Setting SG Name receving bit CTS_ENV_DATA_SGT_NAME_ENTRY on
+  CTS_AAA_SGT_NAME_INBOUND - SGT = 4-68
+   flag (128) sgname (Employees) added
+   name (0001), request (1), receive (1)
+cts_env_data_aaa_sgt_sgname, na
+*Jan  2 04:33:25.793:     cts_env_data WAITING_RESPONSE: during state env_data_waiting_rsp, got event 1(env_data_received)
+*Jan  2 04:33:25.793: @@@ cts_env_data WAITING_RESPONSE: env_data_waiting_rsp -> env_data_assessing
+*Jan  2 04:33:25.793: env_data_assessing_enter: state = ASSESSING
+*Jan  2 04:33:25.793: cts_aaa_is_fragmented: (CTS env-data SM)NOT-FRAG attr_q(0)
+*Jan  2 04:33:25.793: env_data_assessing_action: state = ASSESSING
+*Jan  2 04:33:25.793: cts_env_data_is_complete: FALSE, req(x1085), rec(x1487) 
+*Jan  2 04:33:25.793: cts_env_data_is_complete: TRUE, req(x1085), rec(x1487), expect(x81), complete1(x85), complete2(xB5), complete3(x1485)
+*Jan  2 04:33:25.793:     cts_env_data ASSESSING: during state env_data_assessing, got event 4(env_data_complete)
+*Jan  2 04:33:25.793: @@@ cts_env_data ASSESSING: env_data_assessing -> env_data_complete
+*Jan  2 04:33:25.793: env_data_complete_enter: state = COMPLETE
+*Jan  2 04:33:25.793: env_data_install_action: state = COMPLETE
+CTS policies
+CTS policies are pushed as part of RADIUS messages, so runtime-AAA logging component set to debug on ISE (Administration > Logging > Debug Log Configuration) and below debugs on switch should be sufficient to troubleshoot any issues related to CTS:
+debug cts coa
+debug radius
+Additionaly, check what policies are matched on the switch - on 3750X:
+GALA#show cts role-based counters    
+Role-based IPv4 counters
+# '-' in hardware counters field indicates sharing among cells with identical policies
+From    To      SW-Denied       HW-Denied       SW-Permitted    HW-Permitted   
+
+10      15      5               0               0               0              
+
+*       *       0               0               815             31             
+
+17      15      0               0               0               0              
+17      16      0               -               0               -       
+You are not able to use the same command on 3850, due to CiscobugID CSCuu32958.
+Contributed by Cisco Engineers
+Veronika Chrenekova
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Configure EAP-TLS Authentication with ISE
+Perform Password Recovery for ISE Command Line Interface (CLI)
+Install Patch on ISE
++ Show 1 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine 2.2

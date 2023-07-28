@@ -1,0 +1,108 @@
+Configuration Examples and TechNotes
+Configure Anomalous Endpoint Detection and Enforcement on ISE 2.2
+Save
+Translations
+Print
+Updated:May 16, 2018
+Document ID:200973
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Background Information
+Configure
+Network Diagram
+Configurations
+Step 1. Enable Anomalous Detection.
+Step 2. Configure Authorization Policy.
+Verify
+Troubleshoot
+Related Information
+Introduction
+This document describes Anomalous Endpoint Detection and Enforcement. This is a new Profiling feature introduced in Cisco Identity Services Engine (ISE) for enhanced network visibility.
+Prerequisites
+Requirements
+Cisco recommends that you have knowledge of these topics:
+
+Wired MAC Authentication Bypass (MAB) configuration on the switch
+Wireless MAB configuration on Wireless LAN Controller (WLC)
+Change of Authorization (CoA) configuration on both devices
+Components Used
+The information in this document is based on these software and hardware versions:
+
+Identity Services Engine 2.2
+Wireless LAN Controller 8.0.100.0
+Cisco Catalyst Switch 3750 15.2(3)E2
+Windows 10 with wired and wireless adapters
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Background Information
+The Anomalous Endpoint Detection feature allows the ISE to monitor changes to specific attributes and profiles for connected endpoints. If a change matches one or more of preconfigured anomalous behavior rules, ISE will mark the endpoint as Anomalous. Once detected, ISE can take action (with CoA) and enforce certain policies to restrict access of the suspicious endpoint.  One of the use cases for this feature includes detection of MAC address spoofing.
+Note: This feature does not address all potential scenarios for MAC address spoofing.  Please be sure to read the types of anomalies covered by this feature to determine its applicability to your use cases.
+Once detection is enabled, ISE monitors any new information received for existing endpoints and checks if these attributes have changed:
+
+NAS-Port-Type - Determines if the access method of this endpoint has changed. For example, if the same MAC address that connected via Wired Dot1x is used for Wireless Dot1x and visa-versa.
+
+DHCP Class ID - Determines whether the type of client/vendor of endpoint has changed. This only applies when DHCP class ID attribute is populated with a certain value and is then changed to another value. If an endpoint is configured with a static IP, the DHCP class ID attribute will not be populated on ISE. Later on, if another device spoofs the MAC address and uses DHCP, the Class ID will change from an empty value to a specific string. This will not trigger Anomouls Behaviour detection.
+
+Endpoint Policy - A change in endpoint profile from Printer or IP phone to Workstation. 
+Once ISE detects one of the changes mentioned above, the AnomalousBehaviour attribute is added to the endpoint and set to True. This can be used later on as a condition in Authorization policies to restrict access for the endpoint in future authentications.
+If Enforcement is configured, ISE can send a CoA once the change is detected to re-authenticate or perform a port bounce for the endpoint. If in effect, it can quarantine the anomalous endpoint depending on the Authorization policies that were configured.
+Configure
+Network Diagram
+Configurations
+Simple MAB and AAA configurations are performed on the switch and WLC. To utilize this feature, follow these steps:
+Step 1. Enable Anomalous Detection.
+Navigate to Administration > System > Settings > Profiling.
+First option allows ISE to detect any anomalous behavior but no CoA is sent (Visibility-Only Mode). Second option allows ISE to send CoA once anomalous behaviour is detected (Enforcement Mode).
+Step 2. Configure Authorization Policy.
+Configure the Anomlousbehaviour attribute as a condition in the Authorization policy, as shown in the image:
+
+Verify
+Connect with a wireless adapter. Use command ipconfig /all to find MAC address of wireless adapter, as shown in the image:
+To simulate a malicious user, you may spoof the MAC address of the Ethernet adapter to match the MAC address of the normal user.
+Once the Normal user connects, you can see an endpoint entry in the database. Afterwards, the malicious user connects using a spoofed MAC address.
+From the reports you can see the initial connection from the WLC. Afterwards, the malicious user connects and 10 seconds later, a CoA is triggered due to the detection of the anomalous client. Since the global CoA type is set to Reauth, the endpoint tries to connect again. ISE already set the AnomalousBehaviour attribute to True so ISE matches the first rule and deny the user.
+As shown in the image, you can see the details under the endpoint in Context Visibility Tab:
+ As you can see, the endpoint can be deleted from the database to clear this attribute.
+As shown in the image, the dashboard includes a new tab to show the number of clients exhibiting this behaviour:
+Troubleshoot
+In order to troubleshoot, enable profiler debug, as you navigate to Administration > System > Logging > Debug Log Configuration.
+In order to find the ISE Profiler.log file, navigate to Operations > Download Logs > Debug Logs, as shown in the image:
+These logs show some snippets from the Profiling.log file. As you can see, ISE was able to detect that the endpoint with MAC address of C0:4A:00:21:49:C2 has changed the access method by comparing the old and new values of the NAS-Port-Type attributes. It's wireless but is changed to Ethernet.
+2016-12-30 20:37:43,874 DEBUG  [EndpointHandlerWorker-2-34-thread-1][] cisco.profiler.infrastructure.profiling.ProfilerManager -:Profiling:- Classify hierarchy C0:4A:00:21:49:C2
+2016-12-30 20:37:43,874 DEBUG  [MACSpoofingEventHandler-52-thread-1][] profiler.infrastructure.probemgr.event.MACSpoofingEventHandler -:ProfilerCollection:- Received AttrsModifiedEvent in MACSpoofingEventHandler MAC: C0:4A:00:21:49:C2
+2016-12-30 20:37:49,618 DEBUG  [MACSpoofingEventHandler-52-thread-1][] profiler.infrastructure.probemgr.event.MACSpoofingEventHandler -:ProfilerCollection:- Received AttrsModifiedEvent in MACSpoofingEventHandler MAC: C0:4A:00:21:49:C2
+2016-12-30 20:37:49,618 INFO   [MACSpoofingEventHandler-52-thread-1][] com.cisco.profiler.api.MACSpoofingManager -:ProfilerCollection:- Anomalous Behaviour Detected: C0:4A:00:21:49:C2 AttrName: NAS-Port-Type Old Value: Wireless - IEEE 802.11 New Value: Ethernet
+2016-12-30 20:37:49,620 DEBUG  [MACSpoofingEventHandler-52-thread-1][] cisco.profiler.infrastructure.cache.EndPointCache -:ProfilerCollection:- Updating end point: mac - C0:4A:00:21:49:C2
+2016-12-30 20:37:49,621 DEBUG  [MACSpoofingEventHandler-52-thread-1][] cisco.profiler.infrastructure.cache.EndPointCache -:ProfilerCollection:- Reading significant attribute from DB for end point with mac C0:4A:00:21:49:C2
+2016-12-30 20:37:49,625 DEBUG  [MACSpoofingEventHandler-52-thread-1][] profiler.infrastructure.probemgr.event.EndpointPersistEventHandler -:ProfilerCollection:- Adding to queue endpoint persist event for mac: C0:4A:00:21:49:C2 
+Therefore, ISE takes action since enforcement is enabled. The action here is to send a CoA depending on the global configuration in the Profiling settings mentioned above. In our example, the CoA type is set to Reauth which allows ISE to re-authenticate the endpoint and recheck the rules that were configured. This time, it matches the Anomalous client rule and therefore it is denied.
+2016-12-30 20:37:49,625 INFO   [MACSpoofingEventHandler-52-thread-1][] profiler.infrastructure.probemgr.event.MACSpoofingEventHandler -:ProfilerCollection:- Taking mac spoofing enforcement action for mac: C0:4A:00:21:49:C2
+2016-12-30 20:37:49,625 INFO   [MACSpoofingEventHandler-52-thread-1][] profiler.infrastructure.probemgr.event.MACSpoofingEventHandler -:ProfilerCollection:- Triggering Delayed COA event. Should be triggered in 10 seconds
+2016-12-30 20:37:49,625 DEBUG  [CoAHandler-40-thread-1][] cisco.profiler.infrastructure.profiling.CoAHandler -:ProfilerCoA:- Received CoAEvent notification for endpoint: C0:4A:00:21:49:C2
+2016-12-30 20:37:49,625 DEBUG  [CoAHandler-40-thread-1][] cisco.profiler.infrastructure.profiling.CoAHandler -:ProfilerCoA:- Configured Global CoA command type = Reauth
+2016-12-30 20:37:49,626 DEBUG  [CoAHandler-40-thread-1][] cisco.profiler.infrastructure.profiling.CoAHandler -:ProfilerCoA:- Received FirstTimeProfileCoAEvent for endpoint: C0:4A:00:21:49:C2
+2016-12-30 20:37:49,626 DEBUG  [CoAHandler-40-thread-1][] cisco.profiler.infrastructure.profiling.CoAHandler -:ProfilerCoA:- Wait for endpoint: C0:4A:00:21:49:C2 to update - TTL: 1
+2016-12-30 20:37:49,626 DEBUG  [CoAHandler-40-thread-1][] cisco.profiler.infrastructure.profiling.CoAHandler -:ProfilerCoA:- Setting timer for endpoint: C0:4A:00:21:49:C2 to: 10 [sec]
+2016-12-30 20:37:49,626 DEBUG  [CoAHandler-40-thread-1][] cisco.profiler.infrastructure.profiling.CoAHandler -:ProfilerCoA:- Rescheduled event for endpoint: C0:4A:00:21:49:C2 to retry - next TTL: 0
+2016-12-30 20:37:59,644 DEBUG  [CoAHandler-40-thread-1][] cisco.profiler.infrastructure.profiling.CoAHandler -:ProfilerCoA:- About to call CoA for nad IP: 10.62.148.106 for endpoint: C0:4A:00:21:49:C2 CoA Command: Reauth
+2016-12-30 20:37:59,645 DEBUG  [CoAHandler-40-thread-1][] cisco.profiler.infrastructure.profiling.CoAHandler -:ProfilerCoA:- Applying CoA-REAUTH by AAA Server: 10.48.26.89 via Interface: 10.48.26.89 to NAD: 10.62.148.106
+Related Information
+ISE 2.2 Administration Guide
+Contributed by Cisco Engineers
+Zaid Al Kurdi
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Cisco ISE and Anomalous Behavior Detection How it works
+Configure EAP-TLS Authentication with ISE
+Perform Password Recovery for ISE Command Line Interface (CLI)
++ Show 1 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine

@@ -1,0 +1,300 @@
+Troubleshooting TechNotes
+Verify and Troubleshoot Basic NAT Operations
+Save
+Translations
+Download
+Print
+
+
+
+Updated:July 5, 2022
+Document ID:8605
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Conventions
+Problem
+Can Ping One Router but not Another Router
+Outside Network Devices Cannot Communicate with Inside Routers
+Checklist for Common Issues
+Introduction
+This document describes how to troubleshoot IP connectivity problems in a NAT environment.
+Prerequisites
+Requirements
+There are no specific requirements for this document.
+Components Used
+This document is not restricted to specific software and hardware versions.
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, ensure that you understand the potential impact of any command.
+Conventions
+For more information on document conventions, refer to theCisco Technical Tips Conventions.
+Problem
+This document troubleshoots these problems:
+Can Ping One Router but not Another Router
+Outside Network Devices Cannot Communicate with Inside Routers
+To determine if the problem is in the NAT operations:
+Based on the configuration, clearly define what NAT is supposed to achieve.You can determine that there is a problem with the configuration. For information on NAT configuration see, Configuring Network Address Translation: Getting Started.
+Verify that correct translations exist in the translation table.
+Use the show and debug commands to verify that the translation occurs.
+Review in detail what happens to the packet and verify that routers have the correct routing information to move the packet along.
+Can Ping One Router but not Another Router
+In this network diagram router 4 can ping router 5 (172.16.6.5) but not router 7 (172.16.11.7):
+Router 4 cannot ping Router 7
+The routing protocols do not run the routers. Router 4 default gateway is router 6. Router 6 is configured with NAT:
+interface Ethernet0
+ ip address 172.16.6.6 255.255.255.0
+ ip directed-broadcast
+ ip nat outside
+ !
+interface Ethernet1
+ ip address 10.10.10.6 255.255.255.0
+ ip nat inside 
+ !
+interface Serial2.7 point-to-point
+ ip address 172.16.11.6 255.255.255.0
+ ip nat outside
+ frame-relay interface-dlci 101 
+ !
+ip nat pool test 172.16.11.70 172.16.11.71 prefix-length 24
+ip nat inside source list 7 pool test
+ip nat inside source static 10.10.10.4 172.16.6.14
+ !
+access-list 7 permit 10.10.50.4
+access-list 7 permit 10.10.60.4
+access-list 7 permit 10.10.70.4 
+To troubleshoot:
+1. You need to determine that NAT works correctly. You know from the configuration that the Router 4 IP address (10.10.10.4) is statically translated to 172.16.6.14. You can use the show ip nat translation command on Router 6 to verify that the translation does exist in the translation table:
+router-6#show ip nat translation
+Pro Inside global      Inside local       Outside local      Outside global
+--- 172.16.6.14        10.10.10.4         ---                ---
+2. Ensure this translation happens when Router 4 sources IP traffic. You can do this in two ways from Router 6, run the NAT debug or monitor NAT statistics with the show ip nat statistics command. Because debug commands are the last resort, start with the show command.
+3. Monitor the counter to ensure it increases as it receives traffic from Router 4. The counter increments every time the translation table is used to translate an address.
+4. Clear the statistics, then display the statistics, then try to ping Router 7 from Router 4, and then display the statistics again.
+router-6#clear ip nat statistics
+router-6#
+router-6# show ip nat statistics
+ Total active translations: 1 (1 static, 0 dynamic; 0 extended)
+ Outside interfaces:
+ Ethernet0, Serial2.7
+ Inside interfaces:
+ Ethernet1
+ Hits: 0  Misses: 0
+ Expired translations: 0
+ Dynamic mappings:
+ -- Inside Source
+ access-list 7 pool test refcount 0
+ pool test: netmask 255.255.255.0
+ start 172.16.11.70 end 172.16.11.71
+ type generic, total addresses 2, allocated 0 (0%), misses 0
+router-6#
+After you use the ping 172.16.11.7 command on Router 4, the NAT statistics on Router 6 are:
+router-6#show ip nat statistics
+ Total active translations: 1 (1 static, 0 dynamic; 0 extended)
+ Outside interfaces:
+ Ethernet0, Serial2.7
+ Inside interfaces:
+ Ethernet1
+ Hits: 5  Misses: 0
+ Expired translations: 0
+ Dynamic mappings:
+ -- Inside Source
+ access-list 7 pool test refcount 0
+ pool test: netmask 255.255.255.0
+ start 172.16.11.70 end 172.16.11.71
+ type generic, total addresses 2, allocated 0 (0%), misses 0
+You can see from the show commands that the number of hits incremented by five. In a successful ping from a Cisco router, the number of hits increases by ten. The five Internet Control Message Protocol (ICMP) echoes sent by the source router (Router 4) is translated, and the five echo reply to packets from the destination router (Router 7) need to be translated, for a total of ten hits. The loss of five hits is because the echo replies are not translated or are not sent from Router 7.
+See if you can find any reason Router 7 would not send echo reply packets to Router 4. You review what NAT does to the packet. Router 4 sends ICMP echo packets with a source address of 10.10.10.4 and a destination address of 172.16.11.7. After NAT takes place, the packet received by Router 7 has a source address of 172.16.6.14 and a destination address of 172.16.11.7. Router 7 needs to reply to 172.16.6.14, and since 172.16.6.14 is not directly connected to Router 7, it needs a route for this network in order to respond. Check Router 7's routing table to verify the route exists.
+router-7#show ip route
+Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+     172.16.0.0/24 is subnetted, 4 subnets
+C       172.16.12.0 is directly connected, Serial0.8
+C       172.16.9.0 is directly connected, Serial0.5
+C       172.16.11.0 is directly connected, Serial0.6
+C       172.16.5.0 is directly connected, Ethernet0
+You can see that the Router 7 routing table does not have a route for 172.16.6.14. Once you add this route, the ping works. It is useful to monitor NAT statistics with the show ip nat statistics command. In a more complex NAT environment with several translations, this show command is no longer useful. You can then run debugs on the router.
+Outside Network Devices Cannot Communicate with Inside Routers
+In this problem, Router 4 can ping both Router 5 and Router 7, but devices on the 10.10.50.0 network cannot communicate with Router 5 or Router 7. The network diagram is:
+Network cannot communicate with Router
+interface Ethernet0
+ ip address 172.16.6.6 255.255.255.0
+ ip directed-broadcast
+ ip nat outside
+ media-type 10BaseT
+ !
+interface Ethernet1
+ ip address 10.10.10.6 255.255.255.0
+ ip nat inside 
+ media-type 10BaseT
+ !
+interface Serial2.7 point-to-point
+ ip address 172.16.11.6 255.255.255.0
+ ip nat outside
+ frame-relay interface-dlci 101 
+ !
+ip nat pool test 172.16.11.70 172.16.11.71 prefix-length 24
+ip nat inside source list 7 pool test
+ip nat inside source static 10.10.10.4 172.16.6.14
+ !
+access-list 7 permit 10.10.50.4
+access-list 7 permit 10.10.60.4
+access-list 7 permit 10.10.70.4 
+State the expected behavior of NAT. From the configuration of Router 6, you know that NAT is supposed to dynamically translate 10.10.50.4 to the first available address in the NAT pool "test." The pool consists of addresses 172.16.11.70 and 172.16.11.71. From this problem, you can understand that the packets that Routers 5 and 7 receive either have a source address of 172.16.11.70 or 172.16.11.71. These addresses are on the same subnet as Router 7, so Router 7 must have a directly connected route, however, if it does not already have one, Router 5 needs a route to the subnet .
+You can use the show ip route command to see that the Router 5 routing table does list 172.16.11.0:
+router-5#show ip route
+Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+172.16.0.0/24 is subnetted, 4 subnets
+C 172.16.9.0 is directly connected, Serial1
+S 172.16.11.0 [1/0] via 172.16.6.6
+C 172.16.6.0 is directly connected, Ethernet0
+C 172.16.2.0 is directly connected, Serial0
+You can use the show ip route command to see that the Router 7 routing table lists 172.16.11.0 as a directly connected subnet:
+router-6#show ip nat translation
+Pro Inside global      Inside local       Outside local      Outside global
+--- 172.16.6.14        10.10.10.4         ---                ---
+--- 172.16.11.70       10.10.50.4         ---                ---
+Check the NAT translation table and verify that the expected translation exists. Since the desired translation is created dynamically, you must first send IP traffic sourced from the appropriate address. After a sent ping, sourced from 10.10.50.4 and destined to 172.16.11.7, the translation table in Router 6 shows:
+router-6#show ip nat translation
+Pro Inside global      Inside local       Outside local      Outside global
+--- 172.16.6.14        10.10.10.4         ---                ---
+--- 172.16.11.70       10.10.50.4         ---                ---
+Since the expected translation is in the translation table, you know that the ICMP echo packets are appropriately translated. One option is that you can monitor the NAT statistics, but that is not useful in a complex environment. Another option is to run NAT debugging on the NAT router (Router 6). You can run debug ip nat on Router 6 while you send a ping sourced from 10.10.50.4 destined to 172.16.11.7. The debug results are in the next code example.
+Note: When you use any debug command on a router, you could overload the router which causes it to become inoperable. Always use extreme caution, and if possible, never run a debug on a critical production router without the supervision of a Cisco Technical Support engineer.
+: 
+router-6# show log
+Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+       Console logging: level debugging, 39 messages logged
+       Monitor logging: level debugging, 0 messages logged
+       Buffer logging: level debugging, 39 messages logged
+       Trap logging: level informational, 33 message lines logged
+
+Log Buffer (4096 bytes):
+
+05:32:23: NAT: s=10.10.50.4->172.16.11.70, d=172.16.11.7 [70]
+05:32:23: NAT*: s=172.16.11.7, d=172.16.11.70->10.10.50.4 [70]
+05:32:25: NAT*: s=10.10.50.4->172.16.11.70, d=172.16.11.7 [71]
+05:32:25: NAT*: s=172.16.11.7, d=172.16.11.70->10.10.50.4 [71]
+05:32:27: NAT*: s=10.10.50.4->172.16.11.70, d=172.16.11.7 [72]
+05:32:27: NAT*: s=172.16.11.7, d=172.16.11.70->10.10.50.4 [72]
+05:32:29: NAT*: s=10.10.50.4->172.16.11.70, d=172.16.11.7 [73]
+05:32:29: NAT*: s=172.16.11.7, d=172.16.11.70->10.10.50.4 [73]
+05:32:31: NAT*: s=10.10.50.4->172.16.11.70, d=172.16.11.7 [74]
+05:32:31: NAT*: s=172.16.11.7, d=172.16.11.70->10.10.50.4 [74]
+As you can see from the previous debug output, the first line shows the source address of 10.10.50.4 translated to 172.16.11.70. The second line shows the destination address of 172.16.11.70 is translated back to 10.10.50.4. This pattern repeats throughout the rest of the debug. This means that Router 6 translates the packets in both directions.
+Review:
+1. Router 4 sends a packet sourced from 10.10.50.4 destined for 172.16.11.7.
+2. Router 6 performs NAT on the packet and forwards a packet with a source of 172.16.11.70 and a destination of 172.16.11.7.
+3. Router 7 sends a response with a source of 172.16.11.7 and a destination of 172.16.11.70.
+4. Router 6 performs NAT on the packet, which results in a packet with source address 172.16.11.7 and destination address 10.10.50.4.
+5. Router 6 routes the packet to 10.10.50.4 based on information in Router 6 routing table. You need to use the show ip route command to confirm that Router 6 has the necessary route in its routing table.
+router-6#show ip route
+Codes: C - connected, S - static, I - IGRP, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+172.16.0.0/24 is subnetted, 5 subnets
+C 172.16.8.0 is directly connected, Serial1
+C 172.16.10.0 is directly connected, Serial2.8
+C 172.16.11.0 is directly connected, Serial2.7
+C 172.16.6.0 is directly connected, Ethernet0
+C 172.16.7.0 is directly connected, Serial0
+10.0.0.0/24 is subnetted, 1 subnets
+C 10.10.10.0 is directly connected, Ethernet1
+Checklist for Common Issues
+Use this checklist to troubleshoot common issues:
+Translation Not Installed in the Translation Table
+If you find that the appropriate translation is not installed in the translation table, verify:
+The configuration is correct. It is difficult to get NAT to get what you want sometimes. For some configuration help, refer to Configuring Network Address Translation: Getting Started.
+There are not any inbound access lists that deny the entry of packets from the NAT router.
+The NAT router has the appropriate route in the routing table if the packet is goes from inside to outside. Refer to NAT Order of Operation for more information.
+The access list referenced by the NAT command permits all necessary networks.
+There are enough addresses in the NAT pool. This is only be a problem if NAT is not configured for congestion.
+That the router interfaces are appropriately defined as NAT inside or NAT outside.
+For the translation of the payload of Domain Name System (DNS) packets, ensure that translation takes place on the address in the IP header of the packet. If this does not happen, then NAT does not look into the payload of the packet.
+Correct Translation Entry is not Being Used
+If the correct translation entry is installed in the translation table, but is not used, check:
+Verify there are not any inbound access lists that deny entry of the packets from the NAT router.
+For packets that go from inside to outside, verify there is a route to the destination as this is checked before translation. Refer to NAT Order of Operation for more information.
+NAT Operating Correctly, But There Are still Connectivity Problems
+Troubleshoot the connectivity problem:
+Verify layer 2 connectivity.
+Verify layer 3 routing information.
+Search for packet filters that cause the problem.
+NAT Translation for Port 80 Does not Work
+This means that NAT translation for port 80 does not work, but the translation for other ports works normally.
+To resolve this issue:
+Run the debug ip nat translations and debug ip packet commands in order to see if the translations are correct and that the correct translation entry is installed in the translation table.
+Verify that the server responds.
+Disable the HTTP server.
+Clear the NAT and ARP tables.
+%NAT: System busy. Try later
+The try later error message appears when a show command related to NAT or a show running-config or write memory command is executed. This is caused by the increase in the size of the NAT table. When the size of the NAT table increases, the router runs out of memory.
+Reload the router in order to solve this issue.
+If the error message appears when HSRP SNAT is configured, configure these commands in order to resolve the issue:
+Router(config)#standby delay minimum 20 reload 20
+Router(config)#standby 2 preempt delay minimum 20 reload 20 sync 10
+Large Translation Table Increases the CPU
+A host can send hundreds of translations, which causes high CPU usage. In other words, it can make the table so large that it causes the CPU to run at 100 percent. The ip nat translation max-entries 300 command creates the 300 per host limit or an aggregate limit of the amount of translations on the router. The workaround is to use the ip nat translation max-entries all-hosts 300 command.
+% Public ip-address already mapped (Internal ip-address -> Public ip-address)
+This message appears when you try to configure two internal IP addresses to one public IP address that listens on the same ports.
+% X.X.X.X already mapped (172.30.62.101 -> X.X.X.X)
+In order to correct this, configure the public IP address to have two internal IP addresses and use two public IP addresses in the DNS.
+No Entries in the ARP table
+This is a result of the no-alias option on the NAT entries. The no-alias option means that the router does not respond for the addresses and does not install an ARP entry. If another router uses a NAT pool as an inside global pool that consists of addresses on an attached subnet, an alias is generated for that address so that the router can answer Address Resolution Protocol (ARP) requests for those addresses. This causes the router to have ARP entries for the fake addresses.
+Bad token 0, wanted TOK_NUMBER|TOK_PUNCT
+This error message is just an informational message and does not have any impact on the normal behavior of the device.
+Bad token 0, wanted TOK_NUMBER|TOK_PUNCT
+The error means that NAT attempts to do a layer 4 fix on the address in an FTP open and cannot find the IP addresses it needs to translate in the packet. The reason why the message includes tokens is that IP addresses in the packet are found by the search for a token, or a set of symbols, in the IP packet, in order to find the details needed to translate.
+When an FTP session is initiated, it negotiates two channels, a command channel and a data channel. These are both IP addresses with different port numbers. The FTP client and server negotiate a second data channel to transfer files to. The packet exchanged through control channel has the format "PORT,i,i,i,i,p,p", where i,i,i,i are the four bytes of an IP address and p,p specifies the port. NAT tries to match this pattern and to translate address/port, if necessary. NAT must translate both channel schemes. NAT scans for numbers in the command stream until it thinks it has found a port command that requires translation. It then parses out the translation, which it calculates with the same format.
+If the packet is corrupt or the FTP server or client has malformed commands, NAT cannot properly calculate the translation and it generates that error. You can set the FTP client to "passive" so that it initiates both channels. 
+Related Information
+NAT Support Page
+Technical Support - Cisco Systems
+Revision History
+Revision Publish Date Comments
+2.0
+05-Jul-2022
+Recertification
+1.0
+14-Nov-2001
+Initial Release
+Contributed by Cisco Engineers
+Julio Jimenez
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Configure Network Address Translation
+Command "Show ip nat translations" doesnt output anything
+IP Addressing: NAT Configuration Guide --- Configuring NAT for IP Address Conservation
++ Show 3 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+IP Routing

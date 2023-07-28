@@ -1,0 +1,179 @@
+Configuration Examples and TechNotes
+Configure ISE 2.2 Threat-Centric NAC (TC-NAC) with Rapid7
+Save
+Translations
+Download
+Print
+
+
+
+Updated:February 10, 2017
+Document ID:200974
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Configure
+High Level Flow Diagram
+Deploy and Configure Nexpose Scanner
+Step 1. Deploy Nexpose Scanner.
+Step 2. Configure Nexpose Scanner.
+Configure ISE
+Step 1. Enable TC-NAC Services.
+Step 2. Import Nexpose Scanner Certificate.
+Step 3. Configure Nexpose Scanner TC-NAC instance.
+Step 4. Configure Authorization Profile to trigger VA Scan.
+Step 5. Configure Authorization Policies.
+Verify
+Identity Services Engine
+Nexpose Scanner
+Troubleshoot
+Debugs on ISE
+Related Information
+Introduction
+This document describes how to configure and troubleshoot Threat-Centric NAC with Rapid7 on Identity Service Engine (ISE) 2.2. Threat Centric Network Access Control (TC-NAC) feature enables you to create authorization policies based on the threat and vulnerability attributes received from the threat and vulnerability adapters. 
+Prerequisites
+Requirements
+
+Cisco recommends that you have basic knowledge of these topics:
+Cisco Identity Service Engine
+Nexpose Vulnerability Scanner
+Components Used
+The information in this document is based on these software and hardware versions:
+Cisco Identity Service Engine version 2.2
+Cisco Catalyst 2960S switch 15.2(2a)E1
+Rapid7 Nexpose Vulnerability Scanner Enterprise Edition
+Windows 7 Service Pack 1
+Windows Server 2012 R2
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+
+Configure
+High Level Flow Diagram
+This is the flow:
+The client connects to the network, limited access is given and profile with Assess Vulnerabilities checkbox enabled is assigned.
+
+PSN node sends Syslog message to MNT node confirming authentication took place and VA Scan was the result of Authorization Policy.
+
+MNT node submits SCAN to TC-NAC node (using Admin WebApp) using this data:
+- MAC Address
+- IP Address
+- Scan Interval
+- Periodic Scan Enabled
+- Originating PSN
+
+Nexpose TC-NAC (encapsulated in Docker Container) communicates with Nexpose Scanner to trigger scan if needed.
+
+Nexpose Scanner scans the endpoint requested by ISE.
+
+Nexpose Scanner sends the results of the scan to ISE.
+
+Results of the scan are sent back to TC-NAC:
+- MAC Address
+- All CVSS Scores
+- All Vulnerabilities (title, CVEIDs)
+
+TC-NAC updates PAN with all the data from the step 7.
+
+CoA is triggered if needed according to Authorization Policy configured.
+Deploy and Configure Nexpose Scanner
+Caution: Nexpose configuration in this document is done for the lab purposes, please consult with Rapid7 engineers for design considerations
+Step 1. Deploy Nexpose Scanner.
+Nexpose scanner can be deployed from OVA file, installed on top of Linux and Windows OS. In this document, installation is done on Windows Server 2012 R2. Download the image from Rapid7 website and start the installation. When you configure Type and destination select Nexpose Security Console with local Scan Engine
+Once the installation is complete, server reboots. After launching, Nexpose scanner should be accessible via 3780 port, as shown in the image:
+As shown in the image, scanner goes through the Security Console Startup Process:
+Afterward to get access to GUI the license key should be provided. Please note Enterprise Edition of Nexpose Scanner is required, scans are not triggered if Community Edition is installed.
+Step 2. Configure Nexpose Scanner.
+The first step is to the install certificate on Nexpose Scanner. Certificate in this document is issued by the same CA as admin certificate for ISE (LAB CA). Navigate to Administration > Global and Console Settings. Select Administer under Console, as shown in the image.
+Click Manage Certificate, as shown in the image:
+As shown in the image, click in Create New Certificate. Enter Common Name and any other data you would like to have in the identity certificate of Nexpose Scanner. Ensure that ISE is able to resolve Nexpose Scanner FQDN with DNS.
+Export Certificate Signing Request (CSR) to the terminal.
+At this point, you need to sign the CSR with Certificate Authority (CA).
+Import the certificate issued by CA by clicking on Import Certificate.
+Configure a Site. The site contains Assets you should be able to Scan and the account which is used to integrate ISE with Nexpose Scanner should have privileges to Manage Sites and Create Reports. Navigate to Create > Site, as shown in the image.
+As shown in the image, enter the Name of the Site on Info & Security tab. Assets tab should contain ip addresses of the valid assets, endpoints which are eligible for the vulnerability scanning.
+Import CA certificate which signed ISE certificate into the trusted store. Navigate to Administration > Root Certificates > Manage > Import Certificates.
+Configure ISE
+Step 1. Enable TC-NAC Services.
+Enable TC-NAC Services on ISE node. Note these:
+The Threat Centric NAC service requires an Apex license.
+You need a separate Policy Service Node (PSN) for Threat Centric NAC service.
+Threat Centric NAC service can be enabled on only one node in a deployment.
+You can add only one instance of an adapter per vendor for Vulnerability Assessment service.
+Step 2. Import Nexpose Scanner Certificate.
+Import the Nexpose Scanner CA certificate into the Trusted Certificates store in Cisco ISE (Administration > Certificates > Certificate Management > Trusted Certificates > Import). Ensure that the appropriate root and intermediate certificates are imported (or present) in the Cisco ISE Trusted Certificates store
+Step 3. Configure Nexpose Scanner TC-NAC instance.
+Add Rapid7 Instance at Administration > Threat Centric NAC > Third Party Vendors.
+Once added, instance transitions to Ready to Configure state. Click on this link. Configure Nexpose Host (Scanner) and Port, by default it is 3780. Specify Username and Password with access to right Site.
+Advanced settings are well documented in ISE 2.2 Admin Guide, the link can be found in the References section of this document. Click in Next and Finish. Nexpose Instance transitions to Active state and knowledge base download starts.
+Step 4. Configure Authorization Profile to trigger VA Scan.
+Navigate to Policy > Policy Elements > Results > Authorization > Authorization Profiles. Add new profile. Under Common Tasks select Vulnerability Assessment checkbox. On-Demand scan interval should be selected according to your network design.
+Authorization Profile contains those av-pairs:
+cisco-av-pair = on-demand-scan-interval=48
+cisco-av-pair = periodic-scan-enabled=0
+cisco-av-pair = va-adapter-instance=c2175761-0e2b-4753-b2d6-9a9526d85c0c
+They are sent to network devices within Access-Accept packet, although the real purpose of them is to tell Monitoring (MNT) Node that Scan should be triggered. MNT instructs TC-NAC node to communicate with Nexpose Scanner.
+Step 5. Configure Authorization Policies.
+Configure Authorization Policy to use the new Authorization Profile configured in step 4. Navigate to Policy > Authorization > Authorization Policy, locate Basic_Authenticated_Access rule and click on Edit. Change the Permissions from PermitAccess to the newly created Standard Rapid7. This causes a Vulnerability Scan for all users. Click in Save.
+Create Authorization Policy for Quarantined machines. Navigate to Policy > Authorization > Authorization Policy > Exceptions and create an Exception Rule. Now navigate to Conditions > Create New Condition (Advanced Option) > Select Attribute, scroll down and select Threat. Expand the Threat attribute and select Nexpose-CVSS_Base_Score. Change the operator to Greater Than and enter a value according to your Security Policy. Quarantine authorization profile should give limited access to the vulnerable machine.
+Verify
+Identity Services Engine
+The first connection triggers VA Scan. When the scan is finished, CoA Reauthentication is triggered to apply new policy if it is matched.
+In order to verify which vulnerabilities were detected, navigate to Context Visibility > Endpoints. Check per endpoints Vulnerabilities with the Scores given to it by Nexpose Scanner.
+In Operations > TC-NAC Live Logs, you can see authorization policies applied and details on CVSS_Base_Score.
+Nexpose Scanner
+When the VA Scan is triggered by TC-NAC Nexpose Scan transitions to In-Progress state, and scanner starts probing the endpoint, if you run the wireshark capture on the endpoint, you will see packet exchange between the endstation and Scanner at this point. Once Scanner is finished, results are available under Home page.
+Under Assets page, you can see that there is new endpoint available with the results of the Scan, Operating System is identified and 10 Vulnerabilities are detected.
+When you click in the endpoint's IP address Nexpose Scanner takes you to the new menu, where you can see more information including hostname, Risc Score and detailed list of Vulnerabilities
+When you click in the Vulnerability itself, full description is shown in the image.
+Troubleshoot
+Debugs on ISE
+In order to enable debugs on ISE, navigate to Administration > System > Logging > Debug Log Configuration, select TC-NAC Node and change the Log Level va-runtime and va-service component to DEBUG.
+Logs to be checked - varuntime.log. You can tail it directly from ISE CLI:
+
+ISE21-3ek/admin# show logging application varuntime.log tail
+TC-NAC Docker received instruction to perform Scan for a particular endpoint.
+2016-11-24 13:32:04,436 DEBUG [Thread-94][] va.runtime.admin.mnt.EndpointFileReader -:::::- VA: Read va runtime. [{"operationType":1,"macAddress":"3C:97:0E:52:3F:D9","ipAddress":"10.229.20.32","ondemandScanInterval":"48","isPeriodicScanEnabled":false,"periodicScanEnabledString":"0","vendorInstance":"c2175761-0e2b-4753-b2d6-9a9526d85c0c","psnHostName":"ISE22-1ek","heartBeatTime":0,"lastScanTime":0}, {"operationType":1,"macAddress":"3C:97:0E:52:3F:D9","ipAddress":"10.229.20.32","isPeriodicScanEnabled":false,"heartBeatTime":0,"lastScanTime":0}]
+2016-11-24 13:32:04,437 DEBUG [Thread-94][] va.runtime.admin.vaservice.VaServiceRemotingHandler -:::::- VA: received data from Mnt: {"operationType":1,"macAddress":"3C:97:0E:52:3F:D9","ipAddress":"10.229.20.32","ondemandScanInterval":"48","isPeriodicScanEnabled":false,"periodicScanEnabledString":"0","vendorInstance":"c2175761-0e2b-4753-b2d6-9a9526d85c0c","psnHostName":"ISE22-1ek","heartBeatTime":0,"lastScanTime":0}
+2016-11-24 13:32:04,439 DEBUG [Thread-94][] va.runtime.admin.vaservice.VaServiceRemotingHandler -:::::- VA: received data from Mnt: {"operationType":1,"macAddress":"3C:97:0E:52:3F:D9","ipAddress":"10.229.20.32","isPeriodicScanEnabled":false,"heartBeatTime":0,"lastScanTime":0}
+Once the result is received it stores all Vulnerability data in the Context Directory.
+
+2016-11-24 13:45:28,378 DEBUG [Thread-94][] va.runtime.admin.vaservice.VaServiceRemotingHandler -:::::- VA: received data from Mnt: {"operationType":2,"isPeriodicScanEnabled":false,"heartBeatTime":1479991526437,"lastScanTime":0}
+2016-11-24 13:45:33,642 DEBUG [pool-115-thread-19][] va.runtime.admin.vaservice.VaServiceMessageListener -:::::- Got message from VaService: [{"macAddress":"3C:97:0E:52:3F:D9","ipAddress":"10.229.20.32","lastScanTime":1479962572758,"vulnerabilities":["{\"vulnerabilityId\":\"ssl-cve-2016-2183-sweet32\",\"cveIds\":\"CVE-2016-2183\",\"cvssBaseScore\":\"5\",\"vulnerabilityTitle\":\"TLS/SSL Birthday attacks on 64-bit block ciphers (SWEET32)\",\"vulnerabilityVendor\":\"Rapid7 Nexpose\"}","{\"vulnerabilityId\":\"ssl-static-key-ciphers\",\"cveIds\":\"\",\"cvssBaseScore\":\"2.5999999\",\"vulnerabilityTitle\":\"TLS/SSL Server Supports The Use of Static Key Ciphers\",\"vulnerabilityVendor\":\"Rapid7 Nexpose\"}","{\"vulnerabilityId\":\"rc4-cve-2013-2566\",\"cveIds\":\"CVE-2013-2566\",\"cvssBaseScore\":\"4.30000019\",\"vulnerabilityTitle\":\"TLS/SSL Server Supports RC4 Cipher Algorithms (CVE-2013-2566)\",\"vulnerabilityVendor\":\"Rapid7 Nexpose\"}","{\"vulnerabilityId\":\"tls-dh-prime-under-2048-bits\",\"cveIds\":\"\",\"cvssBaseScore\":\"2.5999999\",\"vulnerabilityTitle\":\"Diffie-Hellman group smaller than 2048 bits\",\"vulnerabilityVendor\":\"Rapid7 Nexpose\"}","{\"vulnerabilityId\":\"tls-dh-primes\",\"cveIds\":\"\",\"cvssBaseScore\":\"2.5999999\",\"vulnerabilityTitle\":\"TLS/SSL Server Is Using Commonly Used Prime Numbers\",\"vulnerabilityVendor\":\"Rapid7 Nexpose\"}","{\"vulnerabilityId\":\"ssl-cve-2011-3389-beast\",\"cveIds\":\"CVE-2011-3389\",\"cvssBaseScore\":\"4.30000019\",\"vulnerabilityTitle\":\"TLS/SSL Server is enabling the BEAST attack\",\"vulnerabilityVendor\":\"Rapid7 Nexpose\"}","{\"vulnerabilityId\":\"tlsv1_0-enabled\",\"cveIds\":\"\",\"cvssBaseScore\":\"4.30000019\",\"vulnerabilityTitle\":\"TLS Server Supports TLS version 1.0\",\"vulnerabilityVendor\":\"Rapid7 Nexpose\"}"]}]
+2016-11-24 13:45:33,643 DEBUG [pool-115-thread-19][] va.runtime.admin.vaservice.VaServiceMessageListener -:::::- VA: Save to context db, lastscantime: 1479962572758, mac: 3C:97:0E:52:3F:D9
+2016-11-24 13:45:33,675 DEBUG [pool-115-thread-19][] va.runtime.admin.vaservice.VaPanRemotingHandler -:::::- VA: Saved to elastic search: {3C:97:0E:52:3F:D9=[{"vulnerabilityId":"ssl-cve-2016-2183-sweet32","cveIds":"CVE-2016-2183","cvssBaseScore":"5","vulnerabilityTitle":"TLS/SSL Birthday attacks on 64-bit block ciphers (SWEET32)","vulnerabilityVendor":"Rapid7 Nexpose"}, {"vulnerabilityId":"ssl-static-key-ciphers","cveIds":"","cvssBaseScore":"2.5999999","vulnerabilityTitle":"TLS/SSL Server Supports The Use of Static Key Ciphers","vulnerabilityVendor":"Rapid7 Nexpose"}, {"vulnerabilityId":"rc4-cve-2013-2566","cveIds":"CVE-2013-2566","cvssBaseScore":"4.30000019","vulnerabilityTitle":"TLS/SSL Server Supports RC4 Cipher Algorithms (CVE-2013-2566)","vulnerabilityVendor":"Rapid7 Nexpose"}, {"vulnerabilityId":"tls-dh-prime-under-2048-bits","cveIds":"","cvssBaseScore":"2.5999999","vulnerabilityTitle":"Diffie-Hellman group smaller than 2048 bits","vulnerabilityVendor":"Rapid7 Nexpose"}, {"vulnerabilityId":"tls-dh-primes","cveIds":"","cvssBaseScore":"2.5999999","vulnerabilityTitle":"TLS/SSL Server Is Using Commonly Used Prime Numbers","vulnerabilityVendor":"Rapid7 Nexpose"}, {"vulnerabilityId":"ssl-cve-2011-3389-beast","cveIds":"CVE-2011-3389","cvssBaseScore":"4.30000019","vulnerabilityTitle":"TLS/SSL Server is enabling the BEAST attack","vulnerabilityVendor":"Rapid7 Nexpose"}, {"vulnerabilityId":"tlsv1_0-enabled","cveIds":"","cvssBaseScore":"4.30000019","vulnerabilityTitle":"TLS Server Supports TLS version 1.0","vulnerabilityVendor":"Rapid7 Nexpose"}]}
+Logs to be checked - vaservice.log. You can tail it directly from ISE CLI:
+ISE21-3ek/admin# show logging application vaservice.log tail
+Vulnerability Assessment Request Submitted to Adapter.
+2016-11-24 12:32:05,783 DEBUG [endpointPollerScheduler-7][] cpm.va.service.util.VaServiceUtil -:::::- VA SendSyslog systemMsg : [{"systemMsg":"91019","isAutoInsertSelfAcsInstance":true,"attributes":["TC-NAC.ServiceName","Vulnerability Assessment Service","TC-NAC.Status","VA request submitted to adapter","TC-NAC.Details","VA request submitted to adapter for processing","TC-NAC.MACAddress","3C:97:0E:52:3F:D9","TC-NAC.IpAddress","10.229.20.32","TC-NAC.AdapterInstanceUuid","c2175761-0e2b-4753-b2d6-9a9526d85c0c","TC-NAC.VendorName","Rapid7 Nexpose","TC-NAC.AdapterInstanceName","Rapid7"]}]
+2016-11-24 12:32:05,810 DEBUG [endpointPollerScheduler-7][] cpm.va.service.util.VaServiceUtil -:::::- VA SendSyslog systemMsg res: {"status":"SUCCESS","statusMessages":["SUCCESS"]}
+AdapterMessageListener checks each 5 minutes the status of the scan until it is finished.
+2016-11-24 12:36:28,143 DEBUG [SimpleAsyncTaskExecutor-2][] cpm.va.service.processor.AdapterMessageListener -:::::- Message from adapter : {"AdapterInstanceName":"Rapid7","AdapterInstanceUid":"7a2415e7-980d-4c0c-b5ed-fe4e9fadadbd","VendorName":"Rapid7 Nexpose","OperationMessageText":"Number of endpoints queued for checking scan results: 0, Number of endpoints queued for scan: 0, Number of endpoints for which the scan is in progress: 1"}
+2016-11-24 12:36:28,880 DEBUG [endpointPollerScheduler-5][] cpm.va.service.util.VaServiceUtil -:::::- VA SendSyslog systemMsg : [{"systemMsg":"91019","isAutoInsertSelfAcsInstance":true,"attributes":["TC-NAC.ServiceName","Vulnerability Assessment Service","TC-NAC.Status","Adapter Statistics","TC-NAC.Details","Number of endpoints queued for checking scan results: 0, Number of endpoints queued for scan: 0, Number of endpoints for which the scan is in progress: 1","TC-NAC.AdapterInstanceUuid","7a2415e7-980d-4c0c-b5ed-fe4e9fadadbd","TC-NAC.VendorName","Rapid7 Nexpose","TC-NAC.AdapterInstanceName","Rapid7"]}]
+Adapter gets CVE's along with the CVSS Scores.
+2016-11-24 12:45:33,132 DEBUG [SimpleAsyncTaskExecutor-2][] cpm.va.service.processor.AdapterMessageListener -:::::- Message from adapter : {"returnedMacAddress":"","requestedMacAddress":"3C:97:0E:52:3F:D9","scanStatus":"ASSESSMENT_SUCCESS","lastScanTimeLong":1479962572758,"ipAddress":"10.229.20.32","vulnerabilities":[{"vulnerabilityId":"tlsv1_0-enabled","cveIds":"","cvssBaseScore":"4.30000019","vulnerabilityTitle":"TLS Server Supports TLS version 1.0","vulnerabilityVendor":"Rapid7 Nexpose"},{"vulnerabilityId":"rc4-cve-2013-2566","cveIds":"CVE-2013-2566","cvssBaseScore":"4.30000019","vulnerabilityTitle":"TLS/SSL Server Supports RC4 Cipher Algorithms (CVE-2013-2566)","vulnerabilityVendor":"Rapid7 Nexpose"},{"vulnerabilityId":"ssl-cve-2016-2183-sweet32","cveIds":"CVE-2016-2183","cvssBaseScore":"5","vulnerabilityTitle":"TLS/SSL Birthday attacks on 64-bit block ciphers (SWEET32)","vulnerabilityVendor":"Rapid7 Nexpose"},{"vulnerabilityId":"ssl-static-key-ciphers","cveIds":"","cvssBaseScore":"2.5999999","vulnerabilityTitle":"TLS/SSL Server Supports The Use of Static Key Ciphers","vulnerabilityVendor":"Rapid7 Nexpose"},{"vulnerabilityId":"tls-dh-primes","cveIds":"","cvssBaseScore":"2.5999999","vulnerabilityTitle":"TLS/SSL Server Is Using Commonly Used Prime Numbers","vulnerabilityVendor":"Rapid7 Nexpose"},{"vulnerabilityId":"tls-dh-prime-under-2048-bits","cveIds":"","cvssBaseScore":"2.5999999","vulnerabilityTitle":"Diffie-Hellman group smaller than 2048 bits","vulnerabilityVendor":"Rapid7 Nexpose"},{"vulnerabilityId":"ssl-cve-2011-3389-beast","cveIds":"CVE-2011-3389","cvssBaseScore":"4.30000019","vulnerabilityTitle":"TLS/SSL Server is enabling the BEAST attack","vulnerabilityVendor":"Rapid7 Nexpose"}]}
+2016-11-24 12:45:33,137 INFO [SimpleAsyncTaskExecutor-2][] cpm.va.service.processor.AdapterMessageListener -:::::- Endpoint Details sent to IRF is {"3C:97:0E:52:3F:D9":[{"vulnerability":{"CVSS_Base_Score":5.0,"CVSS_Temporal_Score":0.0},"time-stamp":1479962572758,"title":"Vulnerability","vendor":"Rapid7 Nexpose"}]}
+2016-11-24 12:45:33,221 DEBUG [endpointPollerScheduler-7][] cpm.va.service.util.VaServiceUtil -:::::- VA SendSyslog systemMsg : [{"systemMsg":"91019","isAutoInsertSelfAcsInstance":true,"attributes":["TC-NAC.ServiceName","Vulnerability Assessment Service","TC-NAC.Status","VA successfully completed","TC-NAC.Details","VA completed; number of vulnerabilities found: 7","TC-NAC.MACAddress","3C:97:0E:52:3F:D9","TC-NAC.IpAddress","10.229.20.32","TC-NAC.AdapterInstanceUuid","c2175761-0e2b-4753-b2d6-9a9526d85c0c","TC-NAC.VendorName","Rapid7 Nexpose","TC-NAC.AdapterInstanceName","Rapid7"]}]
+2016-11-24 12:45:33,299 DEBUG [endpointPollerScheduler-7][] cpm.va.service.util.VaServiceUtil -:::::- VA SendSyslog systemMsg res: {"status":"SUCCESS","statusMessages":["SUCCESS"]}
+Related Information
+Technical Support & Documentation - Cisco Systems
+ISE 2.2 Release Notes
+ISE 2.2 Hardware Installation Guide
+ISE 2.2 Upgrade Guide
+ISE 2.2 Engine Administrator Guide
+Contributed by Cisco Engineers
+Eugene Korneychuk
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Configure EAP-TLS Authentication with ISE
+Perform Password Recovery for ISE Command Line Interface (CLI)
+Install Patch on ISE
++ Show 1 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine 2.2

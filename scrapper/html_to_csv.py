@@ -13,6 +13,7 @@ patterns = [{"POS": "AUX"}, {"POS": "VERB"}]
 
 sentences = []
 page_names = []
+max_length = 0
 for idx,file in enumerate(glob.glob("*.html")):
     print(idx)
     with open(file, "r+") as f:
@@ -20,6 +21,9 @@ for idx,file in enumerate(glob.glob("*.html")):
         text = f.read().replace('.\n', '.')
         text = text.replace('\n', '.')
         text = text.replace('..', '.')
+        if len(text) > max_length:
+            max_length = len(text) + 100
+            nlp.max_length = max_length
         for s in nlp(text).sents:
             about_talk_doc = textacy.make_spacy_doc(s.text, lang="en_core_web_sm")
             verb_phrases = textacy.extract.token_matches(about_talk_doc, patterns=patterns)

@@ -1,0 +1,526 @@
+Troubleshooting TechNotes
+Troubleshoot ISE Session Management and Posture
+Save
+Translations
+Download
+Print
+
+
+
+Updated:May 31, 2023
+Document ID:215419
+Bias-Free Language
+Contents
+Introduction
+Background Information
+Problem
+End-user Experience
+ISE Admin Experience
+Common Problematic Scenarios
+Stale/Phantom Session Problem
+ISE Session Management Logic
+MNT and Session Management
+PSN and Session Management
+Introduction
+This document describes the common Identity Service Engine (ISE) posture services problem: "AnyConnect ISE posture module shows compliant..."
+Background Information
+This document describes the common Identity Service Engine (ISE) posture services problem - AnyConnect ISE posture module shows compliant while session status on ISE is pending.
+While symptoms are always the same, there could be multiple root causes of this issue.
+Often, troubleshooting of such an issue becomes extremely time-consuming which causes serious impact.
+This document explains:
+Problem manifestation from end-user and ISE admin perspective.
+Common problematic scenarios.
+The theory behind ISE, AnyConnect, and network operations which trigger the problem.
+Algorithms of quick problem identification.
+Classical solutions to common problematic scenarios.
+Posture status sharing over the Radius session directory.
+For a better explanation of the concepts described later, refer to:
+ISE Posture Style Comparison for Pre and Post 2.2
+ISE under the magnifying glass. How to troubleshoot ISE - BRKSEC-3229
+Problem
+End-user Experience
+This issue normally manifests in the absence of network access or constant redirections to the ISE client provision portal in the browser while, at the same time, AnyConect ISE posture module shows posture status as Compliant.
+Typical end-user experience:
+ISE Admin Experience
+Normally, in initial triage of this issue, ISE admin performs Radius Live logs investigation to ensure that there is an actual authentication that hits the ISE.
+The first symptom discovered in this stage indicates a mismatch in a posture status between endpoint and ISE as in the live logs or Radius authentication reports last successful authentication for the endpoint shows Pending posture status.
+Typical ISE admin experience:
+Last successful authentication for Alice.
+The posture status of the session is Pending.
+Last session event for Alice.
+The session event shows posture status as Compliant.
+Note: c. and d. are not always presented in the live logs when described issue manifests. Session event with posture status Compliant is more common for scenarios caused by the stale or phantom sessions which are described later in this document.
+Common Problematic Scenarios
+This issue normally manifests in two problematic scenarios and each of them have multiple root causes. The scenarios:
+AnyConnect ISE posture module has been misinformed by the Policy Service Node (PSN) during the posture process which caused wrong posture status to be displayed. In this case, we normally deal with a stale or phantom session in the PSN session cache.
+AnyConnect ISE shows to posture status from the previous discovery cycle as current authentication did not trigger a discovery process. ISE posture module in AnyConnect has a limited number of events that trigger the discovery process and possibly happen that during authentication or re-authentication, none of those events were detected.
+Stale/Phantom Session Problem
+To understand the issue better, investigate ISE session management logic and AnyConnect discovery process required.
+ISE Session Management Logic
+In ISE deployment, there are two personas responsible for the session management process: PSN and Monitoring Node (MNT).
+To properly troubleshoot and identify this problem, it is critical to understand the theory of session management on both personas.
+MNT and Session Management
+As explained in this image, MNT node creates seasons based on the passed authentication Syslog messages which come from PSNs.
+Later session status can be updated by the Syslog for accounting.
+Session removal on MNT happens in 3 scenarios:
+Sessions without accounting start removed approximately 60 minutes after they have been created. There is a cron job executed every 5 minutes to check session statuses and clean.
+Terminated session removed approximately 15 minutes after the accounting stop has been processed by the same cron job.
+The same cron on each execution removes as well sessions that have been in the 'Started' state for more than 5 days (120 hours). A started state means that the MNT node processed both authentication and accounting to start Syslog for the session.
+Examples of Syslog messages from PSN. Those messages are logged into prrt-server.log when runtime-aaa component enabled into DEBUG. Parts in bold can be used to construct search regular expressions.
+Passed authentication :
+AcsLogs,2020-04-07 10:07:29,202,DEBUG,0x7fa0ada91700,cntx=0000629480,sesn=skuchere-ise26-1/375283310/10872,CPMSessionID=0A3E946C00000073559C0123,user=bob@example.com,CallingStationID=00-50-56-B6-0B-C6,FramedIPAddress=192.168.255.205,Log_Message=[2020-04-07 22:53:24.288 +02:00 0000423024 5200 NOTICE Passed-Authentication: Authentication succeeded, ConfigVersionId=87, Device IP Address=10.62.148.108, DestinationIPAddress=192.168.43.26, DestinationPort=1812, UserName=bob@example.com, Protocol=Radius, RequestLatency=45, NetworkDeviceName=3850-1-BB, User-Name=bob@example.com, NAS-IP-Address=10.62.148.108, NAS-Port=50105, Service-Type=Framed, Framed-IP-Address=192.168.255.205, Framed-MTU=1472, State=37CPMSessionID=0A3E946C00000073559C0123\;42SessionID=skuchere-ise26-1/375283310/10872\;, Calling-Station-ID=00-50-56-B6-0B-C6, NAS-Port-Type=Ethernet, NAS-Port-Id=GigabitEthernet1/0/5, EAP-Key-Name=, cisco-av-pair=service-type=Framed, cisco-av-pair=audit-session-id=0A3E946C00000073559C0123, cisco-av-pair=method=dot1x, cisco-av-pair=client-iif-id=526638260, NetworkDeviceProfileName=Cisco, NetworkDeviceProfileId=b0699505-3150-4215-a80e-6753d45bf56c, IsThirdPartyDeviceFlow=false, RadiusFlowType=Wired802_1x, AcsSessionID=skuchere-ise26-1/375283310/10872, AuthenticationIdentityStore=EXAMPLE, AuthenticationMethod=MSCHAPV2, SelectedAccessService=Default Network Access, SelectedAuthorizationProfiles=PermitAccess, IsMachineAuthentication=false, IdentityGroup=Endpoint Identity Groups:Profiled:Workstation, Step=11001, Step=11017, Step=15049, Step=15008, Step=15048, Step=15048, Step=15048, Step=11507, Step=12500, Step=12625, Step=11006, Step=11001, Step=11018, Step=12301, Step=12300, Step=12625, Step=11006, Step=11001, Step=11018, Step=12302, Step=12318, Step=12800, Step=12805, Step=12806, Step=12807, Step=12808, Step=12810, Step=12811, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=12318, Step=12812, Step=12813, Step=12804, Step=12801, Step=12802, Step=12816, Step=12310, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=12313, Step=11521, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=11522, Step=11806, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=11808, Step=15041, Step=22072, Step=15013, Step=24210, Step=24216, Step=15013, Step=24430, Step=24325, Step=24313, Step=24319, Step=24323, Step=24343, Step=24402, Step=22037, Step=11824, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=11810, Step=11814, Step=11519, Step=12314, Step=12305, Step=11006, Step=11001, Step=11018, Step=12304, Step=24715, Step=15036, Step=24209, Step=24211, Step=24432, Step=24325, Step=24313, Step=24319, Step=24323, Step=24355, Step=24416, Step=15048, Step=15016, Step=22081, Step=22080, Step=12306, Step=11503, Step=11002, SelectedAuthenticationIdentityStores=Internal Users, SelectedAuthenticationIdentityStores=All_AD_Join_Points, SelectedAuthenticationIdentityStores=Guest Users, AuthenticationStatus=AuthenticationPassed, NetworkDeviceGroups=IPSEC#Is IPSEC Device#No, NetworkDeviceGroups=Location#All Locations, NetworkDeviceGroups=Device Type#All Device Types, IdentityPolicyMatchedRule=Dot1X, AuthorizationPolicyMatchedRule=Compliant-Wired, EapTunnel=PEAP, EapAuthentication=EAP-MSCHAPv2, CPMSessionID=0A3E946C00000073559C0123, EndPointMACAddress=00-50-56-B6-0B-C6, PostureAssessmentStatus=NotApplicable, EndPointMatchedProfile=Microsoft-Workstation, ISEPolicySetName=Default, IdentitySelectionMatchedRule=Dot1X, AD-User-Resolved-Identities=bob@example.com, AD-User-Candidate-Identities=bob@example.com, AD-User-Join-Point=EXAMPLE.COM, StepData=4= Radius.NAS-IP-Address, StepData=5= Cisco-VPN3000.CVPN3000/ASA/PIX7x-Tunnel-Group-Name, StepData=6= DEVICE.Device Type, StepData=77=All_User_ID_Stores, StepData=78=Internal Users, StepData=81=All_AD_Join_Points, StepData=82=All_AD_Join_Points, StepData=83=bob@example.com, StepData=84=example.com, StepData=85=example.com, StepData=87=bob@example.com, StepData=88=All_AD_Join_Points, StepData=109=EXAMPLE, StepData=110=bob@example.com, StepData=111=example.com, StepData=112=example.com, StepData=114=example.com, StepData=115=EXAMPLE, StepData=116= EXAMPLE.ExternalGroups, AD-User-Resolved-DNs=CN=bob\,CN=Users\,DC=example\,DC=com, AD-User-DNS-Domain=example.com, AD-Groups-Names=example.com/Users/Domain Users, AD-User-NetBios-Name=EXAMPLE, IsMachineIdentity=false, UserAccountControl=66048, AD-User-SamAccount-Name=bob, AD-User-Qualified-Name=bob@example.com, allowEasyWiredSession=false, TLSCipher=ECDHE-RSA-AES256-GCM-SHA384, TLSVersion=TLSv1.2, DTLSSupport=Unknown, HostIdentityGroup=Endpoint Identity Groups:Profiled:Workstation, Network Device Profile=Cisco, Location=Location#All Locations, Device Type=Device Type#All Device Types, IPSEC=IPSEC#Is IPSEC Device#No, ExternalGroups=S-1-5-21-875452798-754861120-3039794717-513, IdentityAccessRestricted=false, PostureStatus=Compliant, Response={Class=CACS:0A3E946C00000073559C0123:skuchere-ise26-1/375283310/10872; EAP-Key-Name=19:5e:8c:e9:13:0c:89:23:78:49:ad:2b:d4:31:63:51:27:81:db:e2:61:b1:51:36:6d:11:10:41:ce:3b:aa:cc:c6:66:4e:7c:92:f8:83:c5:06:84:ac:95:4c:5b:f1:b2:37:a2:f5:04:4e:9e:4d:08:79:55:b7:4d:9a:41:f5:b2:0a; MS-MPPE-Send-Key=****; MS-MPPE-Recv-Key=****; LicenseTypes=65541; },],MessageFormatter.cpp:107
+Accounting Start :
+AcsLogs,2020-04-07 10:07:30,202,DEBUG,0x7fa0ad68d700,cntx=0000561096,sesn=skuchere-ise26-1/375283310/10211,CPMSessionID=0A3E946C00000073559C0123,user=bob@example.com,CallingStationID=00-50-56-B6-0B-C6,FramedIPAddress=192.168.255.205,Log_Message=[2020-04-07 10:07:30.857 +02:00 0000382874 3000 NOTICE Radius-Accounting: RADIUS Accounting start request, ConfigVersionId=87, Device IP Address=10.62.148.108, UserName=bob@example.com, RequestLatency=7, NetworkDeviceName=3850-1-BB, User-Name=bob@example.com, NAS-IP-Address=10.62.148.108, NAS-Port=50105, Framed-IP-Address=192.168.255.205, Class=CACS:0A3E946C00000073559C0123:skuchere-ise26-1/375283310/10210, Called-Station-ID=00-E1-6D-D1-4F-05, Calling-Station-ID=00-50-56-B6-0B-C6, Acct-Status-Type=Start, Acct-Delay-Time=0, Acct-Session-Id=00000041, Acct-Authentic=Remote, Event-Timestamp=1586279242, NAS-Port-Type=Ethernet, NAS-Port-Id=GigabitEthernet1/0/5, cisco-av-pair=audit-session-id=0A3E946C00000073559C0123, cisco-av-pair=method=dot1x, AcsSessionID=skuchere-ise26-1/375283310/10211, SelectedAccessService=Default Network Access, Step=11004, Step=11017, Step=15049, Step=15008, Step=15048, Step=22083, Step=11005, NetworkDeviceGroups=IPSEC#Is IPSEC Device#No, NetworkDeviceGroups=Location#All Locations, NetworkDeviceGroups=Device Type#All Device Types, CPMSessionID=0A3E946C00000073559C0123, Network Device Profile=Cisco, Location=Location#All Locations, Device Type=Device Type#All Device Types, IPSEC=IPSEC#Is IPSEC Device#No, ],MessageFormatter.cpp:107
+Interim Accounting Update :
+AcsLogs,2020-04-07 22:57:48,642,DEBUG,0x7fa0adb92700,cntx=0000629843,sesn=skuchere-ise26-1/375283310/10877,CPMSessionID=0A3E946C00000073559C0123,user=bob@example.com,CallingStationID=00-50-56-B6-0B-C6,FramedIPAddress=192.168.255.205,Log_Message=[2020-04-07 22:57:48.650 +02:00 0000423268 3002 NOTICE Radius-Accounting: RADIUS Accounting watchdog update, ConfigVersionId=87, Device IP Address=10.62.148.108, UserName=bob@example.com, RequestLatency=8, NetworkDeviceName=3850-1-BB, User-Name=bob@example.com, NAS-IP-Address=10.62.148.108, NAS-Port=50105, Framed-IP-Address=192.168.255.205, Class=CACS:0A3E946C00000073559C0123:skuchere-ise26-1/375283310/10872, Called-Station-ID=00-E1-6D-D1-4F-05, Calling-Station-ID=00-50-56-B6-0B-C6, Acct-Status-Type=Interim-Update, Acct-Delay-Time=0, Acct-Input-Octets=2293926, Acct-Output-Octets=0, Acct-Session-Id=00000041, Acct-Authentic=Remote, Acct-Input-Packets=15785, Acct-Output-Packets=0, Event-Timestamp=1586325462, NAS-Port-Type=Ethernet, NAS-Port-Id=GigabitEthernet1/0/5, cisco-av-pair=audit-session-id=0A3E946C00000073559C0123, cisco-av-pair=method=dot1x, AcsSessionID=skuchere-ise26-1/375283310/10877, SelectedAccessService=Default Network Access, Step=11004, Step=11017, Step=15049, Step=15008, Step=22085, Step=11005, NetworkDeviceGroups=IPSEC#Is IPSEC Device#No, NetworkDeviceGroups=Location#All Locations, NetworkDeviceGroups=Device Type#All Device Types, CPMSessionID=0A3E946C00000073559C0123, Network Device Profile=Cisco, Location=Location#All Locations, Device Type=Device Type#All Device Types, IPSEC=IPSEC#Is IPSEC Device#No, ],MessageFormatter.cpp:107
+Accounting Stop :
+AcsLogs,2020-04-08 11:43:22,356,DEBUG,0x7fa0ad68d700,cntx=0000696242,sesn=skuchere-ise26-1/375283310/11515,CPMSessionID=0A3E946C00000073559C0123,user=bob@example.com,CallingStationID=00-50-56-B6-0B-C6,FramedIPAddress=192.168.255.205,Log_Message=[2020-04-08 11:43:22.368 +02:00 0000463071 3001 NOTICE Radius-Accounting: RADIUS Accounting stop request, ConfigVersionId=88, Device IP Address=10.62.148.108, UserName=bob@example.com, RequestLatency=12, NetworkDeviceName=3850-1-BB, User-Name=bob@example.com, NAS-IP-Address=10.62.148.108, NAS-Port=50105, Framed-IP-Address=192.168.255.205, Class=CACS:0A3E946C00000073559C0123:skuchere-ise26-1/375283310/11503, Called-Station-ID=00-E1-6D-D1-4F-05, Calling-Station-ID=00-50-56-B6-0B-C6, Acct-Status-Type=Stop, Acct-Delay-Time=0, Acct-Input-Octets=4147916, Acct-Output-Octets=0, Acct-Session-Id=00000041, Acct-Authentic=Remote, Acct-Session-Time=92157, Acct-Input-Packets=29120, Acct-Output-Packets=0, Acct-Terminate-Cause=Lost Carrier, Event-Timestamp=1586371399, NAS-Port-Type=Ethernet, NAS-Port-Id=GigabitEthernet1/0/5, Framed-IPv6-Address=2001:10::100, Framed-IPv6-Address=2001:10::101, cisco-av-pair=audit-session-id=0A3E946C00000073559C0123, cisco-av-pair=method=dot1x, AcsSessionID=skuchere-ise26-1/375283310/11515, SelectedAccessService=Default Network Access, Step=11004, Step=11017, Step=15049, Step=15008, Step=22084, Step=11005, NetworkDeviceGroups=IPSEC#Is IPSEC Device#No, NetworkDeviceGroups=Location#All Locations, NetworkDeviceGroups=Device Type#All Device Types, CPMSessionID=0A3E946C00000073559C0123, Network Device Profile=Cisco, Location=Location#All Locations, Device Type=Device Type#All Device Types, IPSEC=IPSEC#Is IPSEC Device#No, ],MessageFormatter.cpp:107
+PSN and Session Management
+What is the PSN session cache?
+An in-memory database that stores all active sessions of specific PSN. Session cache is always local to the node and there is no mechanism in ISE that can perform replication of FULL session state from one node to another.
+For every active session ID, PSN stores all attributes that were collected during the authentication/authorization phase like Internal/External user groups, Network Access Device (NAD) attributes, certificate attributes, and so on. Those attributes are used by PSN to select different policy types like Authentication, Authorization, Client Provisioning, Posture.
+Session cache removed completely when services on the node or node itself get restarted.
+Current session processing logic creates a new entry in the session cache in two scenarios, later details of existing sessions can be updated from accounting messages which come from NADs :
+The session has been successfully authenticated on the PSN.
+PSN got an accounting interim update for the session which does not exist in the session cache.
+When it comes to session removal, PSN implements this logic:
+Session cache entry removed immediately after processing the accounting stop message.
+PSN starts to remove the least recently used sessions when a node reaches thelimit of active sessions.
+Stale Session on PSN
+In ISE deployment, the accounting stop for an existing session has been processed by the PSN which did not perform the actual authentication:
+Example of the stale session:
+1. Successful authentication happens on PSN for session ABC.
+2. PSN creates an entry in the session cache.
+3. Posture assessment happens.
+4. Session marked as Compliant.
+5. Change of Authorization (COA) triggered by posture status change leads to re-authentication of the endpoint to apply the next access level.
+6. Accounting stop for session ABC comes to PSN2.
+After step 6 session, ABC gets stuck in the stale state on the PSN1 as there would not be an accounting stop message processed on this PSN to remove it. The session is removed for a long time if deployment does not experience a high number of authentication attempts.
+The stale session appears in PSN session cache in these scenarios:
+The accounting stop came to the wrong PSN due to stickiness timer expiration on the load balancer.
+The wrong configuration on the NAD is not the same PSN configured for authentication and accounting.
+Temporary connectivity issues on the network path that causes NAD failover to the next PSN.
+Example of the stale session in Load Balancer (LB)  environment :
+1. Initial authentication for the Session ABC performed by PSN 1.
+
+2. This authentication initiates a stickiness timer on the load balancer.
+
+3. PSN 1 creates an entry for the session ABC in the local cache.
+
+4. Syslog message for passed authentication transferred to MNT node.
+
+5. Entry for session ABC created into MNT session directory with the state Authenticated.
+
+6. Accounting start message for session ABC lands on PSN 1.
+
+7. Session cache entry for session ABC updated with information from Accounting-Start.
+
+8. Syslog message for Accounting-Start transferred to MNT node.
+
+9. Session state updated to Started.
+
+10. Stickiness timer expires on the load balancer.
+
+11. Accounting-Stop for session ABC forwarded by the load balancer to PSN 2.
+
+12. Syslog message for Accounting-Stop forwarded by PSN 2 to MNT.
+
+13. Session ABC marked as terminated on MNT.
+Phantom Session on the PSN
+The phantom session is a scenario when accounting interim update comes to the PSN which did not perform authentication for this specific session. In this scenario, a new entry is created in the PSN session cache and if PSN does not get an accounting stop message for this session the entry would not be removed unless PSN reaches the limit of active sessions.
+Example of the phantom session:
+1. The same steps as described in the stale session example happens on PSN1 for the session ABC.
+2. Session ABC has a status Compliant in the PSN1 session cache.
+3. Accounting interim update for session ABC hits PSN2.
+4. Session entry for session ABC created on PSN2. Since the session entry created from the accounting message, it has limited numbers of attributes. For example, posture status is not available for session ABC. Things like user groups and other authorization specific attributes are absent as well.
+The phantom session appears in PSN session cache in these scenarios:
+Short-term outage on the network transit.
+Misbehavior of Network Access Device.
+Misbehavior or wrong configuration on Load Balancer.
+Example of a phantom session for the scenario with temporary issues on the network path towards PSN1:
+1. Initial authentication for the Session ABC performed by PSN.
+
+2. PSN1 creates an entry for the session ABC in the local cache.
+
+3. Syslog message for passed authentication transferred to MNT node.
+
+4. Entry for session ABC created into TimesTen DB with the state Authenticated.
+
+5. Accounting start message for session ABC lands on PSN 1.
+
+6. Session cache entry for session ABC updated with information from Accounting-Start.
+
+7. Syslog message for Accounting-Start transferred to MNT node.
+
+8. Session state updated to Started.
+
+9. Interim-Accounting update for session ABC forwarded to PSN2.
+
+10. PSN2 creates an entry for the session ABC in the local cache.
+
+11. Accounting-Stop for session ABC forwarded to PSN1.
+
+12. Entry for session ABC removed from the session cache on PSN1.
+
+13. Syslog message for Accounting-Stop forwarded by PSN 1 to MNT.
+
+14. Session ABC marked as terminated on MNT.
+The scenario of the phantom session as created for the long-living VPN connection:
+1. Initial authentication on PSN1.
+2. Session ABC created in the session cache.
+3. Accounting starts the message processed by the PSN.
+4. The new IP address assigned to the Virtual Private Network (VPN) adapter.
+5. Interim accounting update with IP address info lands on PSN.
+6. IP address information added to the session cache.
+7. Posture assessment happens with PSN1.
+8. Posture status updated in the session.
+9. COA push executed by ISE, this triggers new access level to be assigned.
+10. Outage on the network path which makes PSN1 inaccessible.
+11. After interim update interval expiration, ASA/FTD detects that PSN1 is inaccessible. 
+12. Interim accounting update comes to PSN2.
+13. The phantom session created in the PSN2 session cache.
+If later PSN1 becomes accessible (14) all subsequent accounting messages are forwarded (15,16) there and this leaves session ABC in the PSN2 session cache for an undefined time.
+How Stale Session and Phantom Session Break the Posture Process?
+To understand how stale session and the phantom session breaks posture, you can review the AnyConnect ISE posture module discovery process:
+Stage 1 Discovery :
+During this stage, the ISE posture module executes 4 simultaneous problems to locate the PSN which did an authentication for the endpoint.
+First, 3 probes on the figure are redirect based (Default GW IP. Discovery host IP (if defined) and enroll.cisco.com IP) - Those probes always point the agent to the right PSN as redirect URL is taken from the NAD itself.
+Probe number 4 is sent to all primary servers presented in the ConnectionData.xml file. This file created after the first successful posture attempt and later file content can be updated in case if client migrates between PSNs. On Windows systems, the file location is - C:\ProgramData\Cisco\Cisco AnyConnect Secure Mobility Client\ISE Posture\.
+Since all stage 1 probes are executed simultaneously, result from probe 4 is used only if all other 3 probes failed or ISE posture module was unable to establish proper communication with PSN returned in redirect URL within 5 seconds.
+When probe 4 lands on the PSN it contains a list of active IP and MAC addresses discovered on the endpoint. PSN uses this data to find a session for this endpoint in the local cache. If PSN has a stale or phantom session for endpoint this can result in wrong posture status displayed later on the client-side.
+When an agent gets multiple answers for probe 4 (ConnectionData.xml can contain more than one primary PSN) fastest reply is always used.
+Stage 2 Discovery:
+All stage 2 discovery probes are redirect-less which means that every probe triggers a session lookup on the destination PSN. If PSN cannot locate the session in the local session cache it has to perform MNT lookup (MAC address-based only) to find a session owner and return owner name to the agent.
+As all probes trigger session lookup, stage 2 discovery can be even more affected by issues as a result of from stale or phantom sessions.
+If PSN gets to stage 2,  the discovery probe which exists in the session cache creates a stale or phantom entry for the same endpoint. It results in the wrong posture status returned to the end-user.
+The example shows how posture happens when PSN holds a stale session or phantom session:
+Note: It is important to remember that this issue can manifest only when all redirect-based discovery probes fail or when non-redirect posture is implemented.
+1. Any of Find my session probes issued by the ISE posture module.
+2. PSN performs session lookup in the session cache. If the session is to be found, a stale or phantom session issue occurs.
+3. PSN runs Client provisioning policy selection. In case,  with a phantom session that has a lack of authentication/authorization attributes and all policies configured by the customer are very specific (policies are created for specific Active Directory groups for example) PSN is not able to assign a right client provisioning policy. This can manifest in the error message: "Bypassing AnyConnect scan your network is configured to use Cisco NAC Agent".
+In case when client provisioning policies are generic (attributes available in the phantom session are enough to match policy with AnyConnect configuration) PSN replies with details needed for the continuation of the assessment process.
+At this step as well when we can deal with stale sessions PSN replies right away with posture status Compliant and all next steps are not performed. PSN does not send COA because it believes that session is already compliant. In Radius Live logs there is not a session event displayed with Compliant status.
+4. For the phantom session scenario, the ISE posture module continues with the Initial posture request. This request contains information about all security and patch management products detected on the endpoint.
+5. PSN uses information from the request and session attributes to match proper posture policy. Because the phantom session has a lack of attributes at this point we have no policy to match. In such a case, PSN replies to the endpoint that it is compliant as this is a default ISE behavior in case of not posture policy match. 
+Note: When there is some generic policy that can be selected from phantom session attributes, we continue with step 6.
+6. PSN returns selected posture policies back to the agent.
+Note: When no policy can be selected PSN returns Compliant status.
+7. The agent returns statuses for each policy/requirement as passed or failed.
+8. Report evaluation happens on ISE and session status changes to Compliant.
+Note: In case of posture issues caused by the phantom session, the ISE administrator possibly notice some failed posture COAs as in such case COA requests are executed from the wrong PSNs and for wrong session IDs.
+Discovery Process does not Start on a New Authentication Attempt
+ISE posture module designed to monitor a limited amount of events on the endpoint to trigger a discovery process. List of events which trigger discovery:
+Initial ISE posture module installation.
+User login.
+Power events.
+Interface status change.
+OS resume after sleep.
+Default Gateway (DG) change.
+Posture Reassessment (PRA) failure, see Cisco bug ID CSCvo69557
+New dot1x authentication, PC unlock, IP address change are not detected by the ISE posture module.
+The ISE posture module is unable to detect a new authentication or re-authentication attempt in these scenarios :
+Re-authentication hits different PSN (either due to LB decisions or issues with original PSN).
+NAD generates new session-id on reauthentication.
+Reauthentication on Different PSN
+Example of re-authentication on different PSN caused by the outage of the original PSN. Scenario with load balancer looks very similar. In the case of LB,  re-authentication directed to the different PSN as a result of stickiness timer expiration.
+1. Initial authentication on PSN1.
+2. Session ABC created in the PSN1 session cache.
+3. Posture assessment performed with PSN1.
+4. Session ABS posture status moves to Compliant.
+5. COA triggered by posture status change leads to re-authentication of the endpoint to apply the next access level.
+6. PSN1 becomes unavailable.
+7. Re-authentication for session ABC hits PSN2.
+8. Since it is a new session for PSN2 posture status of the session becomes Pending.
+Initial posture status assigned by PSN to the session:
+Note: State-machine describes only an initial selection of the posture status. Each session initially marked as Unknown can later become Compliant or Non-Compliant based on report evaluation received from the ISE posture module.
+NAD Generates New Session-ID on Reauthentication
+This could happen in the two most common scenarios:
+Re-authentication is improperly configured on the ISE side. The solution to this problem is covered later in this document.
+Misbehavior from the NAD side - normally NAD keeps the same session ID during the re-authentication attempt. In case you discovered that NAD changed a session ID on re-authentication, this is a potentially buggy behavior that needs to be investigated on the NAD itself.
+The new session ID can be generated in some other corner-case scenarios. For example in some cases, wireless roaming can be a cause of it. The main thing here is, ISE PSN always places a new session into posture Pending state unless the posture lease is configured. The posture lease is explained described later in this document.
+Quick Way to Identify When the Issue Was Caused by the Stale/Phantom Session
+To identify whether AnyConnect shows compliance while it is in the redirect state is caused by the stale/phantom session,  we need to get access to the endpoint while it is in the problematic state.
+ investigate System Scan Details:
+
+  1. Press on the gear icon in AnyConnect UI
+      2. In the new Window navigate to System Scan tab and subtab Statistics
+        Here, pay attention to two elements:
+  Latest Scan Start Time - the timestamp here must be close the time when the problem was discovered.
+  Policy Server - this filed indicated the name of the policy server which did a posture assessment for the endpoint. The FQDN from here needs to be compared with FQDN from Redirect-URL (for redirect base posture) or with the PSN name taken from the last authentication attempt  (for redirect-less posture).
+Compare Policy Server FQDN from System Scan Statistics with the node name which did authentication for endpoint:
+In the given example there is a mismatch between the name which is indicated that PSN with name ciscolive-ise2 holds a stale or phantom session for this endpoint.
+The demo shows the recording of the steps needed for issue identification:
+Misconception-1-how-to-detect.mp4 (3)
+Play Video
+Advance Troubleshoot of Stale/Phantom Session
+The previous example is to differentiate the issue of a stale or phantom session from the problem of the discovery process which did not start. At the same time, we need to identify the actual session which triggered the problem to better understand how exactly it becomes a stale or phantom session issue.
+While in some scenarios stale and phantom sessions cannot be avoided. We need to ensure that there is no stale/phantom sessions are created in the environment due to some of the best practices that are not implemented.
+DART Bundle Collection
+Analyze a DART bundle taken from the endpoint that reproduces the problem.
+Keep only important logs in the DART. It is recommended to clear the logs before the problem is reproduced. 
+To achieve this, the DART bundle utility needs to start as an Administrator and perform log clean up. 
+On Windows Navigate to Start and begin to type DART, right-click, and choose - Run as administrator
+
+On the first wizard screen press Next
+
+On next wizard screen,  press Clear All Logs
+
+
+
+After the problem is reproduced DART can be collected from here;  press Next.
+DART bundle analysis
+After the DART bundle has been collected we need to unarchived it and focus on the file AnyConnect_ISEPosture.txt located in the folder Cisco AnyConnect ISE Posture Module. This file contains all discovery-related events.
+
+
+1. Start troubleshooting and identify all moments of discovery restart. Keywords to search are Restarting Discovery or HTTP Discovery. Here, navigate to the line with discovery restart that happened at the problematic moment:
+2. A couple of lines after discovery restart you see a line which contains - Probing no MNT stage targets. This is an indicator of Stage 1 discovery start:
+It is recommended to highlight all redirect based probes with the same color while previously connected PSNs taken from ConnectionData.xml (Auth-Status targets) need to be highlighted in different colors as normally PSN FQDNs are very similar and it is hard to spot the difference.
+3.Read the log files to see a result for every single probe. As it has been said already in case of the issue caused by stale/phantom session all redirect based probes have to fail. This is an example of how the failed probe looks like:
+4. Somewhere in the file after discovery restart for stage 1 or stage 2, you see a successful reply from one or more PSNs:
+5. A couple of lines later there is a line with the keyword MSG_NS_SWISS_NEW_SESSION. This line contains an actual session ID that has been selected by PSN as a result of the session lookup. Use this session ID for further investigation on ISE to figure out how this session becomes stale/phantom:
+Investigation on ISE Logs
+ In the guest.log with clientwebapp component enabled into DEBUG, the PSN which replies with the Stale/Phantom session can be seen.
+PSN gets a request from the ISE posture agent. You can see that this is a request from AnyConnect because of the User-Agent value:
+cisco.cpm.client.posture.PostureStatusServlet -::- Got http request from 192.168.255.228 user agent is: Mozilla/4.0 (compatible; WINDOWS; 1.2.1.6.1.48; AnyConnect Posture Agent v.4.6.03049)
+
+cisco.cpm.client.posture.PostureStatusServlet -::- mac_list from http request ==> C0:4A:00:1F:6B:39
+
+cisco.cpm.client.posture.PostureStatusServlet -::- iplist from http request ==> 192.168.255.228
+
+cisco.cpm.client.posture.PostureStatusServlet -::- Session id from http request - req.getParameter(sessionId) ==> null
+The request contains arrays of IP addresses and MAC addresses. In this particular example, each array holds only one value. As well log shows that session ID from the request is null which indicates that this a request from the non-redirect based probe.
+Later you can see how values from arrays are used to locate a session ID:
+cpm.client.provisioning.utils.ProvisioningUtil -::- the input ipAddress from the list currently processed in the for loop ==> 192.168.255.228
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- the ipAddress that matched the http request remote address ==> 192.168.255.228
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- the clientMac from the macarray list for the for loop index matching the ipAddress list index ==> C0-4A-00-1F-6B-39
+
+cisco.cpm.client.posture.PostureStatusServlet -::- Found Client IP matching the remote IP 192.168.255.228, corresponding mac address C0-4A-00-1F-6B-39
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- Session = 0a3e949c000000495c216240
+After the line with keywords Sent http response you can see content from the actual reply:
+cisco.cpm.client.posture.PostureStatusServlet -::- Sent an http response to  192.168.255.228 with X-ISE-PDP=clemea19-ise1.demo.local.
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- header X-ISE-PDP value is clemea19-ise1.demo.local
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- header X-ISE-POSTURE value is /auth/perfigo_validate.jsp
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- header X-ISE-POSTURE_PORT value is 8443
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- header X-ISE-AC_PKG_PORT value is 8443
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- header X-ISE-GUESTFLOW value is false
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- header X-ISE-AC_CONFIG_URL value is https://clemea19-ise1.demo.local:8443/auth/anyconnect?uuid=f62337c2-7f2e-4b7f-a89a-3508d761173c
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- header X-ISE-AC_CONFIG_URI value is /auth/anyconnect?uuid=f62337c2-7f2e-4b7f-a89a-3508d761173c
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- header X-ISE-AC_PKG_URL value is https://clemea19-ise1.demo.local:8443/auth/provisioning/download/066ac0d6-2df9-4a2c-a129-fabf1ace36aa
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- header X-ISE-AC_PKG_URI value is /auth/provisioning/download/066ac0d6-2df9-4a2c-a129-fabf1ace36aa
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- header X-ISE-AC_PKG_VER value is 4.6.3049.0
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- header X-ISE-STATUS_PATH value is /auth/status
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- header X-ISE-BACKUP_SERVERS value is clemea19-ise2.demo.local
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- header X-ISE-SessionId value is 0a3e949c000000495c216240
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- header X-ISE-PostureDomain value is posture_domain
+
+cpm.client.provisioning.utils.ProvisioningUtil -::- header X-ISE-POSTURE_STATUS value is Unknown
+Investigation on ISE  Reports
+After you know the ID of the stale/phantom session you can investigate the Radius Accounting report to get a better understanding of what caused this session to become stale/phantom:
+Navigate to Operations > Reports > Endpoints and Users > Radius Accounting report and run this report for 7 days. User an endpoint ID as a filter key.
+Example of a report which shows how stale session has been leftover on ciscolive-ise2:
+The accounting start for the session came to the PSN ciscolive-ise2
+The interim update for the session was processed on the same PSN.
+Accounting stop message for problematic session ID came to different PSN (ciscolive-ise1).
+A Quick Way to Identify When The Issue Was Caused by The Absence of Discovery Restart
+Here the same logic is applicable as for the previous issue. The only difference is that you need to focus on the Latest Scan Start Time. For this type of problem, the timestamp of the last scan is somewhere in the past.
+Normally when the end-user discovers a problem, a scan which happened some time ago is seen. While in the ISE Radius Live logs, recent authentication attempts from the problematic endpoint are seen.
+The demo shows the recording of the steps needed for issue identification:
+Misconception-2-how-to-detect.mp4 (4)
+Play Video
+Advanced Troubleshoot The Absence of Discovery Restart
+The approach here is very similar to Advanced Troubleshoot Stale/Phantom Session section. The main troubleshooting element is the DART bundle investigation. Inside of the DART bundle, you can search for discovery restarts like it has been shown for the previous issue and confirm that there was no discovery restart at the moment when the problem was reported.
+On the ISE side, focus on Radius Live Logs/ Radius authentication report to confirm that there was either failover between PSNs or new session ID has been generated by NAD.
+Solution
+Classical Approach - Issue Avoidance
+Historically there was no feature on ISE which could solve issues described in this document so the only way was to rely on the set of best practices that are implemented on the network and ISE side the minimize risks.
+Best Practices That Can Minimize The Amount of Stale or Phantom Sessions in The ISE Deployment
+Always Implement Redirect Based Posture When Possible
+A common counterargument to this recommendation is a bad user experience as pop-ups in the OS or Browsers are seen which indicate redirection while AnyConnect ISE posture module in the background performs an assessment process.
+As a solution to this, it is possible to redirect ONLY ISE Posture module discovery probes and selectively allow all other traffic.
+Example shows redirect ACL designed to redirect only HTTP requests to Discovery Host (10.1.1.1 in this example) and enroll.cisco.com (172.16.1.80):
+ip access-list extended REDIRECT-DH-ENROLL
+
+ permit tcp any host 10.1.1.1 eq www
+
+ permit tcp any host 172.16.1.80
+
+ deny   ip any any
+To keep an acceptable level of security such redirect ACL can be combined with DACL assigned from ISE.
+Pending State Allows Connections Only to PSN Where Endpoint was Authenticated
+This approach useful for the environments where url-redirection is not supported (for example implementations with the 3-rd party NADs).
+As a solution, you need to implement multiple PosturePending authorization policies (one per PSN). Each policy needs to contain as one of the conditions the name of PSN where authentication took place. In the authorization profile assigned to each policy access to all PSNs must be blocked except the node where authentication happened.
+Create authorization policies for 2 nodes deployment:
+1. Posture Pending policy for PSN1.
+2. PSN1 name used as a condition in the policy.
+3. Authorization profile with ACL which blocks access to all PSNs except PSN1.
+4. Posture Pending policy for PSN2.
+5. PSN2 name used as a condition in the policy.
+6. Authorization profile with ACL which blocks access to all PSNs except PSN2.
+7. Posture 'Compliant' authorization policy.
+The figure explains how this approach works:
+1. Authentication hits PSN1.
+2. As a result of configured authorization policies, PSN1 assigns authorization profile which blocks access to all other nodes except PSN1.
+3. AnyConnect ISE posture module restarts the discovery process.
+4. Probe to PSN2 blocked by the NAD as by an ACL assigned earlier.
+5. Probe to PSN1 allowed by ACL assigned on NAD.
+Load Balancer Best Practices
+Enabled stickiness on LB for authentication and accounting with Calling-Station-ID as a stickiness key. More details about LB best practices for ISE available here.
+Use stickiness timer longer than an average work-day to cover the moment when PC goes into sleep (for example 10 hours instead of 8 hours).
+In case if re-authentication is implemented, use re-authentication timer slightly lower than stickiness timer (for example 8 hours if stickiness configured for 10 hours). This ensures that the stickiness interval is prolonged by re-authentication.
+Posture Over VPN Use-case 
+Ensures that the accounting-interim update interval is higher or equal to vpn-session-timeout. This protects from accounting flapping between PSNs on long-living VPN sessions. 
+This example shows the interim accounting update interval configured for 20 hours. This does not prevent the initial interim update which carries IP address assigned to the endpoint.
+aaa-server ISE protocol radius
+
+ interim-accounting-update periodic 20
+
+group-policy SSL-VPN attributes
+
+ vpn-idle-timeout 1200
+
+ vpn-session-timeout 1200
+Best Practices Can be Implemented to Minimize The Impact From The Absence of ISE Posture Module Discovery Restart
+Enable Posture Lease 
+This is a feature on ISE which marks endpoint as a compliant for a defined period (1-365 day). Posture lease value is an endpoint attribute which means that it is stored ISE DB. All endpoint attributes which include posture lease are replicated across all the nodes in ISE deployment.
+When PSN gets a new session for the endpoint posture lease can be utilized to mark the session as Compliant right away.
+To make this decision PSN uses 3 values. Those values are:
+Amount of days defined for posture lease in ISE settings: Navigate to Administration > System > Posture > General Settings:
+Value of PostureExpiry attribute -  this is an actual endpoint attribute which contains an Epoch timestamp. PostureExpiry value is initially populated upon the first successful posture attempt for endpoint after ISE administrator enabled posture lease. Later this value updated on the next successful posture attempt which happens after lease expiration.
+            You can see a PostureExpiry in Context Visibility > Endpoints while one of the postured endpoints is opened:
+           This value can be converted into the human-readable timestamp for example here - https://www.epochconverter.com/
+PSN system time at the moment when new authentication take place
+When authentication for an endpoint with posture lease hits PSN it uses PostureExpiry and system date to get a number of days that passed from the last successful posture check. If the result value is within a posture lease interval defined in settings the session gets a Compliant status. If the result value is higher than the lease value the session gets an Unknown status. This triggers the posture to be executed again and new PostureExpiry value can be saved.
+The figure explains the process when failover happens:
+1. Initial authentication happens with PSN1.
+2. Session ABC created in the session cache.
+3. Posture assessment happens.
+4. Session status changes to Compliant
+5. COA triggered by posture status change leads to re-authentication of the endpoint to apply the next access level.
+6. PostureExpiry value saved in the endpoint.
+7. Endpoint data replicated across the deployment.
+8. Next authentication hits PSN2.
+9. PSN2 checks if the endpoint is within a valid posture lease.
+11. Session added to the session cache as Compliant.
+12. Due to the valid lease, the session created with posture status Compliant.
+Re-authentication Implementation 
+Always push re-authentication timer from ISE with RADIUS-Request selected in Maintain Connectivity During Reauthentication. This setting ensures that NAD keeps the same session ID on re-authentication.
+.
+Environments With Load Balancers
+The same set of best practices can be implemented that were explained in the stale/phantom session section.
+Different Subnets Can be Used for Pending and The Compliant States
+When network design provides the opportunity to use different subnets Pending and Compliant states, this approach guaranty that every change in posture status results in the Default Gateway change.
+Posture Assessment Used in the Same interval as a Re-authentication Timer
+Posture Assessment can be enabled with the interval equal to the reauthentication timer. In such a case, when the original PSN becomes not available PRA failure restarts the discovery process.
+Modern Approach - Posture State Sharing
+As part of an implemented enhancement, described in Cisco bug ID CSCvi35647patch 6 for ISE 2.6 got a new feature that implements the sharing of session posture status across all the nodes in ISE deployment. This enhancement is integrated into future releases: ISE 2.7 patches 2 and ISE 3.0.
+This new feature is based on Light Session Directory (LSD) mechanism which has been introduced in ISE 2.6. In the newer versions, this functionality has been renamed to Light Data Distribution (LDD) Radius Session Directory.  Light Data Distribution is enabled by default and allows the sharing of a limited session context between ISE nodes. There is no such thing as full session context replication between PSNs, only a limited amount of attributes shared for each session.
+The main idea behind Light Session Directory is to remove the need to execute resource expensive API calls to MNT when one of the nodes in the deployment has to figure out who is the current session owner. Mostly owner lookup is needed when COA flow starts. With LDD every PSN can find an actual owner of the session from the local Radius Session Directory cache. 
+Light Data Distribution Architecture
+This functionality contains these elements:
+Radius Session Directory (RSD) cache - this cache exists on every ISE node and stores all active sessions presented in ISE deployment. Every session has a limited amount of attributes in the cache. Examples of the attributes stored in the Radius Session Directory for each session:
+
+Session ID.
+Endpoint MAC.
+CallingStationID.
+Endpoint IP.
+PSN IP - PSN where authentication happened.
+PSN FQDN - same as above.
+NAS-IP-Address.
+NAS-IPv6-Address.
+State - Authenticated, Started, Stopped.
+RabbitMQ exchange - There is an exchange formed in which Publisher, related Queue and Consumer are presented on every node in ISE deployment. This ensures that the full-mesh topology formed between all the ISE nodes.
+Publisher - the Radius Session Directory represents a publisher here. When a new successful authentication processed by PSN new session gets created in the PSN session cache. For this session, a limited set of attributes is placed into the Radius Session Directory.
+Consumer - on all other nodes Radius Session Directory represents a consumer.
+Note: General RabbitMQ terminology and architecture is outside of this document scope. 
+The figure explains how COA flow works with RSD cache:
+1. Initial authentication happens with PSN1.
+2. Session ABC created in the session cache.
+3. Required attributes are saved into RSD.
+4. Session shared over RabbitMQ with all other ISE nodes.
+5. Session gets created in RSD cache on all ISE nodes.
+6. New profile data arrives on PSN2.
+7. Endpoint gets reprofiled and in case of the change which requires COA execution PSN2 proceeds with the next step.
+8. An internal API call submitted to RSD cache to execute COA.
+9. Data from RSD cache used to prepare a Proxy COA message (a COA which goes from one ISE node to another, it contains all details which destination node can use to issue a CAO request back to NAD). COA message first transferred internally to PRRT Runtime (Actual AAA server inside of ISE).
+10. PSN2 sends a COA message to PSN1.
+11. PSN1 sends a COA message to NAD.
+To troubleshoot communication over  LDD on the ISE you can enable Light Session Director component into DEBUG:
+ example of debug message from lsd.log file for session creation and publishing on the original PSN:
+DEBUG  [pool-45-thread-6][] cisco.cpm.lsd.service.LSDRedisClient -::::- Mapping Session ID 0a3e9498000008e05e071990 to session {"sessionID":"0a3e9498000008e05e071990","endpointMAC":"C0-4A-00-1F-6B-39","callingStationId":"c0-4a-00-1f-6b-39","ipv6AdressLst":[],"psnIP":"192.168.43.26","deviceIP":"192.168.255.102","destinationIP":"192.168.43.26","nasIP":"192.168.255.102","auditSessionID":"0a3e9498000008e05e071990","acctSessionID":"5e07197b/c0:4a:00:1f:6b:39/2299","timeStamp":1577523495,"status":"Started","id":"614f6c44-6c78-4289-b9fd-b352ff012ca4"}
+
+DEBUG  [PrRTEvents-Executor-2][] cisco.cpm.lsd.service.LSDNetAccessEventListener -::::- Publishing session update for session 0a3e9498000008e05e071990
+
+DEBUG  [PrRTEvents-Executor-2][] cisco.cpm.lsd.service.SessionPublisher -::::- Forwarding session 07a26b4b-ea13-438b-99b5-0bbadc9d8bac to batch manager
+On all other ISE nodes, you see how a session was consumed:
+[pool-35-thread-38][] cisco.cpm.lsd.service.SessionConsumer -::::- Consumer is processing : sessionID:[0a3e9498000008e05e071990] status:[Started] id:[614f6c44-6c78-4289-b9fd-b352ff012ca4] auditSessionID:[0a3e9498000008e05e071990] accountingSessionID:[5e07197b/c0:4a:00:1f:6b:39/2299] endpointMAC:[C0-4A-00-1F-6B-39] callingStationId: [c0-4a-00-1f-6b-39] endpointIP:[null], IPv6 : [[]], psnIP:[192.168.43.26] deviceIP:[192.168.255.102] destinationIP:[192.168.43.26] nasIP:[192.168.255.102] nasIPv6:[null] timeStamp:[1577523495]
+Posture Status Sharing Over RSD
+Posture status sharing between the nodes solves the problem which has the symptom like 'AnyConnect ISE posture module shows compliant while session status on ISE is pending' when the root cause is either Stale/Phantom session or Re-authentication on different PSN with an original session ID which did not trigger discovery restart. As soon as the session becomes Compliant, this information places into the session RSD, and later it can be used by every PSN in the deployment.
+There are still some other corner cases that the described feature cannot solve. For example, a scenario when NAD runs re-authentication on the same PSN but with a different session ID. Such scenarios can be handled with best practices described in this document.
+The figure demonstrates the topology used for a test of posture status sharing:
+Posture Status sharing Over RSD - Stale/Phantom Session
+To create a stale session authentication has been initially performed on the skuchere-ise26-1 and later NAD has been reconfigured to send accounting to skuchere-ise26-3. After one accounting message has been forwarded to the wrong PSN NAD has been reconfigured again to send accounting back to skuchere-ise26-1.
+The figure demonstrates an accounting report which proofs the presence of the phantom session on skuchere-ise26-3:
+1. Accounting-Start messages processed by skuchere-ise26-1.
+2. Interim Accounting-Update for the same session processed by skuchere-ise26-3.
+3. The session finishes later on  skuchere-ise26-1.
+After some time endpoint again connects to the network but the redirection no longer works. In the guest.log of PSN - skuchere-ise26-3, you can see these log messages with client-webapp component enabled into DEBUG:
+2020-04-08 13:30:48,217 DEBUG [https-jsse-nio-192.168.43.226-8443-exec-4][] cisco.cpm.client.posture.Util -::- Local session 0A3E946C0000007D5B679296 is stale. Newer session for 00-50-56-B6-0B-C6 is 0A3E946C000000805B7C43A3. Owned by skuchere-ise26-1.example.com
+When PSN detects that it holds a stale/phantom session for the endpoint, it does not reply to the ISE posture module and this allows us to get the right answer from the PSN where the latest authentication happened.
+As a solution to the stale/phantom session problem now at the time of the session lookup PSN checks the presence of any new session for the endpoint in the RSD. In case if RSD contains session ID different from what PSN has in the local session cache it assumes that the session presented in the session cache is stale.
+Posture Status Sharing Over RSD - Failover Between PSNs
+To reproduce this scenario a short re-authentication timer has been enabled in the authorization profile assigned to the endpoint in the compliant state. Later NAD was reconfigured to send authentication and accounting to another PSN (skuchere-ise26-3). Upon re-authentication timer expiration, the same session was unauthenticated on the different PSN.
+The figure demonstrates an authentication report which shows failover for the sane session from skuchere-ise26-1 to skuchere-ise26-3:
+1. Authentication happens on skuchere-ise26-1, authorization profile with redirection is assigned.
+2. COA after successful posture assessment.
+3. Next authentication when authorization profile for the compliant state is assigned.
+4. Authentication hits different PSN but it still gets authorization profile for the compliant state.
+The session gets compliant status on the new PSN after failover in ise-psc.log with epm-pip and nsf-session components enabled into DEBUG:
+2020-04-09 11:06:42,176 DEBUG [Thread-7979][] cpm.nsf.session.impl.SessionCache -::::- Looking up session 0A3E946C000000896011D045 for attribute Session Session.PostureStatus
+2020-04-09 11:06:42,176 DEBUG [Thread-7979][] cpm.nsf.session.api.ExecutionContext -::::- Execution context has session id 0A3E946C000000896011D045
+2020-04-09 11:06:42,176 DEBUG [Thread-7979][] cpm.nsf.session.impl.PIPManager -::::- Returning a PIP com.cisco.cpm.nsf.session.impl.SessionPIP for type SESSION and flow null
+2020-04-09 11:06:42,176 DEBUG [Thread-7979][] cpm.nsf.session.api.ExecutionContext -::::- Execution context has session id 0A3E946C000000896011D045
+2020-04-09 11:06:42,176 DEBUG [Thread-7979][] cpm.nsf.session.impl.SessionCache -::::- Looking up session 0A3E946C000000896011D045
+2020-04-09 11:06:42,176 DEBUG [SessionLifecycleNotifier][] cpm.nsf.session.internal.LRUAgingAlogrithm -::::- Accessed session 0A3E946C000000896011D045
+2020-04-09 11:06:42,176 DEBUG [Thread-7979][] cpm.nsf.session.impl.SessionCache -::::- Returning for session 0A3E946C000000896011D045 data Attrs: {SavedUserNames=[bob@example.com], Acs.LastStepTime=1586423202174, Acs.AD-User-Qualified-Name=bob@example.com, Acs.AD-User-Resolved-DNs=CN=bob,CN=Users,DC=example,DC=com, Acs.StepData=[110=EXAMPLE, 111=bob@example.com, 112=example.com, 113=example.com, 115=example.com, 116=EXAMPLE], Acs.AD-Log-Id=[1585911138/4778, 1585911138/4779], __IntIdGrps__=[Ljava.lang.String;@6d3c29b5, IdentityGroup.Description=[Ljava.lang.String;@3fca88fb, EXAMPLE.ExternalGroups=S-1-5-21-875452798-754861120-3039794717-513, Acs.AD-Groups-Names=example.com/Users/Domain Users, Acs.AuthenCPMSessionID=0A3E946C000000896011D045, Acs.IsMachineAuthentication=false, InternalEndpoint.IdentityGroup=[Ljava.lang.String;@6daf4c5, IDStoreUserQueryCache=[EXAMPLE#bob@example.com], Acs.CurrentIDStoreName=EXAMPLE, Acs.AD-User-Join-Point=EXAMPLE.COM, Acs.Step=[24432, 24325, 24313, 24319, 24323, 24355, 24416], Acs.CustomerMessageDuplicator=, Network Access.WasMachineAuthenticated=false, IdentityGroup.Name=[Ljava.lang.String;@570ab37a, Acs.StepDataStart=110, Acs.AD-User-DNS-Domain=example.com, Network Access.AuthenticationMethod=4, Acs.AD-User-Resolved-Identities=bob@example.com, InternalUser.IdentityGroup=[Ljava.lang.String;@51a6caed, Acs.AuthenticationMethod=4, Acs.AD-User-NetBios-Name=EXAMPLE, Normalised Radius.RadiusFlowType=0, Network Access.AuthenticationIdentityStore=EXAMPLE, EXAMPLE.IdentityAccessRestricted=false, Acs.AD-User-SamAccount-Name=bob}
+IndexValues: {}
+
+2020-04-09 11:06:42,177 DEBUG [Thread-7979][] cisco.cpm.posture.pip.PostureStatusPIP -::::- set postureStatus based on posture LSD dictionary: Compliant
+2020-04-09 11:06:42,177 DEBUG [Thread-7979][] cisco.cpm.posture.pip.PostureStatusPIP -::::- PostureStatusPIP for mac 00-50-56-B6-0B-C6 - Attribute Session.PostureStatus value is Compliant
+The original issue has been solved with the addition of extra logic into the posture status selection process. The figure demonstrates what has been changed (changes highlighted in red):
+Revision History
+Revision Publish Date Comments
+2.0
+31-May-2023
+Recertification
+1.0
+22-Apr-2020
+Initial Release
+Contributed by Cisco Engineers
+Serhii Kucherenko
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+ISE Posture Deployment Best Practices and Considerations
+Cisco Identity Services Engine Administrator Guide, Release 2.2 --- Configure Client Posture Policies
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine

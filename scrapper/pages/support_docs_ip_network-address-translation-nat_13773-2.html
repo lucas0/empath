@@ -1,0 +1,262 @@
+Configuration Examples and TechNotes
+Sample Configuration Using the ip nat outside source static Command
+Save
+Translations
+Download
+Print
+
+
+
+Updated:January 3, 2018
+Document ID:13773
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Configure
+Network Diagram
+Configurations
+Verify
+Troubleshoot
+Summary
+Related Information
+Introduction
+This document provides a sample configuration with the use of the ip nat outside source static command and includes a brief description of what happens to the IP packet during the NAT process. Consider the network topology in this document as an example.
+Prerequisites
+Requirements
+Ensure that you meet these requirements before you attempt this configuration - NAT: Local and Global Definitions.
+See the Related Information section of this document for further information.
+Components Used
+The information in this document is based on Cisco 2500 Series Routers on Cisco IOS® Software Release 12.2(27) .
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Configure
+This section presents you with the information to configure the features this document describes.
+Note: Use the Command Lookup Tool (registered customers only) to find additional information on the commands that this document uses.
+Network Diagram
+This document uses this network setup.
+When you issue a ping sourced from Router 2514W's Loopback1 interface destined to Router 2501E's Loopback0 interface, this is what happens:
+On the outside interface (S1) of Router 2514X, the ping packet shows up with a Source Address (SA) of 172.16.89.32 and a Destination Address (DA) of 171.68.1.1. NAT translates the SA to the Outside Local Address 171.68.16.5 (according to the ip nat outside source static command configured on Router 2514X). Router 2514X then checks its routing table for a route to 171.68.1.1. If the route does not exist, Router 2514X drops the packet. In this case, Router 2514X has a route to 171.68.1.1 through the static route to 171.68.1.0. It forwards the packet to the destination. Router 2501E sees the packet on its incoming interface (E0) with an SA of 171.68.16.5, and a DA of 171.68.1.1. It responds by sending an Internet Control Message Protocol (ICMP) echo reply to 171.68.16.5. If it does not have a route, it drops the packet. However, in this case it has the (default) route. Therefore, it sends a reply packet to Router 2514X, using an SA of 171.68.1.1, and a DA of 171.68.16.5. Router 2514X sees the packet and checks for a route to the 171.68.16.5 address. If it does not have one, it responds with an ICMP unreachable reply. In this case, it has a route to 171.68.16.5 (due to the static route). It therefore translates the packet back to the 172.16.89.32 address, and forwards it out its outside interface (S1).
+Configurations
+This document uses these configurations:
+Router 2514W
+Router 2514X
+Router 2501E
+Router 2514W
+hostname 2514W
+!
+
+
+!--- Output suppressed.
+
+interface Loopback1
+ ip address 172.16.89.32 255.255.255.0
+!
+interface Ethernet1
+ no ip address
+ no ip mroute-cache
+!
+interface Serial0
+ ip address 172.16.191.254 255.255.255.252
+ no ip mroute-cache
+!
+
+!--- Output suppressed.
+
+ip classless
+ip route 0.0.0.0 0.0.0.0 172.16.191.253
+
+!--- Default route to forward packets to 2514X.
+
+!
+
+
+!--- Output suppressed.
+Router 2514X
+hostname 2514X
+!
+
+
+!--- Output suppressed.
+
+ip nat outside source static 172.16.89.32 171.68.16.5
+
+!--- Outside local address.
+
+!
+
+
+!--- Output suppressed.
+
+interface Ethernet1
+ ip address 171.68.192.202 255.255.255.0
+ ip nat inside
+
+!--- Defines Ethernet 1 as a NAT inside interface.
+
+ no ip mroute-cache
+ no ip route-cache
+!
+interface Serial1
+ ip address 172.16.191.253 255.255.255.252
+ no ip route-cache
+ ip nat outside
+
+!--- Defines Serial 1 as a NAT outside interface.
+
+ clockrate 2000000
+
+
+
+!
+
+
+!--- Output suppressed.
+
+ip classless
+ip route 171.68.1.0 255.255.255.0 171.68.192.201
+ip route 171.68.16.0 255.255.255.0 172.16.191.254
+
+!--- Static routes for reaching the loopback interfaces
+
+
+!--- on 2514E and 2514W.
+
+!
+
+
+!--- Output suppressed.
+Router 2501E
+hostname rp-2501E
+!
+
+
+!--- Output suppressed.
+
+interface Loopback0
+ ip address 171.68.1.1 255.255.255.0
+!
+interface Ethernet0
+ ip address 171.68.192.201 255.255.255.0
+!
+
+
+!--- Output suppressed.
+
+ip classless
+ip route 0.0.0.0 0.0.0.0 171.68.192.202
+
+!--- Default route to forward packets to 2514X.
+
+!
+
+
+!--- Output suppressed.
+Verify
+Use this section to confirm that your configuration works properly.
+The Cisco CLI Analyzer (registered customers only) (OIT) supports certain show commands. Use the Cisco CLI Analyzer to view an analysis of show command output.
+Use the show ip nat translations command to check the translation entries, as this output shows.
+2514X#show ip nat translations
+Pro Inside global      Inside local       Outside local      Outside global
+--- ---                ---                171.68.16.5        172.16.89.32
+2514X#
+Troubleshoot
+This example uses the NAT translation debugging and IP packet debugging to demonstrate the NAT process.
+Note: Because the debug commands generate a significant amount of output, use them only when traffic on the IP network is low so that other activity on the system is not adversely affected.
+Note: Refer to Important Information on Debug Commands before you use debug commands.
+This output is the result of running the debug ip packet and debug ip nat commands simultaneously on Router 2514X, while pinging from the Router 2514W loopback1 interface address (172.16.89.32) to the Router 2501E loopback0 interface address (171.68.1.1)
+This output shows the first packet arriving on the outside interface of Router 2514X. The source address of 172.16.89.32 gets translated to 171.68.16.5. The ICMP packet is forwarded toward the destination out the Ethernet1 interface.
+5d17h: NAT: s=172.16.89.32->171.68.16.5, d=171.68.1.1 [171]
+5d17h: IP: tableid=0, s=171.68.16.5 (Serial0), d=171.68.1.1 (Ethernet0), routed
+via RIB
+5d17h: IP: s=171.68.16.5 (Serial0), d=171.68.1.1 (Ethernet0), g=171.68.192.201,
+len 100, forward
+5d17h:     ICMP type=8, code=0
+This output shows the return packet sourced from 171.68.1.1 with a destination address of 171.68.16.5, which gets translated to 172.16.89.32. The resulting ICMP packet gets forwarded out the Serial1 interface.
+5d17h: IP: tableid=0, s=171.68.1.1 (Ethernet0), d=171.68.16.5 (Serial0), routed
+via RIB
+5d17h: NAT: s=171.68.1.1, d=171.68.16.5->172.16.89.32 [171]
+5d17h: IP: s=171.68.1.1 (Ethernet0), d=172.16.89.32 (Serial0), g=172.16.191.254,
+ len 100, forward
+5d17h:     ICMP type=0, code=0
+The exchange of ICMP packets continues. The NAT process for this debug output is the same as the previous output.
+5d17h: NAT: s=172.16.89.32->171.68.16.5, d=171.68.1.1 [172]
+5d17h: IP: tableid=0, s=171.68.16.5 (Serial0), d=171.68.1.1 (Ethernet0), routed
+via RIB
+5d17h: IP: s=171.68.16.5 (Serial0), d=171.68.1.1 (Ethernet0), g=171.68.192.201,
+len 100, forward
+5d17h:     ICMP type=8, code=0
+5d17h: IP: tableid=0, s=171.68.1.1 (Ethernet0), d=171.68.16.5 (Serial0), routed
+via RIB
+5d17h: NAT: s=171.68.1.1, d=171.68.16.5->172.16.89.32 [172]
+5d17h: IP: s=171.68.1.1 (Ethernet0), d=172.16.89.32 (Serial0), g=172.16.191.254,
+ len 100, forward
+5d17h:     ICMP type=0, code=0
+5d17h: NAT: s=172.16.89.32->171.68.16.5, d=171.68.1.1 [173]
+5d17h: IP: tableid=0, s=171.68.16.5 (Serial0), d=171.68.1.1 (Ethernet0), routed
+via RIB
+5d17h: IP: s=171.68.16.5 (Serial0), d=171.68.1.1 (Ethernet0), g=171.68.192.201,
+len 100, forward
+5d17h:     ICMP type=8, code=0
+5d17h: IP: tableid=0, s=171.68.1.1 (Ethernet0), d=171.68.16.5 (Serial0), routed
+via RIB
+5d17h: NAT: s=171.68.1.1, d=171.68.16.5->172.16.89.32 [173]
+5d17h: IP: s=171.68.1.1 (Ethernet0), d=172.16.89.32 (Serial0), g=172.16.191.254,
+ len 100, forward
+5d17h:     ICMP type=0, code=0
+5d17h: NAT: s=172.16.89.32->171.68.16.5, d=171.68.1.1 [174]
+5d17h: IP: tableid=0, s=171.68.16.5 (Serial0), d=171.68.1.1 (Ethernet0), routed
+via RIB
+5d17h: IP: s=171.68.16.5 (Serial0), d=171.68.1.1 (Ethernet0), g=171.68.192.201,
+len 100, forward
+5d17h:     ICMP type=8, code=0
+5d17h: IP: tableid=0, s=171.68.1.1 (Ethernet0), d=171.68.16.5 (Serial0), routed
+via RIB
+5d17h: NAT: s=171.68.1.1, d=171.68.16.5->172.16.89.32 [174]
+5d17h: IP: s=171.68.1.1 (Ethernet0), d=172.16.89.32 (Serial0), g=172.16.191.254,
+ len 100, forward
+5d17h:     ICMP type=0, code=0
+5d17h: NAT: s=172.16.89.32->171.68.16.5, d=171.68.1.1 [175]
+5d17h: IP: tableid=0, s=171.68.16.5 (Serial0), d=171.68.1.1 (Ethernet0), routed
+via RIB
+5d17h: IP: s=171.68.16.5 (Serial0), d=171.68.1.1 (Ethernet0), g=171.68.192.201,
+len 100, forward
+5d17h:     ICMP type=8, code=0
+5d17h: IP: tableid=0, s=171.68.1.1 (Ethernet0), d=171.68.16.5 (Serial0), routed
+via RIB
+5d17h: NAT: s=171.68.1.1, d=171.68.16.5->172.16.89.32 [175]
+5d17h: IP: s=171.68.1.1 (Ethernet0), d=172.16.89.32 (Serial0), g=172.16.191.254,
+ len 100, forward
+5d17h:     ICMP type=0, code=0
+Summary
+When the packet travels from outside to inside, translation occurs first, and then the routing table is checked for the destination. When the packet travels from inside to outside, the routing table is checked for the destination first, and then translation occurs. Refer to NAT Order of Operation for further information.
+It is important to note which part of the IP packet gets translated when using each of the commands this documen discusses. This table contains a guideline:
+Command Action
+ip nat outside source static
+Translates the source of the IP packets that travel outside to inside.
+Translates the destination of the IP packets that travel inside to outside.
+ip nat inside source static
+Translates the source of IP packets that travel inside to outside.
+Translates the destination of the IP packets that travel outside to inside.
+These guidelines indicate that there is more than one way to translate a packet. Based on your specific needs, you should determine how to define the NAT interfaces (inside or outside) and what routes the routing table should contain before or after translation. Keep in mind that the portion of the packet that is translated depends upon the direction the packet travels, and how you configure NAT.
+Related Information
+Sample Configuration Using the ip nat outside source list Command
+Configuring Network Address Translation: Getting Started
+NAT Support Page
+Technical Support & Documentation - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+03-Jan-2018
+Initial Release
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Sample Configuration Using the ip nat outside source list Command
+Configure Network Address Translation
+Cisco IOS IP Addressing Services Command Reference --- ip dhcp-client network-discovery through ip nat sip-sbc
++ Show 3 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)

@@ -1,0 +1,385 @@
+Configuration Examples and TechNotes
+ASR 1000 Box-to-Box NAT High Availability Configuration Example
+Save
+Translations
+Print
+Updated:March 7, 2017
+Document ID:118768
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Configure
+B2BHA Failover Triggers
+Minimum Configuration
+Network Diagram with Basic L2/L3 Connectivity
+Verify
+Verification Commands and Expected Output
+Useful Commands
+Troubleshoot
+Introduction
+This document describes the configuration for Box-to-Box-NAT High Availability (B2B NAT HA) on Cisco IOS®-XE devices, with the focus on the Aggregation Services Router (ASR)1000 family.
+B2B NAT HA is a method to achieve high availability of applications such as Zone-Based Firewall (ZBFW), Network Address Translation (NAT), VPN, Session Border Controller (SBC), and so on between ASR 1000 family routers. This document describes how to configure B2B NAT HA on the Cisco ASR 1000 platform along with the verification.
+Prerequisites
+Requirements
+Cisco recommends that you have knowledge of these topics:
+Overview knowledge of the ASR 1000 platform architecture
+Basic knowledge on High Availability and NAT technologies
+Components Used
+The information in this document is based on the ASR 1000 family with Cisco IOS Version XE 3.10 and later releases. B2B NAT HA is supported on Cisco IOS-XE Release 3.5 and later.
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Configure
+B2BHA Failover Triggers
+Some of the common failover triggers are:
+Power loss/reload (this includes crashes)on the active.
+Reload of Embedded Service Processor (ESP) (either planned or unplanned).
+Control interface for Redundancy Group (RG) is shutdown/link down.
+Data interface for RG is shutdown/link down.
+Tracked Object Failure (IP Service Level Agreement).
+Protocol keep-alive failure.
+The run-time priority of the active goes down below that of the threshold configured.
+The run-time priority of the active goes down below that of the standby.
+Minimum Configuration
+This section describes how to configure B2B NAT HA along with topology information.
+B2 BHA deployments could have these three topologies:
+LAN-LAN
+LAN-WAN
+LAN Mesh
+Note: The average redundancy packet size is 256 bytes.
+Network Diagram with Basic L2/L3 Connectivity
+Basic L2/L3 Connectivity
+Configuration could be divided in two major parts. One part is the basic configuration that enables RG, redundancy protocol, timers, control, and data interfaces. The second part relates to the actual data/traffic interfaces and its association with RG.
+This example tries to achieve B2B NAT HA on the ASR with the far-end server 192.168.5.5 from the LAN 172.16.1.4. These configurations are prepared with STATIC NAT configuration at the moment.
+ip nat pool POOL1 200.200.200.200 200.200.200.200 netmask 255.255.255.252
+ip nat inside source list NAT pool POOL1 redundancy 1 mapping-id 252
+
+Extended IP access list NAT
+    10 permit ip host 172.16.1.4 host 192.168.5.5
+ASR-1 
+
+redundancy
+ mode none
+ application redundancy
+ group 1
+ name TEST
+ preempt
+ priority 150
+ control GigabitEthernet0/0/2
+
+ protocol 1
+ data GigabitEthernet0/0/3
+ASR-2
+    
+redundancy
+mode none
+application redundancy
+group 1
+name TEST
+preempt
+priority 50
+control GigabitEthernet0/0/2
+
+protocol 1
+data GigabitEthernet0/0/3
+Both the ASRs should be able to reach the public IP address provided by the ISP.
+ASR-1#ping 200.200.200.200
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 200.200.200.200, timeout is 2 seconds:
+!!!!!
+Success rate is 100 percent (5/5), round-trip min/avg/max = 1/1/1 ms
+ASR-2#ping 200.200.200.200
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 200.200.200.200, timeout is 2 seconds:
+!!!!!
+The LAN Facing interface is connected to the distribution switches, which are in turn connected to the hosts.
+ASR-1#show run int GigabitEthernet0/0/0
+interface GigabitEthernet0/0/0
+ ip address 172.16.1.2 255.255.255.248
+ ip nat inside
+ negotiation auto
+ cdp enable
+ redundancy rii 100
+ redundancy group 1 ip 172.16.1.5
+  exclusive decrement 100
+end
+ASR-2#show run int GigabitEthernet0/0/0
+interface GigabitEthernet0/0/0
+ ip address 172.16.1.3 255.255.255.248
+ ip nat inside
+ negotiation auto
+ cdp enable
+ redundancy rii 100
+ redundancy group 1 ip 172.16.1.5
+  exclusive decrement 100
+end
+The ISP Facing interface has this configuration:
+ASR-1#show run int gi0/0/1
+interface GigabitEthernet0/0/1
+ ip address 192.168.3.2 255.255.255.252
+ ip nat outside
+ negotiation auto
+ cdp enable
+ redundancy rii 101
+ redundancy asymmetric-routing enable
+ redundancy group 1 decrement 20
+end
+ASR-2#show run int gi0/0/1
+interface GigabitEthernet0/0/1
+ ip address 192.168.4.2 255.255.255.252
+ ip nat outside
+ negotiation auto
+ cdp enable
+ redundancy rii 101
+ redundancy asymmetric-routing enable
+ redundancy group 1 decrement 20
+end
+
+The Data and the Control interfaces between the ASRs have been configured as shown in these sections.
+Control Interface
+ASR-1#show run int gi0/0/2
+interface GigabitEthernet0/0/2
+description CONTROL-INTERFACE
+ip address 10.10.10.1 255.255.255.252
+negotiation auto
+cdp enable
+end
+ASR-2#show run int gi0/0/2
+interface GigabitEthernet0/0/2
+description CONTROL INTERFACE
+ip address 10.10.10.2 255.255.255.252
+negotiation auto
+cdp enable
+end
+Data Interface
+ASR-1#show run int gi0/0/3
+interface GigabitEthernet0/0/3
+description DATA INTERFACE
+encapsulation dot1Q 10
+ip address 10.11.11.1 255.255.255.252
+end
+ASR-2#show run int gi0/0/3
+interface GigabitEthernet0/0/3
+description DATA INTERFACE
+encapsulation dot1Q 10
+ip address 10.11.11.2 255.255.255.252
+end
+Note:
+- You must not configure a redundant interface identifier (RII) on an interface that is configured either as a data interface or as a control interface.
+- You must configure the RII and asymmetric routing on both active and standby devices.
+- You cannot enable asymmetric routing on the interface that has a virtual IP address configured.
+Verify
+Verification Commands and Expected Output
+The Cisco CLI Analyzer  (registered customers only) supports certain show commands. Use the Cisco CLI Analyzer in order to view an analysis of show command output.
+ASR-1#show redundancy application group 
+Group ID    Group Name                      State
+--------    ----------                      -----
+1           TEST                           ACTIVE
+
+ASR-2#show redundancy application group
+Group ID    Group Name                      State
+--------    ----------                      -----
+1           TEST                           STANDBY
+
+ASR-1#show redundancy application group 1
+Group ID:1
+Group Name:TEST
+
+Administrative State: No Shutdown
+Aggregate operational state : Up
+My Role: ACTIVE
+Peer Role: STANDBY
+Peer Presence: Yes
+Peer Comm: Yes
+Peer Progression Started: Yes
+
+RF Domain: btob-one
+     RF state: ACTIVE
+     Peer RF state: STANDBY HOT
+
+ASR-2#show redundancy application group 1
+Group ID:1
+Group Name:TEST
+
+Administrative State: No Shutdown
+Aggregate operational state : Up
+My Role: STANDBY
+Peer Role: ACTIVE
+Peer Presence: Yes
+Peer Comm: Yes
+Peer Progression Started: Yes
+
+RF Domain: btob-one
+     RF state: STANDBY HOT
+     Peer RF state: ACTIVE
+
+ASR-1#show ip nat translations 
+Pro  Inside global         Inside local          Outside local         Outside global
+---  200.200.200.200       172.16.1.4            ---                   ---
+icmp 200.200.200.200:98    172.16.1.4:98         192.168.5.5:98        192.168.5.5:98
+Total number of translations: 2
+
+ASR-2#show ip nat translations 
+Pro  Inside global         Inside local          Outside local         Outside global
+---  200.200.200.200       172.16.1.4            ---                   ---
+icmp 200.200.200.200:98    172.16.1.4:98         192.168.5.5:98        192.168.5.5:98
+Total number of translations: 2
+
+ASR-1#show redundancy application protocol group 1
+
+RG Protocol RG 1
+------------------
+    Role: Active
+    Negotiation: Enabled
+    Priority: 150
+    Protocol state: Active
+    Ctrl Intf(s) state: Up
+    Active Peer: Local
+    Standby Peer: address 10.10.10.2, priority 50, intf Gi0/0/2
+    Log counters:
+        role change to active: 7
+        role change to standby: 7
+        disable events: rg down state 7, rg shut 0
+        ctrl intf events: up 7, down 8, admin_down 7
+        reload events: local request 0, peer request 0
+
+RG Media Context for RG 1
+--------------------------
+    Ctx State: Active
+    Protocol ID: 1
+    Media type: Default
+    Control Interface: GigabitEthernet0/0/2
+        Current Hello timer: 3000
+    Configured Hello timer: 3000, Hold timer: 9000
+    Peer Hello timer: 3000, Peer Hold timer: 9000
+    Stats:
+        Pkts 386597, Bytes 23969014, HA Seq 0, Seq Number 386597, Pkt Loss 0
+        Authentication not configured
+        Authentication Failure: 0
+        Reload Peer: TX 0, RX 0
+        Resign: TX 0, RX 1
+    Standby Peer: Present. Hold Timer: 9000
+        Pkts 386589, Bytes 13144026, HA Seq 0, Seq Number 1503658, Pkt Loss 0
+
+ASR-2#show redundancy application protocol group 1
+
+RG Protocol RG 1
+------------------
+    Role: Standby
+    Negotiation: Enabled
+    Priority: 50
+    Protocol state: Standby-hot
+    Ctrl Intf(s) state: Up
+    Active Peer: address 10.10.10.1, priority 150, intf Gi0/0/2
+    Standby Peer: Local
+    Log counters:
+        role change to active: 8
+        role change to standby: 16009
+        disable events: rg down state 1, rg shut 0
+        ctrl intf events: up 9, down 10, admin_down 1
+        reload events: local request 15999, peer request 2
+
+RG Media Context for RG 1
+--------------------------
+    Ctx State: Standby
+    Protocol ID: 1
+    Media type: Default
+    Control Interface: GigabitEthernet0/0/2
+        Current Hello timer: 3000
+    Configured Hello timer: 3000, Hold timer: 9000
+    Peer Hello timer: 3000, Peer Hold timer: 9000
+    Stats:
+        Pkts 1503674, Bytes 93227788, HA Seq 0, Seq Number 1503674, Pkt Loss 0
+        Authentication not configured
+        Authentication Failure: 0
+        Reload Peer: TX 2, RX 2
+        Resign: TX 8, RX 7
+    Active Peer: Present. Hold Timer: 9000
+        Pkts 386603, Bytes 13144502, HA Seq 0, Seq Number 386613, Pkt Loss 0
+
+ASR-1#show platform hardware qfp active system rg 1
+Redundancy Group 1
+    State:        RG_ACTIVE
+    Bulksync:    NO BULKSYNC REQ
+    Transport:    
+        SYNC_B2B    LISTEN
+            cp hdl 0x01013e8d dp hdl 0x03010006, platfm hdl 0x0000fa35
+        L3_IPV4
+            src addr 10.11.11.1    dest addr 10.11.11.2
+        L4_UDP_RELIABLE
+            src port   19510    dest port   3497
+
+        AR transport not available
+    Stats:
+        RG Request:
+            CREATE        0
+            UPDATE        32048
+            DELETE        0
+        RG State:
+            RG_PREINIT        0
+            RG_INIT            7
+            RG_STANDBY        21
+            RG_ACTIVE        32020
+        RG Transport Request:
+                    NA            0
+            OPEN            16014
+            CLOSE            0
+        RG Transport Status:
+            CONN_ESTB        7
+            CONN_FAIL        0
+            TRANS_DOWN        0
+            TRANS_DOWN_GRACEFUL    8
+        Bulksync:
+            Request            7
+            Success            7
+            Fail            0
+
+ASR-1#show platform hardware qfp active system rg 1 stats 
+    trans index:    00000006  Trans Type:    00000001  RG    1
+    mf_flags    0x40000000  seq_flags    0x700003ff
+    ha_control_state    0x5
+    pending ack        00000000
+    keepalive_timeout    00000100
+    rx_seq_flags        0x8000000
+    rx_seq_num    0x2c0d4a44
+    tx_seq        0xb4965908
+    tx_ack_tail    0xb4965908
+    tx_seq_flags    0x700003ff
+    tx    0000000000580126
+    rx    0000000000580089
+    retx    0000000000000000
+    rx dropped    0000000000000000
+    records dropped    0000000000000000
+    tx dropped    0000000000000000
+    ack dropped    00000000  oob pkts dropped 00000000
+    send dropped 00000000  rx_control_msgs 00580090
+    tx control_msgs 00580078   for_us_hits 01160217
+    sync_alloc_failures 00000000  status_notifications 00000001
+    sync_msgs_received 00580093  sync_msgs_sent 00580133
+    for_us_udp_checksum_drops 00000000
+    acks sent 00580089 rcvd 00580126  nacks sent 00000000 rcvd 00000000
+Useful Commands
+RG on active is reloaded with the redundancy application reload group <rg-number> self command in exec mode.
+RG on active is shut down with the use of these CLI commands in redundancy config mode:
+ISR1(config-red-app)#group 1
+ISR1(config-red-app-grp)#shutdown
+Troubleshoot
+There is currently no specific troubleshooting information available for this configuration.
+Contributed by Cisco Engineers
+Uma Mohanty
+Cisco TAC Engineer
+Girish Devgan
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+NAT Box to Box High Availability Overview
+Configure Network Address Translation
+Verify and Troubleshoot Basic NAT Operations
++ Show 3 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+High Availability

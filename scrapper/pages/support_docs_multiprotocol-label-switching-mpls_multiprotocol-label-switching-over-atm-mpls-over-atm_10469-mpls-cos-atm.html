@@ -1,0 +1,359 @@
+Configuration Examples and TechNotes
+MPLS CoS over ATM: Multi-VC TBR (using CAR)
+Save
+Translations
+Print
+Updated:September 20, 2018
+Document ID:10469
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Multi-Virtual Circuit Tagged Bit Rate (Multi-VC TBR)
+Mechanism
+VC Space
+Hardware and Software Versions
+Conventions
+Configure
+Network Diagram
+Configuration Procedure
+Sample Configurations
+Verify
+Show Commands
+Sample Show Output
+Introduction
+The Multiprotocol Label Switching Class of Service (MPLS CoS) mechanism is a feature that performs differentiated services over ATM. It allows the ATM network to treat different packets based on the EXP (experimental) field (also called CoS) of the MPLS header, which has the same properties and which can be mapped to IP precedence.
+0                   1                   2                   3
+0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|               Label                   | EXP |S|      TTL      |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+This document explains how to make use of this mechanism within an MPLS core network that receives IP packets (without precedence bits set) from different sources.
+Prerequisites
+Multi-Virtual Circuit Tagged Bit Rate (Multi-VC TBR)
+Multi-VC TBR uses different paths and new-service classes to support different treatment over ATM. This method consists of up to four parallel Label Virtual Circuits (LVCs) (or "Tag VC" in old terminology) and maps to MPLS CoS. This table shows the default mapping:
+Label Virtual Circuit Type Class of Service IP Type of Service
+Available 0 0,4
+Standard 1 1,5
+Premium 2 2,6
+Control 3 3,7
+Every Label Switch Router (LSR) has a number of VCs (from one to four) that corresponds for the same destination or "multi-VC". These parallel LVCs are set up by the upstream edge router with label distribution protocol.
+In order to support the LVCs at the switch level, four new CoS categories have been introduced. They are called Tagged Bit Rate (TBR) classes and are best-effort services (as with traditional unspecified bit rate (UBR)). They can be configured in the same way. That is, their relative weights or the limits of their thresholds can be changed.
+ATM Forum Service Class CoS Relative Class Weight Label Virtual Circuit
+CBR 2 Not applicable
+VBR-RT 2 8
+VBR-nRT 3 1
+ABR 4 1
+UBR 5 1
+TBR_1 (WRR_1) 1 1 Available
+TBR_2 (WRR_2) 6 2 Standard
+TBR_3 (WWR_3) 7 3 Premium
+TBR_4 (WWR_4) 8 4 Control
+Note: The new CoS categories are in bold.
+Mechanism
+The edge LSR sets the MPLS CoS field with Committed Access Rate (CAR) on the correct inbound interface. CAR can be configured to act in accordance with a contract or any other specific rule. The LSR at the edge of the ATM network queues the cells that contain the packet in the correct queue (available, standard, premium, or control), dependent on the CoS map. The cells then transit through the MPLS ATM network with the same LVC. The result is that, at any ATM LSR, the cells receive a treatment per CoS:
+Per CoS Weighted Fair Queuing (WFQ) is proportional to the Relative Class Weights.
+Per CoS Weighted Early Packet Discard (WEPD) is a method to discard packets when queues fill up (similar to Weighted Random Early Detection (WRED)).
+As a result, for the LS1010 and the 8540MSR, this per CoS behavior is emulated over per VC queueing.
+VC Space
+MPLS CoS supports standard VC merges. In order to use fewer VCs, you can reduce the LVC used (from four to two, for example). Refer to MPLS CoS over ATM: CoS Map for a sample configuration.
+The subject of the number of VCs is treated in Designing MPLS for ATM: Dimensioning MPLS Label VC Space.
+Hardware and Software Versions
+This configuration was developed and tested with these software and hardware versions:
+Edge LSR
+Software - Cisco IOS® Software Release 12.1(3)T; the Multi-VC feature appeared in Cisco IOS Software Release 12.0(5)T.
+Hardware - Cisco 7200 Routers with PA-A1.
+Note: This feature only works with Cisco 7200s and 7500s with PA-A1.
+Core ATM LSR
+Software - Any software release that supports MPLS; the latest versions are recommended.
+Hardware - The LS1010 and 8540MSR.
+Note: A feature card per-flow queueing (FC-PFQ) is mandatory for the LS1010.
+Conventions
+Refer to Cisco Technical Tips Conventions for more information on document conventions.
+Configure
+In this section, you are presented with the information to configure the features described in this document.
+Note: Use the Command Lookup Tool (registered customers only) to find more information on the commands used in this document.
+Network Diagram
+This document uses this network setup:
+Configuration Procedure
+This document uses this configuration procedure:
+In order to set up four default LVCs (with default mapping), add this instruction to the ATM subinterface configuration of the edge LSRs:
+tag-switching atm multi-vc
+The parallel LVCs set up automatically on the ATM switches. In order to classify the packets, use CAR (refer to the CAR documentation) to set the EXPerimental field of the MPLS header to the desired value. This example sets the CoS of all inbound packets on Ethernet 1/1 interface to 1 (and sets the map to "standard"):
+interface Ethernet1/1
+ rate-limit input 8000 1500 200 conform-action set-mpls-exp-transmit 1 exceed-action set-mpls-exp-transmit 1
+You can also perform traffic control and set the CoS to 2 (map to "premium") for traffic that conforms and to 0 (map to "available") for traffic that exceeds:
+interface Ethernet1/1
+ rate-limit input 64000 8000 16000 conform-action set-mpls-exp-transmit 2 exceed-action set-mpls-exp-transmit 0
+Note: You can also use the tag-switching atm vpi 2-4 command, but it is not mandatory to specify which virtual path identifiers (VPIs) are used for MPLS.
+Note: Remember to configure ip cef (ip cef distributed on a Cisco 7500) on the general configuration of the routers.
+Sample Configurations
+This document uses these configurations:
+Rapid
+Alcazaba
+Capri
+Goldorak
+Ischia
+Rapid
+ !
+ interface Loopback0
+  ip address 223.0.0.12 255.255.255.255
+ !
+ interface Loopback2
+  ip address 7.7.7.7 255.255.255.0
+ !
+ !
+ interface FastEthernet0/1
+  ip address 150.150.0.2 255.255.255.0
+  duplex auto
+  speed auto
+ !
+ !
+ router ospf 1
+  network 7.7.7.7 0.0.0.0 area 0
+  network 150.150.0.0 0.0.0.255 area 0
+  network 223.0.0.0 0.0.0.255 area 0
+ !      
+Alcazaba
+ !
+ ip cef
+ !
+ !
+ interface Loopback0
+  ip address 223.0.0.3 255.255.255.255
+ !
+ interface Loopback1
+  ip address 1.1.1.1 255.255.255.255
+ !
+ interface Ethernet1/1
+  ip address 150.150.0.1 255.255.255.0
+  rate-limit input 64000 32000 64000 conform-action set-mpls-exp-transmit 2 
+  exceed-action set-mpls-exp-transmit 1
+  no ip mroute-cache
+ !
+ !
+ interface ATM4/0
+  no ip address
+  no ip mroute-cache
+  no atm ilmi-keepalive
+ !
+ interface ATM4/0.1 tag-switching
+  ip address 10.0.0.13 255.255.255.252
+  tag-switching atm multi-vc
+  tag-switching atm vpi 2-4
+  tag-switching ip
+ !
+ router ospf 1
+  network 1.1.1.1 0.0.0.0 area 0
+  network 10.0.0.0 0.0.0.255 area 0
+  network 150.150.0.0 0.0.0.255 area 0
+  network 223.0.0.3 0.0.0.0 area 0
+ !
+Capri
+ !
+ interface Loopback1
+  ip address 223.0.0.6 255.255.255.255
+  no ip directed-broadcast
+ !
+ !
+ interface ATM3/0/2
+  ip address 10.0.0.14 255.255.255.252
+  no ip directed-broadcast
+  tag-switching atm vpi 2-4
+  tag-switching ip
+ !
+ interface ATM3/1/2
+  ip address 10.0.0.10 255.255.255.252
+  no ip directed-broadcast
+  tag-switching atm vpi 2-4
+  tag-switching ip
+ !
+ router ospf 2
+  network 10.0.0.0 0.0.0.255 area 0
+  network 223.0.0.6 0.0.0.0 area 0
+ !
+Goldorak
+ !
+ interface Loopback0
+  ip address 223.0.0.2 255.255.255.255
+  no ip directed-broadcast
+ !
+ interface ATM0/1/0
+  ip address 10.0.0.9 255.255.255.252
+  no ip directed-broadcast
+  tag-switching atm vpi 2-4
+  tag-switching ip
+ !
+ !
+ interface ATM0/1/3
+  ip address 11.0.0.1 255.255.255.252
+  no ip directed-broadcast
+  tag-switching atm vpi 5-7
+  tag-switching ip
+ !
+ !
+ router ospf 1
+  network 10.0.0.0 0.0.0.255 area 0
+  network 11.0.0.0 0.0.0.255 area 0
+  network 223.0.0.2 0.0.0.0 area 0
+ !
+Ischia
+ !         
+ ip cef
+ !
+ interface Loopback0
+  ip address 223.0.0.11 255.255.255.255
+ !
+ interface Loopback1
+  ip address 2.2.2.2 255.255.255.255
+ !
+ !
+ interface ATM3/0.158 tag-switching
+  ip address 11.0.0.2 255.255.255.252
+  tag-switching atm multi-vc
+  tag-switching atm vpi 5-7
+  tag-switching ip
+ !
+ router ospf 1
+  log-adjacency-changes
+  network 2.2.2.2 0.0.0.0 area 0
+  network 11.0.0.0 0.0.0.255 area 0
+  network 223.0.0.11 0.0.0.0 area 0
+ !
+Verify
+Use this section to confirm that your configuration works properly.
+The Output Interpreter Tool (registered customers only) (OIT) supports certain show commands. Use the OIT to view an analysis of show command output.
+Show Commands
+On a router LSR:
+show tag-switching forwarding-table
+show tag-switching forwarding-table detail
+On an ATM switch:
+show tag-switching atm-tdp bindings
+show atm vc interface<interface> <vci/vpi>
+Use this section to confirm that your configuration works properly.
+The Output Interpreter Tool (registered customers only) (OIT) supports certain show commands. Use the OIT to view an analysis of show command output.
+Sample Show Output
+In order to check multi-VC on an edge LSR, the traditional show tag-switching forwarding-table command can be used. In order to specifically check the virtual circuit descriptor (VCD) or virtual path identifier/virtual channel identifier (VPI/VCI), the command must be specific to a destination and must end with the word detail.
+Alcazaba#show tag-switching forwarding-table
+Local  Outgoing    Prefix            Bytes tag  Outgoing   Next Hop    
+tag    tag or VC   or Tunnel Id      switched   interface              
+16     Untagged    7.7.7.0/24        0          Et1/1      150.150.0.2  
+17     Untagged    10.0.0.0/16       0          Et1/1      150.150.0.2  
+18     Untagged    158.0.0.0/8       0          Et1/1      150.150.0.2  
+19     Untagged    223.0.0.12/32     0          Et1/1      150.150.0.2  
+20     Untagged    7.7.7.7/32        570        Et1/1      150.150.0.2  
+21     Multi-VC    10.0.0.8/30       0          AT4/0.1    point2point  
+25     Multi-VC    2.2.2.2/32        0          AT4/0.1    point2point  
+32     Multi-VC    223.0.0.2/32      0          AT4/0.1    point2point  
+34     Multi-VC    223.0.0.6/32      0          AT4/0.1    point2point  
+36     Multi-VC    11.0.0.0/30       0          AT4/0.1    point2point  
+37     Multi-VC    223.0.0.11/32     0          AT4/0.1    point2point 
+
+Alcazaba#show tag-switching forwarding-table 2.2.2.2 32 detail
+Local  Outgoing    Prefix            Bytes tag  Outgoing   Next Hop    
+tag    tag or VC   or Tunnel Id      switched   interface              
+25     Multi-VC    2.2.2.2/32        0          AT4/0.1    point2point  
+        available 2/61(882), standard 2/62(883), premium 2/63(884), control 2/64(885), 
+        MAC/Encaps=4/8, MTU=4470, Tag Stack{Multi-VC}
+        04F48847 004F4000
+    Per-packet load-sharing 
+On any ATM LSR, you can also map the different VCs from one interface to another (with the show tag-switching atm-tdp bindings command) with their respective service classes (the show atm vc interface<ATM interface> <vpi> <vci> command).
+Capri#show tag-switching atm-tdp bindings
+ Destination: 2.2.2.2/32
+    Transit ATM3/0/2 2/61 Active -> ATM3/1/2 2/69 Active, CoS=available
+    Transit ATM3/0/2 2/62 Active -> ATM3/1/2 2/70 Active, CoS=standard
+    Transit ATM3/0/2 2/63 Active -> ATM3/1/2 2/71 Active, CoS=premium
+    Transit ATM3/0/2 2/64 Active -> ATM3/1/2 2/72 Active, CoS=control
+ Destination: 10.0.0.8/30
+    Tailend Switch ATM3/0/2 2/97 Active -> Terminating Active, CoS=available
+    Tailend Switch ATM3/0/2 2/98 Active -> Terminating Active, CoS=standard
+    Tailend Switch ATM3/0/2 2/99 Active -> Terminating Active, CoS=premium
+    Tailend Switch ATM3/0/2 2/100 Active -> Terminating Active, CoS=control
+[...]
+Capri#show atm vc interface atm3/0/2 2 63
+ 
+Interface: ATM3/0/2, Type: oc3suni 
+VPI = 2  VCI = 63
+Status: UP
+Time-since-last-status-change: 02:07:24
+Connection-type: TVC(O) 
+Cast-type: multipoint-to-point-output
+Packet-discard-option: enabled
+Usage-Parameter-Control (UPC): pass
+Wrr weight: 2
+Number of OAM-configured connections: 0
+OAM-configuration: disabled
+OAM-states:  Not-applicable
+Cross-connect-interface: ATM3/1/2, Type: oc3suni 
+Cross-connect-VPI = 2 
+Cross-connect-VCI = 147
+Cross-connect-UPC: pass
+Cross-connect OAM-configuration: disabled
+Cross-connect OAM-state:  Not-applicable
+Threshold Group: 9, Cells queued: 0
+Rx cells: 0, Tx cells: 0
+Tx Clp0:0,  Tx Clp1: 0
+Rx Clp0:0,  Rx Clp1: 0
+Rx Upc Violations:0, Rx cell drops:0
+Rx pkts:0, Rx pkt drops:0
+Rx connection-traffic-table-index: 63998
+Rx service-category: WRR_3 (WRR Bit Rate)
+Rx pcr-clp01: none
+Rx scr-clp01: none
+Rx mcr-clp01: none
+Rx      cdvt: 0 (from default for interface)
+Rx       mbs: none
+Tx connection-traffic-table-index: 63998
+Tx service-category: WRR_3 (WRR Bit Rate)
+Tx pcr-clp01: none
+Tx scr-clp01: none
+Tx mcr-clp01: none
+Tx      cdvt: none
+Tx       mbs: none
+In the sample configurations, all packets that conform are sent by the premium LVC. All packets that exceed the CAR rule are sent by the standard LVC. In these first outputs, a standard ping is done and repeated 158 times:
+rapid#ping        
+Protocol [ip]: 
+Target IP address: 2.2.2.2
+Repeat count [5]: 158
+Datagram size [100]: 
+Timeout in seconds [2]: 
+Extended commands [n]: 
+Sweep range of sizes [n]: 
+Type escape sequence to abort.
+Sending 158, 100-byte ICMP Echos to 2.2.2.2, timeout is 2 seconds:
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!
+Success rate is 100 percent (158/158), round-trip min/avg/max = 1/1/5 ms
+You can check whether all packets go through the premium LVC with the show atm vc command on the edge LSR as in the sample output. In this sample, the premium output VCD is 884.
+Alcazaba#show atm vc 884
+ATM4/0.1: VCD: 884, VPI: 2, VCI: 63
+UBR, PeakRate: 155000
+AAL5-MUX, etype:0x8847, Flags: 0x40C84, VCmode: 0x0
+OAM frequency: 0 second(s)
+InARP DISABLED
+InPkts: 0, OutPkts: 158, InBytes: 0, OutBytes: 17064
+InPRoc: 0, OutPRoc: 0
+InFast: 0, OutFast: 158, InAS: 0, OutAS: 0
+Giants: 0
+OAM cells received: 0
+OAM cells sent: 0
+Status: UP
+Tag VC: local tag: 0
+You can also check on any ATM switch with the show atm vc traffic interface <interface> <vpi/vci> command. In this sample, each ping packet is transported in three cells: 158*3 = 474 cells.
+Capri#show atm vc traffic interface atm 3/0/2 2 63
+Interface    VPI     VCI      Type      rx-cell-cnts     tx-cell-cnts
+ATM3/0/2     2       63        TVC(O)             0                0
+ATM3/0/2     2       63        TVC(I)           474                0
+Revision History
+Revision Publish Date Comments
+1.0
+20-Sep-2018
+Initial Release
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Multiprotocol Label Switching over ATM (MPLS over ATM)

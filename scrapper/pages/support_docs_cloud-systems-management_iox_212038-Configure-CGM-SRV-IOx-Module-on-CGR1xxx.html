@@ -1,0 +1,229 @@
+Configuration Examples and TechNotes
+Configure CGM-SRV IOx Module on CGR1xxx
+Save
+Translations
+Download
+Print
+
+
+
+Updated:September 11, 2017
+Document ID:212038
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Background Information
+Configure
+Network Diagram
+Installation of CGM-SRV Module in CGR1000
+Install Compute Image on CGM-SRV Module
+Configure Interfaces, DHCP and NAT
+Verify
+Troubleshoot
+Introduction
+This document describes how to configure the Connected Grid Routers (CGR) 1000-series platform devices for use with an IOx Connected Grid Module (CGM) - System Server (SRV) module.
+   Prerequisites
+Requirements
+Cisco recommends that you have knowledge of these topics:
+Routing
+Switching
+Network Address Translation (NAT)
+Understand Virtualization concepts
+Components Used
+The information in this document is based on these software and hardware versions:
+CGR1120
+Runs at least 15.6-3 (CGR1000) -universalk9-bundle.SSA.156-3.M2
+Free module slot
+IP address on Gi2/1
+Secure Shell (SSH) configured
+CGM-SRV-XX module
+Background Information
+When you want to run IOx applications or virtual machines on the CGR1000 platform, you can use the CGM-SRV compute module. The CGM-SRV module is actually a small server that contains a multi-core x86 CPU, memory and storage. Both the CGR1120 and CGR1240 can have one of these modules to add IOx capabilities.
+There are, at the time you write, two types available as shown in the table:
+Stock Keep Unit (SKU) Solid State Drives (SSD) RAM CPU
+CGM-SRV-64 64GB (50GB usable) 4GB 4 core 800Mhz
+CGM-SRV-128 128GB (100GB usable) 4GB 4 core 800Mhz
+Each module also has two USB ports for storage and its own external gigabit Ethernet interface.
+As with any other IOx-capable device, the module can host different types of IOx applications but due to the larger capacity of the CGM-SRV module, it can also run a fully configured Windows or standard Linux distro (for example Ubuntu or CentOS) as shown in the image.
+Configure
+Network Diagram
+The CGM-SRV module has three network interface, two internal interfaces towards Cisco IOS ® and one external for a dedicated connection to the guests which runs on the CGM-SRV module.
+The interfaces used are as shown in the table:
+Name Location Connects to Remark
+Gi<slot>/1 internal to Cisco IOS ®  CGM-SRV host OS (which runs Cisco Application-Hosting Framework (CAF)) eth_mgmt interface on host OS
+Gi<slot>/2 internal to Cisco IOS ®  CGM-SRV guest VMs (IOx apps) svcbr_0 on host OS > dpbr_0
+eth0 external on module CGM-SRV guest VMs (IOx apps) svcbr_1 on host OS > dpbr_1
+A diagram of how everything is interconnected is as shown in the image:
+Installation of CGM-SRV Module in CGR1000
+In order to configure the CGM-SRV on CGR1000, you need to start with the insertion of the module in the CGR1120. This can be done without the need to take the device offline as follows:
+Step 1. Shut down the module port in which you want to install the CGM-SRV module:
+KJK_CGR1120_20#conf t
+Enter configuration commands, one per line.  End with CNTL/Z.
+KJK_CGR1120_20(config)#hw-module poweroff 4
+Step 2. You can physically insert the module in slot 4. Once the module has been inserted, you can power the module slot back on:
+KJK_CGR1120_20(config)#no hw-module poweroff 4
+Step 3. Let's check if the module is recognized as you expect it to be:
+KJK_CGR1120_20#sh module 4
+Mod  Ports  Module-Type                         Model              Status
+---  -----  ----------------------------------- ------------------ ----------
+4    1      CGR1000 Server Module 64GB Disk     CGM-SRV-64         ok
+
+Mod  Hw     Serial-Num             Last reload reason
+---  -----  ---------------------  ------------------------------------
+4    1.0    FOCXXXXXXXX
+As you can see in the output here, the module is recognized and ready in slot 4. You are now ready to start to configure everything.
+Install Compute Image on CGM-SRV Module
+The next step is to load the host Operating System (OS) image on the module. The image for this can be downloaded from: https://software.cisco.com/download/release.html?mdfid=284174271&softwareid=286312260 
+After you download the image from Cisco Connection Online (CCO), upload/download it to the CGR1000:
+KJK_CGR1120_20#copy scp://jedepuyd@10.X.X.X/cgr1000-compute-1.2.5.1.SPA flash:
+Destination filename [cgr1000-compute-1.2.5.1.SPA]?
+Password:
+ Sending file modes: C0644 69765564 cgr1000-compute-1.2.5.1.SPA
+...
+ 69765564 bytes copied in 1367.560 secs (51015 bytes/sec)
+Once the image is available on the CGR1000, you can install it on the CGM-SRV module:
+KJK_CGR1120_20#server-module 4 install flash:cgr1000-compute-1.2.5.1.SPA
+Operation requires module reload, do you want to continue? [yes]: yes
+ Installing image: /cgr1000-compute-1.2.5.1.SPA ......................... Done!
+Configure Interfaces, DHCP and NAT
+As mentioned before, you have two internal interface on Cisco IOS ®  that connect with CGM-SRV. Since you inserted the module in slot 4, these interfaces are named: Gi4/1 and Gi4/2. The IP addresses on these interfaces, when you use NAT, are only used internally.
+Configure Gi4/1, for the connection between Cisco IOS ®  and the host OS which runs in CGM-SRV:
+KJK_CGR1120_20#conf t
+Enter configuration commands, one per line.  End with CNTL/Z.
+KJK_CGR1120_20(config)#int gi4/1
+KJK_CGR1120_20(config-if)#ip addr 192.168.100.1 255.255.255.0
+KJK_CGR1120_20(config-if)#ip nat inside
+KJK_CGR1120_20(config-if)#ip virtual-reassembly in
+KJK_CGR1120_20(config-if)#duplex auto
+KJK_CGR1120_20(config-if)#speed auto
+KJK_CGR1120_20(config-if)#ipv6 enable
+KJK_CGR1120_20(config-if)#no shut
+KJK_CGR1120_20(config-if)#exit
+Configure Gi4/2; for the connection between Cisco IOS ® and the guests which runs on CGM-SRV:
+KJK_CGR1120_20#conf t
+Enter configuration commands, one per line.  End with CNTL/Z.
+KJK_CGR1120_20(config)#int gi4/2
+KJK_CGR1120_20(config-if)#ip addr 192.168.101.1 255.255.255.0
+KJK_CGR1120_20(config-if)#ip nat inside
+KJK_CGR1120_20(config-if)#ip virtual-reassembly in
+KJK_CGR1120_20(config-if)#duplex auto
+KJK_CGR1120_20(config-if)#speed auto
+KJK_CGR1120_20(config-if)#ipv6 enable
+KJK_CGR1120_20(config-if)#no shut
+KJK_CGR1120_20(config-if)#exit
+Configure the interface on Cisco IOS ® side that gives you the access to the CGR1000 as NAT outside:
+KJK_CGR1120_20(config)#int gi2/1
+KJK_CGR1120_20(config-if)#ip nat outside
+Set up DHCP for the host OS and guests:
+KJK_CGR1120_20#conf t
+Enter configuration commands, one per line.  End with CNTL/Z.
+KJK_CGR1120_20(config)#ip dhcp pool iox_host_pool
+KJK_CGR1120_20(dhcp-config)#network 192.168.100.0 255.255.255.0
+KJK_CGR1120_20(dhcp-config)#default-router 192.168.100.1
+KJK_CGR1120_20(dhcp-config)#lease infinite
+KJK_CGR1120_20(dhcp-config)#exit
+KJK_CGR1120_20(config)#ip dhcp pool iox_guest_pool
+KJK_CGR1120_20(dhcp-config)#network 192.168.101.1 255.255.255.0
+KJK_CGR1120_20(dhcp-config)#default-router 192.168.101.1
+KJK_CGR1120_20(dhcp-config)#lease infinite
+KJK_CGR1120_20(dhcp-config)#exit
+After you enable DHCP, you need to ensure that the host OS on the CGM-SRV module picks up an IP. At this stage, the easiest is to restart the module:
+KJK_CGR1120_20#hw-module reload 4
+Module 4 is being reloaded with reason()... 
+Once the module is back online, you can check which IP address has been given to it:
+KJK_CGR1120_20#sh ip dhcp bind
+Bindings from all pools not associated with Virtual Routing and Forwarding (VRF):
+IP address          Client-ID/       Lease expiration        Type
+      Hardware address/
+      User name
+192.168.100.3       0100.800f.1170.00       Infinite                Automatic
+Next configuration step is to finish the rest of the NAT configuration and forward these ports to the IP of the host OS on the module:
+2222 -> 22 -> on the module: SSH access to the host OS
+8443 -> CAF (Local Manager and IOxclient API access)
+5900 -> VNC (access to the GUI for Windows VM)
+KJK_CGR1120_20#conf t
+Enter configuration commands, one per line.  End with CNTL/Z.
+KJK_CGR1120_20(config)#ip access-list standard IOX_NAT
+KJK_CGR1120_20(config-std-nacl)#permit 192.168.0.0 0.0.255.255
+KJK_CGR1120_20(config-std-nacl)#exit
+KJK_CGR1120_20(config)#ip nat inside source list IOX_NAT interface Gi2/1 overload
+KJK_CGR1120_20(config)#ip nat inside source static tcp 192.168.100.3 8443 interface Gi2/1 8443
+KJK_CGR1120_20(config)#ip nat inside source static tcp 192.168.100.3 22 interface Gi2/1 2222
+KJK_CGR1120_20(config)#ip nat inside source static tcp 192.168.100.3 5900 interface Gi2/1 5900
+One last step is required in order to be able to access Local Manager and the host OS console.
+Add a user with privilege 15:
+KJK_CGR1120_20#conf t
+Enter configuration commands, one per line.  End with CNTL/Z.
+KJK_CGR1120_20(config)#username admin privilege 14 password cisco
+At this point, the configuration is complete and you should be able to verify and use the CGM-SRV module for IOx.
+Verify
+Use this section in order to confirm that your configuration works properly.
+From Cisco IOS ®, you can verify if IOx is configured correctly with these command:
+KJK_CGR1120_20#sh IOx host list detail
+
+IOx Server is running. Process ID: 325
+Count of hosts registered: 1
+
+Host registered:
+===============
+    IOx Server Address: FE80::2A6F:7FFF:FE0D:844A; Port: 22222
+
+    Link Local Address of Host: FE80::280:FFF:FE11:7000
+    IPV4 Address of Host:       192.168.100.3
+    IPV6 Address of Host:       fe80::280:fff:fe11:7000
+    Client Version:             0.4
+    Session ID:                 4
+    OS Nodename:                CGM-SRV-64-4
+    Host Hardware Vendor:       Cisco Systems, Inc.
+    Host Hardware Version:      1.0
+    Host Card Type:             not implemented
+    Host OS Version:            1.2.5.1
+    OS status:                  RUNNING
+
+    Percentage of SSD
+    Lifetime remaining:         100
+    USB Power Consumption (mA): 0
+    Interface Hardware Vendor:  None
+    Interface Hardware Version: None
+    Interface Card Type:        None
+Another way to verify if the above configuration is successful, is to connect with your browser to Local Manager. Since you configured NAT, Local Manager must be accessible on https://<outside IP of CGR1000>:8443 .
+If all went well, you should be able to see the Local Manager login prompt as shown in the image:
+Here you can log in with the privilege 15 user which you created earlier and access Local Manager as shown in the image:
+Troubleshoot
+This section provides information you can use in order  to troubleshoot your configuration.
+In order to troubleshoot CAF and/or the host os which runs on the CGM-SRV module, you can access the console with the use of these command:
+You can login to the host OS with the use of the credentials of the privilege 15 user created on Cisco IOS ® earlier:
+KJK_CGR1120_20#server-module 4 console
+  Escape sequence: ctrl-shift-^ x, then disconnect command
+
+MontaVista Carrier Grade Express Linux 2.0.0 CGM-SRV-64-4 /dev/console
+
+CGM-SRV-64-4 login: admin
+Cisco IOS ® user password: 
+CGM-SRV-64-4:~#
+In order to check the status of CAF and Local Manager:
+CGM-SRV-64-4:~# monit summary
+Cannot translate 'CGM-SRV-64-4' to FQDN name -- Temporary failure in name resolution
+The Monit daemon 5.14 uptime: 2h 14m
+
+Process dmo                       Running
+File product_id                  Accessible
+File hwid                         Accessible
+File netifup                     Accessible
+Process caf                       Running
+File cgroup                       Not monitored
+System x86-generic-64             Running
+The log for CAF can be found in /var/log/caf.log.
+Contributed by Cisco Engineers
+Jens Depuydt
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+IOx

@@ -1,0 +1,218 @@
+Support FAQ
+Understand Identity Service Engine (ISE) and Active Directory (AD)
+Save
+Translations
+Download
+Print
+
+
+
+Updated:August 3, 2022
+Document ID:215233
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+AD Protocols
+Kerberos Protocol  
+MS-RPC Protocol
+ISE integration with Active Directory(AD)
+Join ISE to AD
+Join AD domain
+Leave AD domain
+DC failover
+ISE-AD communication through LDAP
+User authentication against AD flow:
+ISE Search Filters
+Introduction
+This document describes how Identitity Service Engine (ISE) and Active Directory (AD) communicate, protocols that are used, AD filters, and flows.
+Prerequisites
+Requirements
+Cisco reccomends a basic knowledge of :
+ISE 2.x and Active Directory integration .
+External identity authentication on ISE.
+Components Used
+ISE 2.x .
+Windows Server (Active Directory) .
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, ensure that you understand the potential impact of any command.
+
+AD Protocols
+Kerberos Protocol  
+The three heads of Kerberos comprise the Key Distribution Center (KDC), the client user, and the server to access.
+The KDC is installed as part of the Domain Controller (DC) and performs two service functions: The Authentication Service (AS) and the Ticket-Granting Service (TGS).
+Three exchanges are involved when the client initially accesses a server resource:
+AS Exchange.
+TGS Exchange.
+Client/Server (CS) Exchange.
+Domain Controller = KDC (AS + TGS).
+Authenticate to AS (the SSO portal) with your password.
+Get a Ticket Granting Ticket (TGT) (a session cookie).
+Request log in to a service (SRV01).
+SRV01 redirects you to KDC.
+Show TGT to KDC – (I am already authenticated)
+KDC gives you TGS for SRV01.
+Redirect to SRV01.
+Show service ticket to SRV01.
+SRV01 verifies/trusts service ticket.
+Service ticket has all my information.
+SRV01 logs me in.
+
+When initially logged on to a network, users must negotiate access and provide a log-in name and password in order to be verified by the AS portion of a KDC within their domain.
+The KDC has access to Active Directory user account information. Once authenticated, the user is granted a Ticket Granting Ticket (TGT) that is valid for the local domain.
+The TGT has a default lifetime of 10 hours and is renewed throughout the user log-on session without the requirement of the user to re-enter his password.
+The TGT is cached on the local machine in volatile memory space and is used to request sessions with services throughout the network.
+The user presents the TGT to the TGS portion of the KDC when access to a server service is needed.
+The TGS on the KDC authenticates the user TGT and creates a ticket and session key for both the client and the remote server. This information (the service ticket) is then cached locally on the client machine.
+The TGS receives the client TGT and reads it with its own key. If the TGS approves of the client request, a service ticket is generated for both the client and the target server.
+The client reads its portion with the TGS session key retrieved earlier from the AS reply.
+The client presents the server portion of the TGS reply to the target server in the next client/server exchange.
+Example:
+Packet captures from ISE for an authenticated user:
+The AS-REQ contains the username. If the password is correct, the AS service provides a TGT encrypted with the user password. The TGT is then provided to the TGT service to get a session ticket.
+Authentication is successful when a session ticket is received..
+This is an example where the password given by client is wrong:
+If the password is wrong the AS request fails and a TGT is not received:
+
+
+Logs on the ad_agent.log file when password is wrong:
+
+2020-01-14 13:36:05,442 DEBUG  ,140574072981248,krb5: Sent request (276 bytes) to RALMAAIT.COM,LwKrb5TraceCallback(),lwadvapi/threaded/lwkrb5.c:1325
+2020-01-14 13:36:05,444 DEBUG  ,140574072981248,krb5: Received error from KDC: -1765328360/Preauthentication failed,LwKrb5TraceCallback(),lwadvapi/threaded/lwkrb5.c:1325
+2020-01-14 13:36:05,444 DEBUG  ,140574072981248,krb5: Preauth tryagain input types: 16, 14, 19, 2,LwKrb5TraceCallback(),lwadvapi/threaded/lwkrb5.c:1325
+2020-01-14 13:36:05,444 WARNING,140574072981248,[LwKrb5GetTgtImpl ../../lwadvapi/threaded/krbtgt.c:329] KRB5 Error code: -1765328360 (Message: Preauthentication failed),LwTranslateKrb5Error(),lwadvapi/threaded/lwkrb5.c:892
+2020-01-14 13:36:05,444 DEBUG  ,140574072981248,[LwKrb5InitializeUserLoginCredentials()] Error code: 40022 (symbol: LW_ERROR_PASSWORD_MISMATCH),LwKrb5InitializeUserLoginCredentials(),lwadvapi/threaded/lwkrb5.c:1453
+MS-RPC Protocol
+ISE uses MS-RPC over SMB, SMB provides the authentication and does not require a separate session to find where a given RPC service is located. It uses a mechanism called “named pipe” to communicate between the client and server.
+Create an SMB session connection.
+Transport RPC messages over SMB/CIFS.TCP port 445 as a transport 
+SMB session identifies which port a particular RPC service runs and handles user authentication.
+Connect to hidden share IPC$ for inter-process communication.
+Open an appropriate named pipe for the desired RPC resource/function.
+Transact the RPC exchange over SMB.
+
+
+The negotiate protocol request/response line negotiates the dialect of SMB. The session setup request/response performs the authentication.
+Tree Connect Request and Response connect to the requested resource. You are connected to a special share IPC$.
+This inter-process communication share provides the means of communication between hosts and also as a transport for MSRPC functions.
+
+At packet 77 is Create Request File and the file name is the name of the connected service (the netlogon service in this example).
+
+At packets 83 and 86, the NetrlogonSamLogonEX request is where you send the username for the client authentication on ISE to the AD at the field Network_INFO.
+The NetrlogonSamLogonEX response packet replies with the results.
+Some flags values for the NetrlogonSamLogonEX response:
+0xc000006a is STATUS_WRONG_PASSWORD
+0x00000000 is STATUS_SUCCESS
+0x00000103 is STATUS_PENDING
+
+
+ISE integration with Active Directory(AD)
+ISE uses LDAP, KRB, and MSRBC to communicate with AD during the join/leave and authentication process.
+The next sections provide the protocols, search format, and mechanisms used to connect to a specific DC on AD and user authentication against that DC.
+In the event that the DC becomes offline for any reason, ISE fails over to the next available DC and the authentication process is not affected.
+A Global Catalog server (GC) is a domain controller that stores copies of all Active Directory objects in the forest.
+It stores a complete copy of all objects in the directory of your domain and a partial copy of all objects of all other forest domains.
+Thus, the Global Catalog allows users and applications to find objects in any domain of the current forest with a search for attributes included to GC.
+The Global Catalog contains a basic (but incomplete) set of attributes for each forest object in each domain (Partial Attribute Set, PAT).
+The GC receives data from all the domain directory partitions in the forest. They are copied with the standard AD replication service.
+Join ISE to AD
+Prerequisites for Active Directory and ISE integration
+Verify that you have the privileges of a Super Admin or System Admin in ISE.
+Use the Network Time Protocol (NTP) server settings to synchronize the time between the Cisco server and Active Directory. The maximum allowed time difference between ISE and AD is 5 minutes
+The configured DNS on ISE must be able to answer SRV queries for DCs, GCs, and KDCs with or without additional Site information.
+Ensure that all the DNS servers can answer forward and reverse DNS queries for any possible Active Directory DNS domain.
+AD must have at least one global catalog server operational and accessible by Cisco, in the domain to which you join Cisco.
+Join AD domain
+ISE applies Domain Discovery to get information about the join domain in three phases:
+Queries joined domains—Discovers domains from its forest and domains externally trusted to the joined domain.
+Queries root domains in its forest—Establishes trust with the forest.
+Queries root domains in trusted forests—Discovers domains from the trusted forests.
+Additionally, Cisco ISE discovers DNS domain names (UPN suffixes), alternative UPN suffixes and NTLM domain names.
+ISE applies a DC discovery to get all information about the available DCs and GCs.
+The join process starts with the input credentials of super admin on AD that exist in the domain itself. If it exists in a different domain or subdomain, the username must be noted in a UPN notation (username@domain).
+ISE sends a DNS query for all DCs, GCs, and KDCs records. If the DNS reply did not have one of them in its answer then the integration fails with DNS related error.
+ISE uses the CLDAP ping to discover all DCs and GCs through sent CLDAP requests to the DCs which correspond to their priorities in the SRV record. Tthe first DC response is used and ISE is then connected to that DC.
+One factor that is used to calculate the DC priority is the time taken by the DC to response to CLDAP pings; a faster response receives a higher priority.
+Note: CLDAP is the mechanism that ISE uses to establish and maintain connectivity with the DCs.  It measures the response time until the first DC answer. It fails if you see no answer from DC. Warn if response time is bigger than 2.5 seconds. CLDAP ping all DCs in site (If no site then all DCs in domain). The CLDAP response contains DC site and Client site (the site to which ISE machine is assigned).
+ISE then receives TGT with 'join user' credentials.
+Generate ISE machine account name with the MSRPC. (SAM and SPN)
+Search AD by SPN if ISE machine account already exists. If ISE machine does not exist, ISE creates a new one.
+Open Machine account, set ISE machine account password, and verify ISE machine account is accessible.
+Set ISE machine account attributes  (SPN, dnsHostname, and the like).
+Get TGT with ISE machine credentials with KRB5 and discover all trusted domains.
+When the join is complete, ISE node updates its AD groups and associated SIDS and automatically starts the SID update process. Verify that this process can complete on the AD side.
+Leave AD domain
+When ISE leaves, the AD must consider:
+Use a full AD admin user to perform the leave processes. This verifies that the ISE machine account is removed from the Active Directory database.
+If the AD was left without credentials, then the ISE account is not removed from the AD and it must be deleted manually.
+When you reset ISE configuration from the CLI or restore configuration after a backup or upgrade, it performs a leave operation and disconnects the ISE node from the Active Directory domain. (if joined). However, the ISE node account is not removed from the Active Directory domain.
+It is recommended to perform a leave operation from the Admin portal with the Active Directory credentials because it also removes the node account from the Active Directory domain. This is also recommended when you change the ISE hostname.
+DC failover
+When the DC connected to ISE become offline or unreachable for any reason, DC failover is triggered automatically on ISE. DC failover can be triggered by the these conditions:
+AD connector detects that the currently selected DC became unavailable during some CLDAP, LDAP, RPC or Kerberos communication attempt. In such cases, the AD connector initiates DC selection and fails over to the newly selected DC.
+DC is up and responds to CLDAP ping, but AD Connector cannot communicate with it for some reason (examples: RPC port is blocked, DC is in ‘broken replication’ state, DC has not been properly decommissioned).
+In such cases, the AD connector initiates DC selection with a blocked list (“bad” DC is placed in the blocked list) and tries to communicate with the selected DC. The DC selected in the blocked list is not cached.
+AD connector must complete failover within reasonable time (or fail if it is not possible). For this reason, AD connector tries limited number of DCs during failover.
+ISE blocks AD Domain Controllers if there is an unrecoverable network or server error to prevent ISE from the use of a bad DC. DC is not added to blocked list if it does not respond to CLDAP pings. ISE only lowers the priority of the DC which does not respond.
+ISE-AD communication through LDAP
+ISE searches for machine or user in AD with one of the these search formats. If the search was for a machine, then ISE adds “$” at the end of the machine name. This is a list of Identity types which is used to identfy a user in AD:
+SAM name: username or machine name without any domain markup, this is the User Logon Name in AD. Example: sajeda or sajeda$
+CN: is the user display name on AD, it must not be same as the SAM. Example: sajeda Ahmed.
+User Principal Name (UPN): is a combination of the SAM name and the domain name (SAM_NAME@domian). Example: sajeda@cisco.com or sajeda$@cisco.com
+Alternative UPN: is an additional / alternative UPN suffixes that configured in the AD other than domain name. This configuration is added globally in the AD (not configured per user) and it is not necessary to be a real domain name suffix.
+   Each AD can have multiple UPN suffix(@alt1.com,@alt2.com,…, etc). Example: main UPN (sajeda@cisco.com), alternative UPN :sajeda@domain1 , sajeda@domain2
+NetBIOS prefixed name: is the domain name\username of machine name. Example: CISCO\sajeda or CISCO\machine$
+Host/prefix with unqualified machine: this is used for machine authentication when the machine name only is used, it is host/machine name only. Example: host/machine
+Host/ prefix with fully qualified machine: this is used for machine authentication when the Machine FQDN is used, usually in case of certificate authentication, it is host/FQDN of the machine.  Example: host/machine.cisco.com
+SPN name: The name by which a client uniquely identifies an instance of a service, (examples: HTTP, LDAP, SSH) used for Machine only.
+User authentication against AD flow:
+Resolve Identity and determine identity type - SAM, UPN, SPN. If ISE receive the identity as a username only, then it searches for an associated SAM account in the AD. If ISE receives the identity as a username@domain, then it searches for a matched a UPN or mail in the AD. in both scenarios ISE uses additional filters for machine or username. 
+Search domain or forest (depends on identity type)
+Keep information about all associated accounts (JP, DN, UPN, Domain)
+If no associated account is found, then AD replies with user is unknown.
+Perform MS-RPC (or Kerberos) authentication for each associated account
+If only a single account matches to input identity and password, then authentication is successful
+If multiple accounts match the incoming identity, then ISE uses the password to solve the ambiguity so that the account with an associated password is authenticated and the other accounts increase the incorrect password counter by 1.
+If no account matches the incoming identity and password, then AD replies with wrong password.
+ISE Search Filters
+Filters are used to identify an entity that want to communicate with AD.  ISE always searches for that entity in the users and machines groups.
+Examples of search Filters:
+SAM search: If ISE receives an identity as a username only without any domain markup, then ISE treats this username as a SAM and searches in AD for all machine users or machines that have that identity as a SAM name.
+If the SAM name is not unique, ISE uses the password to differentiate between users and ISE is configured to use a passwordless protocol such as EAP-TLS.
+There are no other criteria to locate the right user, so ISE fails the authentication with an “Ambiguous Identity” error.
+However, if the user certificate is present in Active Directory, Cisco ISE uses binary comparison to resolve the identity.
+UPN or MAIL search: If ISE receives an identity as a username@domain, ISE searches each forest global catalogs for a match to that UPN identity or Mail identity “identity=matched UPN or email”.
+If there is a unique match, Cisco ISE proceeds with the AAA flow.
+If there are multiple join points with the same UPN and a password or the same UPN and Mail, Cisco ISE fails the authentication with an “Ambiguous Identity” error.
+NetBIOS search: If ISE receives an identity with a NetBIOS domain prefix (ex:CISCO\sajedah), then ISE searches in the forests for the NetBIOS domain. Once found, it then looks for the supplied SAM name (sajeda in our example)
+Machine base search: If ISE receives a machine authentication, with a host/prefix identity, then ISE searches the forest for a matched servicePrincipalName attribute.
+If a fully-qualified domain suffix was specified in the identity, for example host/machine.domain.com, Cisco ISE searches the forest where that domain exists.
+If the identity is in the form of host/machine, Cisco ISE searches all forests for the service principal name.
+If there is more than one match, Cisco ISE fails the authentication with an “Ambiguous Identity” error.
+Note: Same filters are seen in ISE ad-agent.log files
+Note: ISE 2.2 patch 4 and prior and 2.3 patch 1 and prior identified users with the attributes SAM, CN, or both. Cisco ISE, release 2.2 Patch 5 and above, and 2.3 Patch 2 and higher, use only sAMAccountName attribute as the default attribute.
+Revision History
+Revision Publish Date Comments
+2.0
+03-Aug-2022
+Grammar, structure, machine translation, style, format
+1.0
+06-Feb-2020
+Initial Release
+Contributed by Cisco Engineers
+Sajeda Shtaiyat
+Cisco TAC
+Reham Al Ma'Aitah
+Cisco TAC
+Nicolas Darchis
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Integrate AD for ISE GUI and CLI Log in
+Configure EAP-TLS Authentication with ISE
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine

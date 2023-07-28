@@ -1,0 +1,725 @@
+Configuration Examples and TechNotes
+Configure ISE 2.2 IPSEC to Secure NAD (IOS) Communication
+Save
+Translations
+Download
+Print
+
+
+
+Updated:March 29, 2017
+Document ID:210519
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Background Information
+ISE IPSec Architecture
+Network Diagram
+Configure ikev1 ipsec vpn using pre-shared key (out of the box)
+IOS Router CLI Configuration
+Configure the Interfaces
+Configure the ISAKMP (IKEv1) Policy
+Configure a Crypto ISAKMP Key
+Configure an ACL for VPN Traffic of Interest
+Configure a Transform Set
+Configure a Crypto Map and Apply it to an Interface
+IOS Final Configuration
+ISE Configuration
+Configure IP address on  ISE
+Add NAD to IPSec Group on ISE
+Enable IPSEC on ISE
+Set Tacacs Policy on ISE
+Verify
+IOS Router
+ESR
+ISE
+Troubleshoot
+Configure FlexVPN Site-to-Site (DVTI to SVTI) between NAD and ISE 2.2
+Advantages of Flex VPN design
+Router Configuration
+ESR Configuration on ISE
+FlexVPN Design Considerations
+Introduction
+This document describes how to configure and troubleshoot TACACS IPSEC to secure Cisco Identity Service Engine (ISE) 2.2 - Network Access Device (NAD) communication. TACACS traffic can be encrypted with site-to-site (LAN-to-LAN) IPSec Internet Key Exchange Version 2 (IKEv2) tunnel between Router and ISE. This document does not cover TACACS configuration part.
+Prerequisites
+Requirements
+Cisco recommends that you have knowledge of these topics:
+ISE
+Cisco Router
+General IPSec concepts
+General TACACS concepts
+Components Used
+The information in this document is based on these software and hardware versions:
+Cisco ISR4451-X Router that runs software Version 15.4(3)S2
+Cisco Identity Service Engine version 2.2
+Windows 7 Service Pack 1
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Background Information
+The goal is to secure protocols which use insecure MD5 hash, Radius and TACACS with IPSec. Few facts to take into consideration:
+Cisco ISE supports IPSec in Tunnel and Transport modes.
+When you enable IPSec on a Cisco ISE interface, an IPSec tunnel is created between Cisco ISE and the NAD to secure the communication.
+You can define a pre-shared key or use X.509 certificates for IPSec authentication.
+IPSec can be enabled on Eth1 through Eth5 interfaces. You can configure IPSec on only one Cisco ISE interface per PSN.
+ISE IPSec Architecture
+Once encrypted packets are received by GE-1 ISE interface, Embedded Services Router (ESR) intercepts them on Eth0/0 interface.
+interface Ethernet0/0
+ description e0/0->connection to external NAD
+ ip address 10.48.17.87 255.255.255.0
+ ip nat outside
+ ip virtual-reassembly in
+ no ip route-cache
+ crypto map radius
+ESR decrypts them and according to preconfigured NAT rules performs address translation. Outgoing (towards NAD) RADIUS/TACACS packets are translated to Ethernet0/0 interface address and encrypted afterwards.
+ip nat inside source list 1 interface Ethernet0/0 overload
+ip nat inside source static udp 10.1.1.2 1645 interface Ethernet0/0 1645
+ip nat inside source static udp 10.1.1.2 1646 interface Ethernet0/0 1646
+ip nat inside source static udp 10.1.1.2 1812 interface Ethernet0/0 1812
+ip nat inside source static udp 10.1.1.2 1813 interface Ethernet0/0 1813
+ip nat inside source static tcp 10.1.1.2 49 interface Ethernet0/0 49
+access-list 1 permit 10.1.1.0 0.0.0.3
+Packets which are destined to Eth0/0 interface on RADIUS/TACACS ports should be forwared via Eth0/1 interface to 10.1.1.2 ip address, which is internal address of ISE. ESR configuration of Eth0/1
+interface Ethernet0/1
+ description e0/1->tap0 internal connection to ISE
+ ip address 10.1.1.1 255.255.255.252
+ ip nat inside
+ ip virtual-reassembly in
+ no ip route-cache
+ISE configuration of internal Tap-0 interface:
+ISE22-1ek/admin# show interface | b tap0
+tap0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 10.1.1.2  netmask 255.255.255.252  broadcast 10.1.1.3
+        inet6 fe80::6c2e:37ff:fe5f:b609  prefixlen 64  scopeid 0x20<link>
+        ether 6e:2e:37:5f:b6:09  txqueuelen 500  (Ethernet)
+        RX packets 81462  bytes 8927953 (8.5 MiB)
+        RX errors 0  dropped 68798  overruns 0  frame 0
+        TX packets 105  bytes 8405 (8.2 KiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+Network Diagram
+The information in this document uses this network setup:
+Configure ikev1 ipsec vpn using pre-shared key (out of the box)
+This section describes how to complete the IOS CLI and ISE configurations.
+IOS Router CLI Configuration
+Configure the Interfaces
+If the IOS router interfaces are not yet configured, then at least the WAN interface should be configured. Here is an example:
+interface GigabitEthernet0/0/0
+ ip address 10.48.23.68 255.255.255.0
+ negotiation auto
+ no shutdown
+! 
+Ensure that there is connectivity to the remote peer that should be used in order to establish a site-to-site VPN tunnel. You can use a ping in order to verify basic connectivity.
+Configure the ISAKMP (IKEv1) Policy
+In order to configure the ISAKMP policies for the IKEv1 connections, enter the crypto isakmp policy <priority> command in global configuration mode. Here is an example:
+crypto isakmp policy 10
+ encr aes
+ hash sha256
+ authentication pre-share
+ group 16
+Note: You can configure multiple IKE policies on each peer that participates in IPSec. When the IKE negotiation begins, it attempts to find a common policy that is configured on both of the peers, and it starts with the highest priority policies that are specified on the remote peer.
+Configure a Crypto ISAKMP Key
+In order to configure a preshared authentication key, enter the crypto isakmp key command in global configuration mode:
+crypto isakmp key Krakow123 address 10.48.17.87
+Configure an ACL for VPN Traffic of Interest
+Use the extended or named access list in order to specify the traffic that should be protected by encryption. Here is an example:
+access-list 101 permit ip 10.48.23.68 0.0.0.0 10.48.17.87 0.0.0.0 
+Note: An ACL for VPN traffic uses the source and destination IP addresses after NAT.
+Configure a Transform Set
+In order to define an IPSec transform set (an acceptable combination of security protocols and algorithms), enter the crypto ipsec transform-set command in global configuration mode. Here is an example:
+crypto ipsec transform-set SET esp-aes esp-sha256-hmac 
+ mode transport
+Configure a Crypto Map and Apply it to an Interface
+In order to create or modify a crypto map entry and enter the crypto map configuration mode, enter the crypto map global configuration command. In order for the crypto map entry to be complete, there are some aspects that must be defined at a minimum:
+The IPsec peers to which the protected traffic can be forwarded must be defined. These are the peers with which an SA can be established. In order to specify an IPSec peer in a crypto map entry, enter the set peer command.
+The transform sets that are acceptable for use with the protected traffic must be defined. In order to specify the transform sets that can be used with the crypto map entry, enter the set transform-set command.
+The traffic that should be protected must be defined. In order to specify an extended access list for a crypto map entry, enter the match address command.
+Here is an example:
+crypto map MAP 10 ipsec-isakmp
+ set peer 10.48.17.87
+ set transform-set SET
+ match address 101
+The final step is to apply the previously defined crypto map set to an interface. In order to apply this, enter the crypto map interface configuration command:
+interface GigabitEthernet0/0
+ crypto map MAP 
+IOS Final Configuration
+Here is the final IOS router CLI configuration:
+aaa group server tacacs+ ISE_TACACS
+ server name ISE22
+!
+aaa authentication login default group ISE_TACACS
+aaa authorization exec default group ISE_TACACS
+!
+crypto isakmp policy 10
+ encr aes
+ hash sha256
+ authentication pre-share
+ group 16
+!
+crypto isakmp key Krakow123 address 10.48.17.87
+!
+crypto ipsec transform-set SET esp-aes esp-sha256-hmac 
+ mode transport
+!
+crypto map MAP 10 ipsec-isakmp
+ set peer 10.48.17.87
+ set transform-set SET
+ match address 101
+!
+access-list 101 permit ip 10.48.23.68 0.0.0.0 10.48.17.87 0.0.0.0 
+!
+interface GigabitEthernet0/0/0
+ ip address 10.48.23.68 255.255.255.0
+ negotiation auto
+ no shutdown
+!
+crypto map MAP 10 ipsec-isakmp
+ set peer 10.48.17.87
+ set transform-set SET
+ match address 101
+!
+tacacs server ISE22
+ address ipv4 10.48.17.87
+ key cisco
+ISE Configuration
+Configure IP address on  ISE
+Address should be configured on interface GE1-GE5 from the CLI, GE0 is not supported.
+interface GigabitEthernet 1
+  ip address 10.48.17.87 255.255.255.0
+  ipv6 address autoconfig
+  ipv6 enable
+Note: Application restarts after IP address is configured on the interface:
+% Changing the IP address might cause ISE services to restart
+Continue with IP address change?  Y/N [N]: Y
+Add NAD to IPSec Group on ISE
+
+Navigate to Administration > Network Resources > Network Devices. Click Add. Ensure you configure the Name, IP Address, Shared Secret. To terminate IPSec tunnel from the NAD select YES against IPSEC Network Device Group.
+Once NAD is added, additional route should be created on ISE, to ensure that RADIUS traffic goes through ESR and get encrypted:
+ip route 10.48.23.68 255.255.255.255 gateway 10.1.1.1
+Enable IPSEC on ISE
+
+Navigate to Administration > System > Settings. Click on Radius and further on IPSEC. Select PSN (Single/Multiple/All) Select Enable option, pick the Interface and Select Authentication Method. Click Save. Services restart on the selected node at this point.
+Note, that after services restart ISE CLI configuration shows configured interface without IP address and in shutdown state, it is expected as ESR (Embedded Services Router) takes control of ISE interface.
+interface GigabitEthernet 1
+  shutdown
+  ipv6 address autoconfig
+  ipv6 enable
+Once services are restarted, ESR functionality is enabled. To login to ESR type esr in the command line:
+ISE22-1ek/admin# esr
+% Entering ESR 5921 shell
+% Cisco IOS Software, C5921 Software (C5921_I86-UNIVERSALK9-M), Version 15.5(2)T2, RELEASE SOFTWARE (fc3)
+% Technical Support: http://www.cisco.com/techsupport
+% Copyright (c) 1986-2015 Cisco Systems, Inc.
+
+Press RETURN to get started, <CTRL-C> to exit
+
+ise-esr5921>en
+ise-esr5921#
+ESR comes with this crypto configuration, which is enough to have the ipsec tunnel terminated with pre-shared keys:
+crypto keyring MVPN-spokes
+  pre-shared-key address 0.0.0.0 0.0.0.0 key Krakow123
+!
+crypto isakmp policy 10
+ encr aes
+ hash sha256
+ authentication pre-share
+ group 16
+!
+crypto isakmp policy 20
+ encr aes
+ hash sha256
+ authentication pre-share
+ group 14
+!
+crypto isakmp key Krakow123 address 0.0.0.0
+!
+crypto isakmp profile MVPN-profile
+   description LAN-to-LAN for spoke router(s) connection
+   keyring MVPN-spokes
+   match identity address 0.0.0.0
+!
+crypto ipsec transform-set radius esp-aes esp-sha256-hmac
+ mode tunnel
+crypto ipsec transform-set radius-2 esp-aes esp-sha256-hmac
+ mode transport
+!
+crypto dynamic-map MVPN-dynmap 10
+ set transform-set radius radius-2 
+!
+crypto map radius 10 ipsec-isakmp dynamic MVPN-dynmap
+ Make sure ESR has a route to send encrypted packets out:
+ip route 0.0.0.0 0.0.0.0 10.48.26.1
+Set Tacacs Policy on ISE
+Verify
+IOS Router
+Before ssh session is initiated to the Router, there is no active VPN connections:
+ISR4451#sh cry isa sa
+IPv4 Crypto ISAKMP SA
+dst             src             state          conn-id status
+
+IPv6 Crypto ISAKMP SA
+ Client connects to Router, as an authentication source ISE 2.2 is used.
+EKORNEYC-M-K04E:~ ekorneyc$ ssh alice@10.48.23.68
+Password:
+ISR4451#
+IOS sends a TACACS Packet, which triggers VPN session establishment, once the tunnel is up the this output is seen on the Router. It confirms that the phase 1 of the tunnel is up:
+ISR4451#sh cry isa sa
+IPv4 Crypto ISAKMP SA
+dst             src             state          conn-id status
+10.48.17.87     10.48.23.68     QM_IDLE           1962 ACTIVE
+
+IPv6 Crypto ISAKMP SA
+
+ISR4451#
+Phase 2 is up, and packets are encrypted and decrypted:
+ISR4451#sh cry ipsec sa
+
+interface: GigabitEthernet0/0/0
+    Crypto map tag: MAP, local addr 10.48.23.68
+
+   protected vrf: (none)
+   local  ident (addr/mask/prot/port): (10.48.23.68/255.255.255.255/0/0)
+   remote ident (addr/mask/prot/port): (10.48.17.87/255.255.255.255/0/0)
+   current_peer 10.48.17.87 port 500
+     PERMIT, flags={origin_is_acl,}
+    #pkts encaps: 48, #pkts encrypt: 48, #pkts digest: 48
+    #pkts decaps: 48, #pkts decrypt: 48, #pkts verify: 48
+    #pkts compressed: 0, #pkts decompressed: 0
+    #pkts not compressed: 0, #pkts compr. failed: 0
+    #pkts not decompressed: 0, #pkts decompress failed: 0
+    #send errors 0, #recv errors 0
+
+     local crypto endpt.: 10.48.23.68, remote crypto endpt.: 10.48.17.87
+     plaintext mtu 1458, path mtu 1500, ip mtu 1500, ip mtu idb GigabitEthernet0/0/0
+     current outbound spi: 0x64BD51B8(1690128824)
+     PFS (Y/N): N, DH group: none
+
+     inbound esp sas:
+      spi: 0xFAE51DF8(4209319416)
+        transform: esp-aes esp-sha256-hmac ,
+        in use settings ={Transport, }
+        conn id: 2681, flow_id: ESG:681, sibling_flags FFFFFFFF80004008, crypto map: MAP
+        sa timing: remaining key lifetime (k/sec): (4607998/3127)
+        IV size: 16 bytes
+        replay detection support: Y
+        Status: ACTIVE(ACTIVE)
+
+     inbound ah sas:
+
+     inbound pcp sas:
+
+     outbound esp sas:
+      spi: 0x64BD51B8(1690128824)
+        transform: esp-aes esp-sha256-hmac ,
+        in use settings ={Transport, }
+        conn id: 2682, flow_id: ESG:682, sibling_flags FFFFFFFF80004008, crypto map: MAP
+        sa timing: remaining key lifetime (k/sec): (4607997/3127)
+        IV size: 16 bytes
+        replay detection support: Y
+        Status: ACTIVE(ACTIVE)
+
+     outbound ah sas:
+
+     outbound pcp sas:
+ISR4451#
+ESR
+Same outputs can be checked on ESR, phase one is up:
+ise-esr5921#sh cry isa sa
+IPv4 Crypto ISAKMP SA
+dst             src             state          conn-id status
+10.48.17.87     10.48.23.68     QM_IDLE           1002 ACTIVE
+
+IPv6 Crypto ISAKMP SA
+
+ise-esr5921#
+Phase 2 is up, packets are encrypted and decrypted successfully:
+ise-esr5921#sh cry ipsec sa
+
+interface: Ethernet0/0
+    Crypto map tag: radius, local addr 10.48.17.87
+
+   protected vrf: (none)
+   local  ident (addr/mask/prot/port): (10.48.17.87/255.255.255.255/0/0)
+   remote ident (addr/mask/prot/port): (10.48.23.68/255.255.255.255/0/0)
+   current_peer 10.48.23.68 port 500
+     PERMIT, flags={}
+    #pkts encaps: 48, #pkts encrypt: 48, #pkts digest: 48
+    #pkts decaps: 48, #pkts decrypt: 48, #pkts verify: 48
+    #pkts compressed: 0, #pkts decompressed: 0
+    #pkts not compressed: 0, #pkts compr. failed: 0
+    #pkts not decompressed: 0, #pkts decompress failed: 0
+    #send errors 0, #recv errors 0
+
+     local crypto endpt.: 10.48.17.87, remote crypto endpt.: 10.48.23.68
+     plaintext mtu 1458, path mtu 1500, ip mtu 1500, ip mtu idb Ethernet0/0
+     current outbound spi: 0xFAE51DF8(4209319416)
+     PFS (Y/N): N, DH group: none
+
+     inbound esp sas:
+      spi: 0x64BD51B8(1690128824)
+        transform: esp-aes esp-sha256-hmac ,
+        in use settings ={Transport, }
+        conn id: 3, flow_id: SW:3, sibling_flags 80000000, crypto map: radius
+        sa timing: remaining key lifetime (k/sec): (4242722/3056)
+        IV size: 16 bytes
+        replay detection support: Y
+        Status: ACTIVE(ACTIVE)
+
+     inbound ah sas:
+
+     inbound pcp sas:
+
+     outbound esp sas:
+      spi: 0xFAE51DF8(4209319416)
+        transform: esp-aes esp-sha256-hmac ,
+        in use settings ={Transport, }
+        conn id: 4, flow_id: SW:4, sibling_flags 80000000, crypto map: radius
+        sa timing: remaining key lifetime (k/sec): (4242722/3056)
+        IV size: 16 bytes
+        replay detection support: Y
+        Status: ACTIVE(ACTIVE)
+
+     outbound ah sas:
+          
+     outbound pcp sas:
+ise-esr5921#
+ISE
+Live Authentication indicates regular PAP_ASCII authentication:
+Captures taken on GE1 interface of ISE and filtered with ESP or Tacacs, confirm that there is no Tacacs in clear text, and all traffic is encrypted:
+Troubleshoot
+Common VPN Troubleshooting technique can be applied to troubleshoot issues related to IPSEC. You can find useful documents below:
+IOS IKEv2 Debugs for Site-to-Site VPN with PSKs Troubleshooting TechNote
+ASA IKEv2 Debugs for Site-to-Site VPN with PSKs
+IPsec Troubleshooting: Understanding and Using debug Commands
+Configure FlexVPN Site-to-Site (DVTI to SVTI) between NAD and ISE 2.2
+It is also possible to protect RADIUS traffic with FlexVPN. The following topology is used in the example below:
+FlexVPN configuration is straightforward. More details can be found here:
+http://www.cisco.com/c/en/us/support/docs/security/flexvpn/115782-flexvpn-site-to-site-00.html
+Advantages of Flex VPN design
+You can run Flex along all your previous IPsec VPNs. Most scenarios allow coexistence of previous configuration and flex.
+Flex VPN is based on IKEv2 and not IKEv1, which improves almost all aspects of negotiation and protocol stability.
+Multiple functionalities achievable with one framework.
+Ease of configuration by using sane defaults - you do not need to define policies, transform sets etc, IKEv2 has built in defaults that make sense and are updated.
+Router Configuration
+aaa new-model
+!
+!
+aaa group server tacacs+ ISE_TACACS
+ server name ISE22_VRF
+ip vrf forwarding TACACS
+!
+aaa authentication login default group ISE_TACACS
+aaa authorization exec default group ISE_TACACS 
+aaa authorization network default local 
+!
+crypto ikev2 authorization policy default
+ route set interface Loopback0
+ no route set interface
+!
+!
+crypto ikev2 keyring mykeys
+ peer ISE22
+  address 10.48.17.87
+  pre-shared-key Krakow123
+ !
+!
+!
+crypto ikev2 profile default
+ match identity remote address 10.48.17.87 255.255.255.255 
+ authentication remote pre-share (with the command authentication remote pre-share key <key> in place keyring is not required)
+ authentication local pre-share
+ keyring local mykeys
+ aaa authorization group psk list default default
+!
+!
+ip tftp source-interface GigabitEthernet0
+!
+!
+!
+crypto ipsec profile default
+ set ikev2-profile default (it is default configuration)
+!
+!
+!
+interface Loopback0
+ip vrf forwarding TACACS
+ ip address 100.100.100.100 255.255.255.0
+!
+interface Tunnel0
+ip vrf forwarding TACACS
+ ip address 10.1.12.1 255.255.255.0
+ tunnel source GigabitEthernet0/0/0
+ tunnel mode ipsec ipv4
+ tunnel destination 10.48.17.87
+ tunnel protection ipsec profile default
+!
+interface GigabitEthernet0/0/0
+ ip address 10.48.23.68 255.255.255.0
+ negotiation auto
+!
+!
+ip route 0.0.0.0 0.0.0.0 10.48.23.1
+ip tacacs source-interface Loopback0
+!
+!
+tacacs server ISE22_VRF
+ address ipv4 10.1.1.2
+ key cisco
+!
+ISR4451# 
+ESR Configuration on ISE
+ise-esr5921#sh run
+Building configuration...
+
+Current configuration : 5778 bytes
+!
+! Last configuration change at 17:32:58 CET Thu Feb 23 2017
+!
+version 15.5
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no service password-encryption
+service call-home
+!
+hostname ise-esr5921
+!
+boot-start-marker
+boot host unix:default-config
+boot-end-marker
+!
+!
+!
+no aaa new-model
+bsd-client server url https://cloudsso.cisco.com/as/token.oauth2
+clock timezone CET 1 0
+mmi polling-interval 60
+no mmi auto-configure
+no mmi pvc
+mmi snmp-timeout 180
+call-home
+ ! If contact email address in call-home is configured as sch-smart-licensing@cisco.com
+ ! the email address configured in Cisco Smart License Portal will be used as contact email address to send SCH notifications.
+ contact-email-addr sch-smart-licensing@cisco.com
+ profile "CiscoTAC-1"
+  active
+  destination transport-method http
+  no destination transport-method email
+!
+!
+!
+!
+!
+!
+!
+!
+
+
+!         
+!
+!
+!
+ip cef
+no ipv6 cef
+!
+multilink bundle-name authenticated
+!
+!
+!
+!
+!
+!
+!
+!
+!
+crypto pki trustpoint SLA-TrustPoint
+ enrollment pkcs12
+ revocation-check crl
+!
+!
+crypto pki certificate chain SLA-TrustPoint
+ certificate ca 01
+  30820321 30820209 A0030201 02020101 300D0609 2A864886 F70D0101 0B050030 
+  32310E30 0C060355 040A1305 43697363 6F312030 1E060355 04031317 43697363 
+  6F204C69 63656E73 696E6720 526F6F74 20434130 1E170D31 33303533 30313934 
+  3834375A 170D3338 30353330 31393438 34375A30 32310E30 0C060355 040A1305 
+  43697363 6F312030 1E060355 04031317 43697363 6F204C69 63656E73 696E6720 
+  526F6F74 20434130 82012230 0D06092A 864886F7 0D010101 05000382 010F0030 
+  82010A02 82010100 A6BCBD96 131E05F7 145EA72C 2CD686E6 17222EA1 F1EFF64D 
+  CBB4C798 212AA147 C655D8D7 9471380D 8711441E 1AAF071A 9CAE6388 8A38E520 
+  1C394D78 462EF239 C659F715 B98C0A59 5BBB5CBD 0CFEBEA3 700A8BF7 D8F256EE 
+  4AA4E80D DB6FD1C9 60B1FD18 FFC69C96 6FA68957 A2617DE7 104FDC5F EA2956AC 
+  7390A3EB 2B5436AD C847A2C5 DAB553EB 69A9A535 58E9F3E3 C0BD23CF 58BD7188 
+  68E69491 20F320E7 948E71D7 AE3BCC84 F10684C7 4BC8E00F 539BA42B 42C68BB7 
+  C7479096 B4CB2D62 EA2F505D C7B062A4 6811D95B E8250FC4 5D5D5FB8 8F27D191 
+  C55F0D76 61F9A4CD 3D992327 A8BB03BD 4E6D7069 7CBADF8B DF5F4368 95135E44 
+  DFC7C6CF 04DD7FD1 02030100 01A34230 40300E06 03551D0F 0101FF04 04030201 
+  06300F06 03551D13 0101FF04 05300301 01FF301D 0603551D 0E041604 1449DC85 
+  4B3D31E5 1B3E6A17 606AF333 3D3B4C73 E8300D06 092A8648 86F70D01 010B0500 
+  03820101 00507F24 D3932A66 86025D9F E838AE5C 6D4DF6B0 49631C78 240DA905 
+  604EDCDE FF4FED2B 77FC460E CD636FDB DD44681E 3A5673AB 9093D3B1 6C9E3D8B 
+  D98987BF E40CBD9E 1AECA0C2 2189BB5C 8FA85686 CD98B646 5575B146 8DFC66A8 
+  467A3DF4 4D565700 6ADF0F0D CF835015 3C04FF7C 21E878AC 11BA9CD2 55A9232C 
+  7CA7B7E6 C1AF74F6 152E99B7 B1FCF9BB E973DE7F 5BDDEB86 C71E3B49 1765308B 
+  5FB0DA06 B92AFE7F 494E8A9E 07B85737 F3A58BE1 1A48A229 C37C1E69 39F08678 
+  80DDCD16 D6BACECA EEBC7CF9 8428787B 35202CDC 60E4616A B623CDBD 230E3AFB 
+  418616A9 4093E049 4D10AB75 27E86F73 932E35B5 8862FDAE 0275156F 719BB2F0 
+  D697DF7F 28
+        quit
+license udi pid CISCO5921-K9 sn 98492083R3X
+username lab password 0 lab
+!
+redundancy
+!
+!
+! 
+crypto keyring MVPN-spokes  
+  pre-shared-key address 0.0.0.0 0.0.0.0 key Krakow123
+crypto ikev2 authorization policy default
+ route set interface
+ route set remote ipv4 10.1.1.0 255.255.255.0
+!
+!
+!
+crypto ikev2 keyring mykeys
+ peer ISR4451
+  address 10.48.23.68
+  pre-shared-key Krakow123
+ !
+!
+!
+crypto ikev2 profile default
+ match identity remote address 0.0.0.0 
+ authentication remote pre-share
+ authentication local pre-share
+ keyring local mykeys
+ aaa authorization group psk list default default local
+ virtual-template 1
+!
+!
+crypto isakmp policy 10
+ encr aes
+ hash sha256
+ authentication pre-share
+ group 16
+!
+crypto isakmp policy 20
+ encr aes
+ hash sha256
+ authentication pre-share
+ group 14 
+crypto isakmp key Krakow123 address 0.0.0.0        
+crypto isakmp profile MVPN-profile
+   description LAN-to-LAN for spoke router(s) connection
+   keyring MVPN-spokes
+   match identity address 0.0.0.0 
+!
+!
+crypto ipsec transform-set radius esp-aes esp-sha256-hmac 
+ mode tunnel
+crypto ipsec transform-set radius-2 esp-aes esp-sha256-hmac 
+ mode transport
+!
+!
+!
+crypto dynamic-map MVPN-dynmap 10
+ set transform-set radius radius-2 
+!
+!
+crypto map radius 10 ipsec-isakmp dynamic MVPN-dynmap 
+!
+!
+!
+!         
+!
+interface Loopback0
+ ip address 10.1.12.2 255.255.255.0
+!
+interface Ethernet0/0
+ description e0/0->connection to external NAD 
+ ip address 10.48.17.87 255.255.255.0
+ ip nat outside
+ ip virtual-reassembly in
+ no ip route-cache
+ crypto map radius
+!
+interface Ethernet0/1
+ description e0/1->tap0 internal connection to ISE
+ ip address 10.1.1.1 255.255.255.252
+ ip nat inside
+ ip virtual-reassembly in
+ no ip route-cache
+!
+interface Ethernet0/2
+ description e0/2->connection to CSSM backend license server
+ no ip address
+ ip virtual-reassembly in
+ no ip route-cache
+!
+interface Ethernet0/3
+ no ip address
+ shutdown
+!
+interface Virtual-Template1 type tunnel
+ ip unnumbered Loopback0
+ tunnel source Ethernet0/0
+ tunnel mode ipsec ipv4
+ tunnel protection ipsec profile default
+!
+ip forward-protocol nd
+!
+!
+no ip http server
+no ip http secure-server
+ip nat inside source list 1 interface Ethernet0/0 overload
+ip nat inside source static udp 10.1.1.2 1645 interface Ethernet0/0 1645
+ip nat inside source static udp 10.1.1.2 1646 interface Ethernet0/0 1646
+ip nat inside source static udp 10.1.1.2 1812 interface Ethernet0/0 1812
+ip nat inside source static udp 10.1.1.2 1813 interface Ethernet0/0 1813
+ip nat inside source static tcp 10.1.1.2 49 interface Ethernet0/0 49
+ip route 0.0.0.0 0.0.0.0 10.48.17.1
+!
+!
+!
+access-list 1 permit 10.1.1.0 0.0.0.3
+!
+control-plane
+!
+ !
+ !
+ !
+ !
+!
+!
+!
+!
+!
+!
+!
+line con 0
+ logging synchronous
+line aux 0
+line vty 0 4
+ login
+ transport input none
+!
+!
+end
+FlexVPN Design Considerations
+In most cases Radius connection should be terminated on G0/1 interface of ISE, which is E0/0 interface of ESR. While using crypto maps, interesting traffic should be defined with access-lists, with SVTI - using routing. It will not work, if two routers are configured to ISE interface one via Tunnel (encrypted) and one via interface (Tunnel establishment). The same issue applies to the Router configuration.
+For this reason interesting traffic (Encrypted Radius) is communicated between Lo0 interface of the router, and Tap0 interface of ISE (no nat is needed in this case on ESR). Because of this, ip route can be configured, to force Radius traffic to go through the tunnel and get encrypted.
+Since ip address of Tap0 interface of the ISE is fixed (10.1.1.2) it can be placed in VRF on Router, to ensure communication to this ip address happens only for TACACS and only through the tunnel.
+Contributed by Cisco Engineers
+Eugene Korneychuk
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Configure EAP-TLS Authentication with ISE
+Perform Password Recovery for ISE Command Line Interface (CLI)
+Install Patch on ISE
++ Show 1 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine 2.2

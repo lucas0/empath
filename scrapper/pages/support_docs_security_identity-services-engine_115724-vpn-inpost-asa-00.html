@@ -1,0 +1,243 @@
+Configuration Examples and TechNotes
+VPN Inline Posture using iPEP ISE and ASA
+Save
+Translations
+Download
+Print
+
+Updated:March 19, 2013
+Document ID:115724
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Conventions
+Background Information
+Basic Flow
+Example Topology
+ASA Configuration
+ISE Configuration
+iPEP Configuration
+Authentication and Posture Configuration
+Posture Profiles Configuration
+Authorization Configuration
+Result
+Related Information
+Introduction
+This document provides information on how to set up inline posture with an Adaptive Security Appliance (ASA) and an Identity Services Engine (ISE).
+Prerequisites
+Requirements
+There are no specific requirements for this document.
+Components Used
+The information in this document is based on version 8.2(4) for the ASA and version 1.1.0.665 for the ISE.
+Conventions
+Refer to the Cisco Technical Tips Conventions for more information on document conventions.
+Background Information
+The ISE provides a lot of AAA Services (Posture, Profiling, Authentication, etc). Some Network Devices (NAD) support Radius Change Of Authorization (CoA) that allows to dynamically change the authorization profile of an end device based on its Posture or Profiling result. Other NADs such as the ASA do not support this feature yet. This means that an ISE running in Inline Posture Enforcement mode (iPEP) is needed to dynamically change the network access policy of an end device.
+The basic concept is that all user traffic will go through the iPEP, with the node also acting as a Radius Proxy.
+Basic Flow
+VPN User logs in.
+ASA sends the request to the iPEP node (ISE).
+The iPEP rewrites the request (by adding Cisco AV-PAIR attributes to indicate this is an iPEP authentication) and sends the request to the ISE Policy Node (PDP).
+The PDP replies back to the iPEP which will forward to the NAD.
+If the user is authenticated, the NAD MUST send an accounting-start request (see CSCtz84826 ). This will trigger the session initiation on the iPEP. At this stage, the user is redirected for posture. Additionally, you need to enable interim-accounting-update for tunnel established from the WEBVPN Portal, as the ISE expects to have the attribute framed-ip-address in the radius accounting. However, when connecting to the portal, the VPN IP Address of the client is not yet known because the tunnel is not established. This will ensure that the ASA will send interim updates, such as when the tunnel will be established.
+The user goes through the posture assessment, and based on the results the PDP will update the session using CoA on the iPEP.
+This screenshot illustrates this process:
+Example Topology
+ASA Configuration
+The ASA Configuration is a simple IPSEC Remote VPN:
+!
+interface Ethernet0/0
+nameif ISE
+security-level 50
+ip address 192.168.102.253 255.255.255.0 
+!
+interface Ethernet0/1
+nameif outside
+security-level 0
+ip address 10.48.39.236 255.255.255.0 
+!
+access-list split extended permit ip 192.168.0.0 255.255.0.0 any 
+!
+aaa-server ISE protocol radius
+interim-accounting-update 
+
+!--- Mandatory if tunnel established from WEBVPN Portal
+
+aaa-server ISE (ISE) host 192.168.102.254  
+
+!--- this is the iPEP IP
+ 
+key cisco
+crypto ipsec transform-set TS1 esp-aes esp-sha-hmac 
+crypto ipsec security-association lifetime seconds 28800
+crypto ipsec security-association lifetime kilobytes 4608000
+crypto dynamic-map DMAP1 10 set transform-set TS1
+crypto dynamic-map DMAP1 10 set reverse-route
+crypto map CM1 10 ipsec-isakmp dynamic DMAP1
+crypto map CM1 interface outside
+crypto isakmp enable outside
+crypto isakmp policy 1
+authentication pre-share
+encryption aes
+hash sha
+group 2
+lifetime 86400
+!
+ip local pool VPN 192.168.5.1-192.168.5.100
+!
+group-policy DfltGrpPolicy attributes
+dns-server value 192.168.101.3  
+
+!--- The VPN User needs to be able to resolve the CN from the !--- ISE HTTPS Certificate (which is sent in the radius response)
+
+vpn-tunnel-protocol IPSec svc webvpn
+split-tunnel-policy tunnelspecified
+split-tunnel-network-list value split
+address-pools value VPN
+!
+tunnel-group cisco general-attributes
+address-pool VPN
+authentication-server-group ISE
+accounting-server-group ISE 
+
+!--- Does not work without this (see introduction)
+
+!
+tunnel-group cisco ipsec-attributes
+pre-shared-key cisco
+!
+route outside 0.0.0.0 0.0.0.0 10.48.39.5 1
+route ISE 192.168.0.0 255.255.0.0 192.168.102.254 1 
+
+!--- You need to make sure the traffic to the local subnets !--- are going through the inline ISE
+
+!
+ISE Configuration
+iPEP Configuration
+The first thing to do is to add an ISE as an iPEP Node. You can find additional information about the process here:
+http://www.cisco.com/en/US/docs/security/ise/1.1/user_guide/ise_ipep_deploy.html#wp1110248.
+This is basically what you have to configure in the various tabs (screenshots provided in this section illustrate this):
+Configure untrusted IP and Global IP settings (in this case, untrusted IP is 192.168.102.254).
+Deployment is routed mode.
+Put a static filter for the ASA to be allowed to go through the iPEP box (otherwise, connectivity to/from the ISE thru iPEP box is dropped).
+Configure the Policy ISE as Radius server and the ASA as Radius client.
+Add a route to the VPN Subnet that points to the ASA.
+Set the Monitoring ISE as the Logging Host (port 20514 by default; in this case, the policy ISE is monitoring as well).
+Important Certificate Configuration Requirements:
+Before attempting to register an iPEP node, ensure that the following certificate Extended Key Usage requirements are met. If the certificates are not properly configured on the iPEP and Admin nodes, the registration process will complete. However, you will lose admin access to the iPEP node. The following details have been extrapolated from the ISE 1.1.x iPEP Deployment Guide:
+The presence of certain combinations of attributes in the local certificates of the Administration and Inline Posture nodes can prevent mutual authentication from working.
+The attributes are:
+Extended Key Usage (EKU)—Server Authentication
+Extended Key Usage (EKU)—Client Authentication
+Netscape Cert Type—SSL Server Authentication
+Netscape Cert Type—SSL Client Authentication
+Either of the following combinations is required for the Administration certificate:
+Both EKU attributes should be disabled, if both EKU attributes are disabled in the Inline Posture certificate, or both EKU attributes should be enabled, if the server attribute is enabled in the Inline Posture certificate.
+Both Netscape Cert Type attributes should be disabled, or both should be enabled.
+Either of the following combinations is required for the Inline Posture certificate:
+Both EKU attributes should be disabled, or both should be enabled, or the server attribute alone should be enabled.
+Both Netscape Cert Type attributes should be disabled, or both should be enabled, or the server attribute alone should be enabled.
+Where self-signed local certificates are used on the Administration and Inline Posture nodes, you must install the self-signed certificate of the Administration node in the trust list of the Inline Posture node. In addition, if you have both primary and secondary Administration nodes in your deployment, you must install the self-signed certificate of both Administration nodes in the trust list of the Inline Posture node.
+Where CA-signed local certificates are used on the Administration and Inline Posture nodes, mutual authentication should work correctly. In this case, the certificate of the signing CA is installed on the Administration node prior to registration, and this certificate is replicated to the Inline Posture node.
+If CA-issued keys are used for securing communication between the Administration and Inline Posture nodes, before you register the Inline Posture node, you must add the public key (CA certificate) from the Administration node to the CA certificate list of the Inline Posture node.
+Basic Configuration:
+Deployment Mode Configuration:
+Filters Configuration:
+Radius Configuration:
+Static Routes:
+Logging:
+Authentication and Posture Configuration
+There are three posture states:
+Unknown: Posture is not yet made
+Compliant: Posture is made and the system is Compliant
+Non-Compliant: Posture is made, but the system failed at least one check
+Now the authorization profiles have to be created (which will be Inline Authorization Profiles: This will add the ipep-authz=true attribute in the Cisco AV-Pair) that will be used for the differents case.
+Commonly, the Unknown profile returns the redirect URL (posture discovery) which will forward the traffic of the user to the ISE and will ask to install the NAC Agent. If the NAC Agent is already installed, this will allow its HTTP Discovery request to be forwarded to the ISE.
+In this profile, an ACL that allows HTTP Traffic to the ISE and DNS at least is used.
+The Compliant and Non-compliant profiles usually return a downloadable ACL to grant network access based on the user profile. Non-compliant profile can allow the users to access a web server to download an Antivirus for example, or grant limited network access.
+In this example, the Unknown and Compliant profiles are created, and the presence of notepad.exe as requirements is checked.
+Posture Profiles Configuration
+The first thing to do is to create the Downloadable ACLs (dACL) and profiles:
+Note: This is not mandatory to have the dACL name matching the profile name.
+Compliant
+ACL: ipep-unknown
+Authorization Profile: ipep-unknown
+Non-Compliant
+ACL: ipep-non-compliant
+Authorization Profile: ipep-non-compliant
+Unknown dACL:
+Unknown Profile:
+Compliant dACL:
+Compliant Profile:
+Authorization Configuration
+Now that the profile is created, you need to match the Radius Request coming from the iPEP and apply to them the right profiles. The iPEP ISEs are defined with a special device type that will be used in the Authorization rules:
+NADs:
+Authorization:
+Note: If the agent is not installed on the machine, you can define Client Provisioning rules.
+Result
+You are prompted to install the agent (in this example, client provisioning is already set):
+Some output at this stage:
+ciscoasa# show vpn-sessiondb remote 
+ 
+Session Type: IPsec
+Username     : cisco                  Index        : 26
+Assigned IP  : 192.168.5.2            Public IP    : 10.48.39.134
+Protocol     : IKE IPsec
+License      : IPsec
+Encryption   : AES128                 Hashing      : SHA1
+Bytes Tx     : 143862                 Bytes Rx     : 30628
+Group Policy : DfltGrpPolicy          Tunnel Group : cisco
+Login Time   : 13:43:55 UTC Mon May 14 2012
+Duration     : 0h:09m:37s
+Inactivity   : 0h:00m:00s
+NAC Result   : Unknown
+VLAN Mapping : N/A                    VLAN         : none
+And from the iPEP:
+w-ise-ipep-1/admin# show pep table session 
+
+Current Sessions (IP, MAC(if available), Profile ID, VLAN (if any)):
+192.168.5.2 00:00:00:00:00:00 2 0 
+w-ise-ipep-1/admin# show pep table accesslist normal 
+#ACSACL#-IP-ipep-unknown-4fb10ac2:
+deny tcp any host 192.168.101.1 eq 80
+deny tcp any host 192.168.101.1 eq 443
+permit ip any host 192.168.101.1
+permit udp any any eq 53
+Once the agent is downloaded and installed:
+The agent should automatically detect the ISE and runs the posture assessment (assuming you have the posture rules defined already, which is another subject). In this example, the posture is successful, and this appears:
+Note: There are two authentications in the screenshot above. However, because the iPEP box caches the ACLs, it is not downloaded every time.
+On the iPEP:
+w-ise-ipep-1/admin# show pep table session 
+ 
+Current Sessions (IP, MAC(if available), Profile ID, VLAN (if any)):
+192.168.5.2 00:00:00:00:00:00 3 0 
+w-ise-ipep-1/admin# show pep table accesslist normal 
+#ACSACL#-IP-PERMIT_ALL_TRAFFIC-4f57e406:
+permit ip any any
+ 
+#ACSACL#-IP-ipep-unknown-4fb10ac2:
+deny tcp any host 192.168.101.1 eq 80
+deny tcp any host 192.168.101.1 eq 443
+permit ip any host 192.168.101.1
+permit udp any any eq 53
+w-ise-ipep-1/admin#
+Related Information
+Technical Support & Documentation - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+19-Mar-2013
+Initial Release
+Contributed by Cisco Engineers
+Bastien Migette
+Cisco TAC Engineer.
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine

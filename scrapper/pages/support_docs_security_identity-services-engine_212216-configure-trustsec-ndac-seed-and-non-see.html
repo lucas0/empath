@@ -1,0 +1,305 @@
+Configuration Examples and TechNotes
+Configure TrustSec NDAC seed and non-seed devices
+Save
+Translations
+Download
+Print
+
+
+
+Updated:July 16, 2021
+Document ID:212216
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Components Used
+Network Diagram
+ IP addresses
+ISE Configuration
+Add Network Devices
+6500 (Seed)
+3560X (Non-seed)
+TrustSec Security Groups
+Network Device Authorization Policy
+Seed Device Configuration (6500)
+Verification
+ISE Live Logs
+PAC provisioning
+TrustSec Data Download
+Non-Seed Device Configuration (3560X)
+Verification
+ISE Live Logs
+PAC provisioning
+Non-Seed Authentication
+Mutual Peer Policy Download
+TrustSec Data Download
+Interface Verification
+Introduction
+This document describes how to configure seed and non-seed devices when using trustsec with ISE (Identity Services Engine).
+Trustsec uses NDAC (Network Device Admission Control) to authenticate a new device before allowing it to join the trustsec domain. This prevents unauthorized devices from being able to participate in the exchange of trustsec information. Seed devices/authenitcators, in this case the 6500 switch, need to be manually configured and use RADIUS over IP to connect to ISE. Non-seed devices/supplicants, in this case the 3560X, do not have direct IP connectivity to ISE and require the seed devices to enroll, and authenticate them onto the network using 802.1X. Once the supplicant, non-seed device, is authenticated, a PAC (Protected Access Credential) will be provisioned from ISE and the server information will be downloaded. The PAC contains a shared key and encrypted token to provide secure contact to ISE in the future.
+Prerequisites
+ISE authentication server
+Trustsec capable seed device/authenticator
+Trustsec capable non-seed device/supplicant
+Please reference the latest trustsec compatibility matrix:
+http://www.cisco.com/c/en/us/solutions/enterprise-networks/trustsec/solution-overview-listing.html
+Components Used
+ISE 2.2 patch 2
+WS-C6509-E [VS-SUP2T-10G]
+s2t54-ipservicesk9-mz.SPA.152-1.SY3.bin
+WS-C3560X-24P-S
+c3560e-universalk9-mz.152-4.E4.bin
+Network Diagram
+NDAC Topology
+ IP addresses
+ISE: 14.36.143.18
+6509: 10.122.165.35
+3560X: 10.122.160.118
+ISE Configuration
+Add Network Devices
+6500 (Seed)
+WorkCenters > TrustSec > Components > Network Devices > Add
+Device Name and IP address
+Radius Shared Secret
+Trustsec Credentials
+3560X (Non-seed)
+WorkCenters > TrustSec > Components > Network Devices > Add
+Device Name and IP address
+Radius Shared Secret
+Trustsec Credentials
+TrustSec Security Groups
+WorkCenters > TrustSec > Components > Security Groups
+Network Device Authorization Policy
+WorkCenters > TrustSec > TrustSec Policy > Network Device Authorization
+Seed Device Configuration (6500)
+TrustSec Credentials
+6500#cts credentials id 6500 password Cisc0123
+
+AAA configuration
+6500(config)#aaa new-model
+6500(config)#aaa authentication dot1x default group radius
+6500(config)#aaa accounting identity default start-stop group radius
+6500(config)#aaa authorization network CTSlist group radius
+6500(config)#cts authorization list CTSlist
+
+Radius Server Configuration
+6500(config)#radius server ISE
+6500(config-radius-server)#address ipv4 14.36.143.18 auth-port 1812 acct-port 1813
+6500(config-radius-server)#pac key Cisc0123
+
+Recognize and use vendor-specific attributes
+6500(config)#radius-server vsa send authentication
+
+Enable Change of Authorization
+6500(config)#aaa server radius dynamic-author
+6500(config-locsvr-da-radius)#client 14.36.143.18 server-key Cisc0123
+
+Enable 802.1X
+6500(config)#dot1x system-auth-control
+
+Switchport TrustSec Configuration
+6500(config)#int gi6/1
+6500(config-if)#switchport mode trunk
+6500(config-if)#cts dot1x
+6500(config-if-cts-dot1x)#sap mode-list null
+6500(config-if-cts-dot1x)#propagate sgt
+Verification
+PAC Download
+6500#show cts pac
+  AID: 6F5719523570B8D229F23073404E2D37
+  PAC-Info:
+    PAC-type = Cisco Trustsec
+    AID: 6F5719523570B8D229F23073404E2D37
+    I-ID: 6500
+    A-ID-Info: ISE 2.2p1
+    Credential Lifetime: 04:27:29 UTC Oct 26 2017
+  PAC-Opaque: 000200B000030001000400106F5719523570B8D229F23073404E2D370006009400030100801062F6BE70E2CCB6B0D25BFC81CB5D00000013597A55C100093A8059F0E1A3FAF83A2B7C8332479B7324C0FDC4CBAE9AE4AFD19C614A7DB13C9DBD06798A344423897745F0F91F19489772E543ED205A9CD0F276A96C4505BF34CB75F132377FE770B77A3D822842DFE3A0A858130612D08DD58965B09C352E33E74DB3F6B5C7E1F6EC8C30FF215A6FEB3EA7BBC95E
+  Refresh timer is set for 12w5d
+
+Environment Data
+6500#show cts environment-data
+CTS Environment Data
+====================
+Current state = COMPLETE
+Last status = Successful
+Local Device SGT:
+  SGT tag = 2-02:TrustSec_Devices
+Server List Info:
+Installed list: CTSServerList1-0001, 1 server(s):
+ *Server: 14.36.143.18, port 1812, A-ID 6F5719523570B8D229F23073404E2D37
+          Status = ALIVE
+          auto-test = TRUE, keywrap-enable = FALSE, idle-time = 60 mins, deadtime = 20 secs
+Multicast Group SGT Table:
+Security Group Name Table:
+    0-fb:Unknown
+    2-fb:TrustSec_Devices
+    3-fb:Network_Services
+    4-fb:Employees
+    5-fb:Contractors
+    6-fb:Guests
+    7-fb:Production_Users
+    8-fb:Developers
+    9-fb:Auditors
+    10-fb:Point_of_Sale_Systems
+    11-fb:Production_Servers
+    12-fb:Development_Servers
+    13-fb:Test_Servers
+    14-fb:PCI_Servers
+    15-fb:BYOD
+    255-fb:Quarantined_Systems
+Environment Data Lifetime = 86400 secs
+Last update time = 20:28:36 UTC Thu Jul 27 2017
+Env-data expires in   0:23:47:05 (dd:hr:mm:sec)
+Env-data refreshes in 0:23:47:05 (dd:hr:mm:sec)
+Cache data applied           = NONE
+State Machine is running
+ISE Live Logs
+Operations > RADIUS > Live Logs
+PAC provisioning
+TrustSec Data Download
+Non-Seed Device Configuration (3560X)
+TrustSec Credentials
+3560X#cts credentials id 3560X password Cisc0123
+
+AAA configuration
+3560X(config)#aaa new-model
+3560X(config)#aaa authentication dot1x default group radius
+3560X(config)#aaa authorization network default group radius
+3560X(config)#aaa accounting identity default start-stop group radius
+
+Recognize and use vendor-specific attributes
+3560X(config)#radius-server vsa send authentication
+
+Enable Change of Authorization
+3560X(config)#aaa server radius dynamic-author
+3560X(config-locsvr-da-radius)#client 14.36.143.18 server-key Cisc0123
+
+Enable 802.1X
+3560X(config)#dot1x system-auth-control
+
+Switchport TrustSec Configuration
+3560X(config)#int gi0/24
+3560X(config-if)#switchport trunk encapsulation dot1q
+3560X(config-if)#switchport mode trunk
+3560X(config-if)#cts dot1x
+3560X(config-if-cts-dot1x)#sap mode-list null
+3560X(config-if-cts-dot1x)#propagate sgt
+Verification
+Pac Download
+3560X#show cts pac
+  AID: 6F5719523570B8D229F23073404E2D37
+  PAC-Info:
+    PAC-type = Cisco Trustsec
+    AID: 6F5719523570B8D229F23073404E2D37
+    I-ID: 3560X
+    A-ID-Info: ISE 2.2p1
+    Credential Lifetime: 05:32:57 UTC Oct 26 2017
+  PAC-Opaque: 000200B000030001000400106F5719523570B8D229F23073404E2D3700060094000301009F9B0624C0A0C5D2AFDAAE89C173D34300000013597A55C100093A8059F0E1A3FAF83A2B7C8332479B7324C0B224F18D8654C2DB14544B58296A0A97C7B52EB1B7C0725776FE16F715094AC8A766E1F6D16A2A151B70632D6EAB34C5E1874409779FADA53F5892AD4ACC3533B5A61F89D028C076D94B52744A328C23437306AF428162AC680742003C6BDDB207A08F57
+  Refresh timer is set for 11y42w
+
+Environment Data
+3560X#show cts environment-data
+CTS Environment Data
+====================
+Current state = COMPLETE
+Last status = Successful
+Local Device SGT:
+  SGT tag = 2-02:TrustSec_Devices
+Server List Info:
+Installed list: CTSServerList1-0001, 1 server(s):
+ *Server: 14.36.143.18, port 1812, A-ID 6F5719523570B8D229F23073404E2D37
+          Status = ALIVE
+          auto-test = TRUE, keywrap-enable = FALSE, idle-time = 60 mins, deadtime = 20 secs
+Multicast Group SGT Table:
+Security Group Name Table:
+    0-d1:Unknown
+    2-d1:TrustSec_Devices
+    3-d1:Network_Services
+    4-d1:Employees
+    5-d1:Contractors
+    6-d1:Guests
+    7-d1:Production_Users
+    8-d1:Developers
+    9-d1:Auditors
+    10-d1:Point_of_Sale_Systems
+    11-d1:Production_Servers
+    12-d1:Development_Servers
+    13-d1:Test_Servers
+    14-d1:PCI_Servers
+    15-d1:BYOD
+    255-d1:Quarantined_Systems
+Environment Data Lifetime = 86400 secs
+Last update time = 02:41:21 UTC Mon Jan 2 2006
+Env-data expires in   0:23:56:36 (dd:hr:mm:sec)
+Env-data refreshes in 0:23:56:36 (dd:hr:mm:sec)
+Cache data applied           = NONE
+State Machine is running
+ISE Live Logs
+Operations > RADIUS > Live Logs
+PAC provisioning
+Non-Seed Authentication
+Mutual Peer Policy Download
+TrustSec Data Download
+Interface Verification
+Seed (6500)
+6500#show cts interface gi6/1
+Global Dot1x feature is Enabled
+Interface GigabitEthernet6/1:
+    CTS is enabled, mode:    DOT1X
+    IFC state:               OPEN
+    Interface Active for 00:38:50.744
+    Authentication Status:   SUCCEEDED
+        Peer identity:       "3560X"
+        Peer's advertised capabilities: "sap"
+        802.1X role:         Authenticator
+    Authorization Status:    SUCCEEDED
+        Peer SGT:            2:TrustSec_Devices
+        Peer SGT assignment: Trusted
+    SAP Status:              SUCCEEDED
+Dot1x Info for GigabitEthernet6/1
+-----------------------------------
+PAE                       = AUTHENTICATOR
+
+Non-Seed (3560X)
+3560X#show cts interface gi0/24
+Global Dot1x feature is Enabled
+Interface GigabitEthernet0/24:
+    CTS is enabled, mode:    DOT1X
+    IFC state:               OPEN
+    Interface Active for 00:08:51.317
+    Authentication Status:   SUCCEEDED
+        Peer identity:       "6500"
+        Peer's advertised capabilities: "sap"
+        802.1X role:         Supplicant
+        Reauth period applied to link:  Not applicable to Supplicant role
+    Authorization Status:    SUCCEEDED
+        Peer SGT:            2:TrustSec_Devices
+        Peer SGT assignment: Trusted
+    SAP Status:              SUCCEEDED
+        Version:             2
+Dot1x Info for GigabitEthernet0/24
+-----------------------------------
+PAE                       = SUPPLICANT
+Revision History
+Revision Publish Date Comments
+1.0
+12-Oct-2017
+Initial Release
+Contributed by Cisco Engineers
+Deon Pillsbury
+Cisco TAC
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Configure EAP-TLS Authentication with ISE
+Perform Password Recovery for ISE Command Line Interface (CLI)
+Install Patch on ISE
++ Show 1 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Catalyst 3560-X Series Switches
+Catalyst 6500 Series Switches
+Identity Services Engine

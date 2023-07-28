@@ -1,0 +1,505 @@
+End-User Guides
+Cisco SD-WAN Multi-Region Fabric (also Hierarchical SD-WAN) Configuration Guide
+Bias-Free Language
+Book Contents
+Translations
+Download
+Print
+Updated:
+April 22, 2022
+Chapter: Router Affinity
+Chapter Contents
+Router Affinity
+Information About Router Affinity Groups
+Information About Setting an Affinity Group by Control Policy
+Information About Support for Affinity Groups with Service Routes and TLOC Routes
+Supported Devices for Router Affinity Groups
+Supported Platforms for Setting an Affinity Group by Control Policy
+Supported Devices for Support for Affinity Groups with Service Routes and TLOC Routes
+Prerequisites for Support for Affinity Groups with Service Routes and TLOC Routes
+Restrictions for Router Affinity Groups
+Use Cases for Router Affinity Groups
+Use Cases for Setting an Affinity Group by Control Policy
+Use Cases Support for Affinity Groups with Service Routes and TLOC Routes
+Configure Router Affinity Groups Using Cisco vManage
+Configure Router Affinity Groups Using the CLI
+Configure Affinity Group by Control Policy Using a CLI Template
+Verify an Affinity Group and Affinity Group Preference Using Cisco vManage
+Verify the Affinity Group and Affinity Group Preference Using the CLI
+Router Affinity
+Table 1. Feature History
+Feature Name
+Release Information
+Description
+Multi-Region Fabric: Router Affinity
+Cisco IOS XE Release 17.8.1a
+Cisco SD-WAN Release 20.8.1
+Cisco vManage Release 20.8.1
+Often a router has multiple options to choose for the next hop when routing a flow to its destination. When multiple devices can serve as the next hop for a flow, you can specify the order of preference among the devices by configuring router affinity groups. The result is that a router attempts to use a route to the next-hop device of highest preference first, and if that device is not available, it attempts to use a route to the next-hop device of the next lower preference. Affinity groups enable this functionality without requiring complex control policies.
+Improved Prioritization of Routes to Peer Devices in the Affinity Group Preference List
+Cisco SD-WAN Controllers Release 20.9.1
+This feature introduces a change to the order in which Cisco vSmart controllers advertise routes to devices. From this release, when Cisco vSmart controllers advertise routes to a device, they (a) give higher priority to routes to peer devices in the affinity group preference list, and (b) lower priority to routes that may have a higher best path score, but are not routes to a device associated with a preferred affinity group. The effect is to prioritize routes to peer devices in preferred affinity groups.
+Support for Affinity Groups for Service Routes and TLOC Routes
+Cisco SD-WAN Controllers Release 20.11.1
+Cisco IOS XE Release 17.11.1a
+This feature extends support of affinity group assignments to service routes and TLOC routes. A common use for this is to add further control to routing by using affinity group preference together with control policies that match service routes and TLOC routes.
+Set Affinity Group by Control Policy
+Cisco SD-WAN Controllers Release 20.11.1
+Cisco IOS XE Release 17.11.1a
+You can configure a control policy to match specific TLOCs or routes and assign them an affinity group value, overriding the affinity group that they inherit from the router.
+Information About Router Affinity Groups
+Minimum supported releases: Cisco IOS XE Release 17.8.1a, Cisco SD-WAN Release 20.8.1, Cisco vManage Release 20.8.1
+Router affinity groups enable you to specify the order of preference for choosing among multiple routers that can serve as the next transit hop for a network flow. This applies in circumstances in which (a) a router is determining its next hop for a flow, and (b) more than one router in the Multi-Region Fabric architecture can serve as the next hop. There are two aspects to configuring the functionality:
+On a router, assigning a router affinity group ID (a number from 1 to 63).
+On a router, assigning the order of preference for choosing the router for a next hop. This is a list of affinity group IDs.
+When the overlay management protocol (OMP), operating on a router, chooses the best path for a flow, it does the following:
+Determines the possible next-hop routers, based on which routers are advertising the prefix for the destination of the flow. (This is standard OMP functionality.)
+From the possible next-hop routers, OMP considers the affinity group preferences when choosing the best path, prioritizing the possible next hop routers accordingly. (This is specific to affinity group functionality.)
+The result is that a router first attempts to use a route to the next-hop device of highest preference, and if that device is not available, it attempts to use a route to the next-hop device of the next lower preference. If none of the devices on the affinity preference list are available, then the router attempts to use a route to any other device that can serve as the next hop. One effect of this is an automatic failover from one possible next hop router to a different next hop router if the first one is not available. Affinity groups enable this functionality without requiring complex control policies.
+Routing Mechanism
+Router affinity affects route selection as follows:
+Within a given network, or region in the case of Multi-Region Fabric, the overlay management protocol (OMP) manages the advertisement of prefixes by devices in the network.
+When a device routes a network flow to its destination, OMP enables the device to select a next-hop device that is advertising the prefix of the destination.
+Only devices that can serve as a next hop toward the prefix advertise the prefix.
+Among the possible next-hop devices, the configured affinity group preference determines the preference order for the next hop.
+In the following example, edge routers ER1 and ER2 advertise the subnets used in the data center. If border router BR1 is routing a flow to a prefix in one of the data center subnets, it can use ER1 or ER2 as the next hop. Based on the affinity groups configured on ER1 and ER2, and based on the affinity group preference order configured on BR1, as shown in the illustration, BR1 chooses ER1 as the next hop. If ER1 is not available, then BR1 routes the flow to ER2 as the next hop.
+Figure 1. Router Affinity Example
+Filter Out Paths Configured with an Affinity Group Not in the Affinity Preference List
+Optionally, you can configure Cisco SD-WAN to enable routers to connect only to routers that are on their affinity list. To do this, use the filter route outbound affinity-group preference option on the Cisco vSmart controllers that manage a region. The Cisco vSmart controllers provide each device in the region with only the routes to routers in their affinity list, or routers that have no affinity group assignment. See Configure a Cisco vSmart Controller to Provide Only Paths in the Affinity Preference List, Using Cisco vManage.
+Use this option only when you are certain that you do not want a router to connect to any device that has an affinity group assignment that is not on its affinity list. The advantage is that managing fewer routes saves memory resources on the Cisco vSmart controllers and on edge routers.
+Prioritization of Routes to Peer Devices in the Affinity Group Preference List
+From Cisco SD-WAN Controllers Release 20.9.x, when Cisco vSmart controllers advertise routes to a device, they give higher priority to advertising routes to peer devices in the affinity group preference list, and a lower priority to routes that may have a higher best path score, but which are not routes to a device associated with a preferred affinity group. This is especially important when a send path limit is configured for the Cisco vSmart controller, limiting the number of routes advertised to any given device. It ensures that when a router is managing a limited number of routes, the routes include the peer devices on the affinity group preference list.
+The following explains how this works in more detail:
+For each affinity group, a Cisco vSmart controller maintains link lists for each route advertised by devices in the network. For each defined affinity group, the Cisco vSmart controller creates two link lists:
+List of routes that (a) are for devices in the affinity group, and (b) are chosen by the best path selection algorithm (meaning that they have a high best path score and are favored by the algorithm)
+List of routes that (a) are for devices in the affinity group, but (b) are not chosen by the best path selection algorithm
+Note that the best path selection algorithm designates a route as chosen based on route characteristics, policy, and other factors.
+When the Cisco vSmart controller advertises routes to a particular device, it uses the link lists to favor routes to peer devices in the affinity group preference list of the device.
+For example, for a network loosely matching the preceding illustration, but with more available routes, consider the following scenario:
+Device
+Devices Advertise Routes to the Cisco vSmart Controller
+Results of Best Path Selection Algorithm
+Resulting Link Lists
+ER1, which is assigned to affinity group 1
+ER1 has four routes, and it advertises them to the Cisco vSmart controller as routes associated with affinity group 1.
+In this example, the best path selection algorithm designates two of the routes as chosen and two as not chosen.
+The Cisco vSmart controller adds each of the routes to link lists:
+Link list for affinity group 1, chosen routes: 2 routes
+Link list for affinity group 1, not chosen routes: 2 routes
+Note
+  "Chosen" means chosen by the best path selection algorithm, as described in the explanation that precedes this table.
+ER2, which is assigned to affinity group 2
+ER2 has three routes, and it advertises them to the Cisco vSmart controller as routes associated with affinity group 2.
+In this example, the best path selection algorithm designates two of the routes as chosen and one as not chosen.
+The Cisco vSmart controller adds each of the routes to link lists:
+Link list for affinity group 2, chosen routes: 2 routes
+Link list for affinity group 2, not chosen routes: 1 route
+ER3, which is not assigned to an affinity group
+ER3 has three routes, and it advertises them to the Cisco vSmart controller as routes associated with affinity group 0.
+(Affinity group 0 corresponds to devices that are not assigned to an affinity group.)
+In this example, the best path selection algorithm designates two of the routes as chosen and one as not chosen.
+The Cisco vSmart controller adds each of the routes to link lists:
+Link list for affinity group 0, chosen routes: 2 routes
+Link list for affinity group 0, not chosen routes: 1 route
+As shown in the illustration, device BR1 has an affinity group preference list of 1, 2. Given this, there are the following possibilities for advertising routes to BR1:
+No send path limit defined:
+If the Cisco vSmart controller does not have a send path limit defined, it can advertise to BR1 all six routes in the link lists for chosen routes, as described in the table: two for ER1, two for ER2, and two for ER3.
+Send path limit defined:
+If the Cisco vSmart controller has a send path limit of 4, it advertises to BR1 first the two routes in the link list for affinity group 1 chosen routes, for ER1. In addition, it advertises the two routes in the link list for affinity group 2 chosen routes, for ER2. At this point, it has advertised four routes, which is its limit, and it does not advertise the routes in the link list for chosen routes for affinity group 0 (devices not assigned to any affinity group). So no routes for ER3 are included. The result is that if BR1 has an affinity group preference list of 1, 2, the Cisco vSmart controller favors providing it with routes to peer devices ER1 and ER2 (devices in affinity groups 1 and 2), even if the best path score for the ER3 routes was higher.
+Workflow
+On a router, configure an affinity group ID number.
+See Configure an Affinity Group or Affinity Group Preference on a Device, Using Cisco vManage.
+On a router, configure a list of affinity group ID numbers, in order of preference from highest to lowest, to specify the order of preference for connecting to routers.
+Configure an Affinity Group or Affinity Group Preference on a Device, Using Cisco vManage.
+Optionally, on the Cisco vSmart controllers serving an access region, restrict routers to connecting only to devices on their affinity group preference list.
+See Configure a Cisco vSmart Controller to Provide Only Paths in the Affinity Preference List, Using Cisco vManage.
+Benefits of Router Affinity Groups
+Benefits of Router Affinity Groups
+Router affinity groups can help with capacity planning and load balancing by enabling you to preferentially direct traffic from a device to specific routers when more than one router is available for a next hop.
+Information About Setting an Affinity Group by Control Policy
+Minimum releases: Cisco SD-WAN Controllers Release 20.11.1, Cisco IOS XE Release 17.11.1a
+When you configure an affinity group for a router, each TLOC of the router inherits the affinity group. Routes that originate from the TLOCs also inherit the affinity group.
+In addition to configuring the affinity at the router level, you can configure a control policy to match specific TLOCs or routes and assign them an affinity group value, overriding the affinity group that they inherit from the router.
+Table 2. Methods for Configuring an Affinity Group
+Affinity Configuration Method
+Effect
+Router affinity: Configure an affinity group at the router level.
+The TLOCs on the router, and any routes that originate on the router have the configured affinity group. By default, routes from all TLOCs on the router inherit the same affinity group.
+For example, consider a router has two TLOCs, A and B, each using a different transport method. The routes from both of the TLOCs inherit the same affinity group from the router. This does not provide a way to configure a preference for TLOC A over TLOC B.
+Control policy: Assign an affinity group to a TLOC or route.
+A control policy can match TLOCs or routes, and assign them an affinity group. This overrides the affinity group that the TLOCs or routes inherit from the router.
+For example, you can match a TLOC using multiprotocol label switching (MPLS) and assign it a different affinity group than that of the router itself.
+The following illustration shows how a TLOC can inherit its affinity group from a router or receive the affinity group from a control policy. The same affinity group applies to routes originating from the TLOC. The illustration shows that you can override the inherited affinity group of routes, to assign a specific affinity group to MPLS routes.
+Figure 2. Affinity Group Configuration
+Benefits of Setting an Affinity Group by Control Policy
+Benefits of Setting an Affinity Group by Control Policy
+Assigning affinity groups by control policy provides an additional layer of control of affinity group values for TLOCs and routes. This offers additional flexibility in controling routing.
+Information About Support for Affinity Groups with Service Routes and TLOC Routes
+Minimum releases: Cisco IOS XE Release 17.11.1a, Cisco SD-WAN Controllers Release 20.11.1
+Affinity groups provide additional control of routing traffic that has multiple possible destinations or intermediate hops. Affinity group preferences prioritize among the options for next hop. Multi-Region Fabric supports affinity groups for service routes and TLOC routes. Service routes and TLOC routes inherit the affinity group of the router they are associated with.
+The addition of support for affinity groups in Cisco IOS XE Release 17.11.1a and Cisco SD-WAN Controllers Release 20.11.1 does not change the process of configuring affinity groups or affinity group preference lists. For information about configuring these, see Configure Router Affinity Groups Using Cisco vManage.
+Behavior When Filtering by Affinity Group
+When you configure Cisco vSmart controllers to filter by affinity group, they provide each router with only the routes associated with an affinity group in the router's affinity group preference list, or with routes associated with no affinity group. For example, if router A has an affinity group preference list of 1, 2, then Cisco vSmart controllers provide router A with the following:
+Routes, including service routes and TLOC routes, associated with a router with affinity groups 1 or 2
+Routes, including service routes and TLOC routes, associated with a router with no affinity group configured
+In this case, Cisco vSmart controllers do not provide router A with routes associated with affinity group 3.
+A benefit of filtering out routes according to the preference list is that it reduces the demand on router and Cisco vSmart controller resources.
+For information about filterying by affinity group, see Configure a Cisco vSmart Controller to Provide Only Paths in the Affinity Preference List, Using Cisco vManage.
+Benefits of Support for Affinity Groups with Service Routes and TLOC Routes
+Benefits of Support for Affinity Groups with Service Routes and TLOC Routes
+Affinity Groups and Service Routes
+One useful application for affinity groups with service routes is configuring a control policy that directs traffic to a network service.
+Routers in a network can advertise network services, such as firewalls, that operate on network traffic. To direct specific types of traffic to the service, create a control policy that matches the specific traffic and redirects the traffic to one or more routers providing the service, as the next hop, before the traffic continues to its destination. When more than one router provides the same network service, such as a firewall, a router in the network can direct traffic to any of the routers providing the service.
+For example, if a control policy redirects traffic from router A to a firewall service, and two routers, B and C, provide the firewall service, then router A can send the traffic to either B or C. The affinity group preference list of router A, together with the affinity group assignments B and C, determine whether the traffic uses B or C as the next hop.
+In the following illustration, a network has two dedicated routers providing a firewall service. A control policy can match traffic destined to router ER100 (10.0.10.1) and set the service to FW for the matched traffic. The effect is that the Cisco vSmart controller redirects the traffic to ER1 or ER2 as the next hop before the traffic proceeds to its destination. In the example, affinity group preferences prioritize ER1 or ER2 as the firewall service to use.
+Figure 3. Affinity Groups and Service Routes
+For an overview of configuring control policy, see the Policy Overview section of the Cisco SD-WAN Policies Configuration Guide, Cisco IOS XE Release 17.x. For information about configuring matching parameters and action parameters for control policy, see the Centralized Policy section.
+Affinity Groups and TLOC Routes
+A useful application of affinity groups with TLOC routes is configuring a control policy that directs traffic to a list of TLOCs. TLOCs inherit the affinity group assignment of their router.
+If a control policy redirects traffic from router A to a list of TLOCs, the affinity group preference list of router A, together with the affinity group assignments of each TLOC, determine which TLOC the traffic uses for its next hop.
+Supported Devices for Router Affinity Groups
+Minimum supported releases: Cisco IOS XE Release 17.8.1a, Cisco SD-WAN Release 20.8.1, Cisco vManage Release 20.8.1
+Cisco IOS XE SD-WAN devices
+Cisco vEdge devices
+Supported Platforms for Setting an Affinity Group by Control Policy
+Minimum releases: Cisco SD-WAN Controllers Release 20.11.1, Cisco IOS XE Release 17.11.1a
+Cisco IOS XE SD-WAN devices
+Supported Devices for Support for Affinity Groups with Service Routes and TLOC Routes
+Minimum releases: Cisco IOS XE Release 17.11.1a, Cisco SD-WAN Controllers Release 20.11.1
+Cisco IOS XE SD-WAN devices
+Prerequisites for Support for Affinity Groups with Service Routes and TLOC Routes
+Minimum releases: Cisco IOS XE Release 17.11.1a, Cisco SD-WAN Controllers Release 20.11.1
+Support for affinity groups is automatic, without specific prerequisites.
+The following prerequisites apply to the common use case of incorporating affinity group functionality when configuring control policy that redirects traffic to a network service:
+Configure one or more routers to operate a network service, such as a firewall. To view the services advertised in a network use the show sdwan omp services command on a router in the network. The SERVICE column shows the advertised services and the ORIGINATOR column shows the routers advertising the services. The AFFINITY GROUP NUMBER column shows the affinity group of the router providing the service.
+Configure an affinity preference list on the routers originating traffic that will flow to the network service.
+Configure affinity groups for the routers providing the network service.
+Restrictions for Router Affinity Groups
+Minimum supported releases: Cisco IOS XE Release 17.8.1a, Cisco SD-WAN Release 20.8.1, Cisco vManage Release 20.8.1
+The affinity group range is limited to 1 to 63.
+Use Cases for Router Affinity Groups
+Use Case 1: Load Balancing for Access Region Traffic to Border Routers
+In a scenario in which an access region has six edge routers (ER1 to ER6) and three border routers (BR1, BR2, and BR3), you can use affinity groups to load balance, as follows:
+Devices
+Configuration
+Result
+BR1
+Assign affinity group 1.
+BR2
+Assign affinity group 2.
+BR3
+Assign affinity group 3.
+ER1 and ER2
+Assign an affinity group preference order of 1, 2, 3.
+These two edge routers preferentially direct traffic to BR1 for the next hop, but if BR1 is not available, they attempt to use BR2. If BR2 is not available, they attempt to use BR3.
+ER3 and ER4
+Assign an affinity group preference order of 2, 3, 1.
+These two edge routers preferentially direct traffic to BR2 for the next hop, but if BR2 is not available, they attempt to use BR3. If BR3 is not available, they attempt to use BR1.
+ER5 and ER6
+Assign an affinity group preference order of 3, 1, 2.
+These two edge routers preferentially direct traffic to BR3 for the next hop, but if BR3 is not available, they attempt to use BR1. If BR1 is not available, they attempt to use BR2.
+Figure 4. Use Case 1: Load Balancing for Access Region Traffic to Border Routers
+Use Case 2: Load Balancing for Access Region Traffic to Edge Routers
+In a scenario in which an access region has two edge routers (ER1 and ER2) serving a high-volume data center, and two border routers (BR1 and BR2), you can use affinity groups to load balance, as follows:
+Devices
+Configuration
+Result
+ER1
+Assign affinity group 1.
+ER2
+Assign affinity group 2.
+BR1
+Assign an affinity group preference order of 1, 2.
+This border router preferentially directs data center traffic to ER1, but if ER1 is not available, it can use ER2.
+BR2
+Assign an affinity group preference order of 2, 1.
+This border router preferentially directs data center traffic to ER2, but if ER2 is not available, it can use ER1.
+Figure 5. Use Case 2: Load Balancing for Access Region Traffic to Edge Routers
+Use Case 3: Load Balancing for Core Region Traffic
+In a scenario in which a high-volume access region (Region 1) has two border routers (BR1 and BR2), and receives a lot of traffic from another access region (Region 2), which has two border routers (BR3 and BR4), you can use affinity groups to load balance, as follows:
+Devices
+Configuration
+Result
+BR1
+(Region 1)
+Assign affinity group 1.
+BR2
+(Region 1)
+Assign affinity group 2.
+BR3
+(Region 2)
+Assign an affinity group preference order of 1, 2.
+When directing traffic to region 1, this border router preferentially directs the traffic to BR1, but if BR1 is not available, it can use BR2.
+BR4
+(Region 2)
+Assign an affinity group preference order of 2, 1.
+When directing traffic to region 1, this border router preferentially directs the traffic to BR2, but if BR2 is not available, it can use BR1.
+Figure 6. Use Case 3: Load Balancing for Core Region Traffic
+Use Cases for Setting an Affinity Group by Control Policy
+Minimum releases: Cisco SD-WAN Controllers Release 20.11.1, Cisco IOS XE Release 17.11.1a
+An organization using Multi-Region Fabric has two data centers, each with a hub router in access region 1. Originally, the hub routers had affinity groups defined as shown in the illustration, and the border routers had affinity group preferences defined as shown in the illustration. The result was helpful in allowing BR1 to prefer ER1 and in allowing BR2 to prefer ER2.
+BR1 route preferences (from higher priority to lower):
+Hub1, connecting to data center DC1, using either MPLS or INET connections.
+Hub2, connecting to data center DC2, using either MPLS or INET connections.
+BR2 route preferences (from higher priority to lower):
+Hub2, connecting to data center DC2, using either MPLS or INET connections.
+Hub1, connecting to data center DC1, using either MPLS or INET connections.
+Figure 7. Before Assigning Affinity Groups Using Control Policy
+However, the organization wants to prioritize MPLS connections over internet (INET) connections between hubs and data centers. To accomplish this, they use control policies to set affinity groups for specific types of connections, giving them more granular control of routing. The control policies do the following:
+Match INET routes from Hub1 and assign affinity group 3
+Match INET routes from Hub2 and assign affinity group 4
+The resulting preferences are as follows:
+BR1 route preferences (from higher priority to lower):
+Hub1, connecting to data center DC1, using an MPLS connection.
+Hub2, connecting to data center DC2, using an MPLS connection.
+Hub1, connecting to data center DC1, using an INET connection.
+Hub2, connecting to data center DC2, using an INET connection.
+BR2 route preferences (from higher priority to lower):
+Hub2, connecting to data center DC2, using an MPLS connection.
+Hub1, connecting to data center DC1, using an MPLS connection.
+Hub2, connecting to data center DC2, using an INET connection.
+Hub1, connecting to data center DC1, using an INET connection.
+The following illustration shows the effect of the control policy on the affinity groups of the MPLS and INET connections, and the resulting order of priority for BR1 and BR2:
+Figure 8. Assigning Affinity Groups Using Control Policy, Offering More Granular Control
+Use Cases Support for Affinity Groups with Service Routes and TLOC Routes
+Minimum releases: Cisco IOS XE Release 17.11.1a, Cisco SD-WAN Controllers Release 20.11.1
+Use Case: Network Services and Control Policy
+Use Case: TLOC Route Filtering by Affinity Group
+Use Case: Network Services and Control Policy
+An organization’s headquarters site has a router ER100, which manages routes defined by the prefix 10.0.100.1/24. The routers in the 10.0.100.1/24 range have a site ID of 100.
+Figure 9. Organization Site
+Separately, the organization has two dedicated routers, ER1 (with affinity group 1) and ER2 (with affinity group 2), providing firewall services (advertised as FW) for the headquarters.
+The organization’s network administrators decide to route all traffic for devices at site 100 (the range 10.0.100.1/24) first to the dedicated firewall device. This requires redirecting all incoming traffic for site 100 to the firewall services. They configure a control policy to match all site 100 routes and set the service to FW. The effect is that the traffic goes first to one of the firewall servers, then proceeds to its original destination in site 100. Affinity group preferences prioritize ER1 or ER2 as the firewall service to use.
+On the Cisco vSmart controllers serving site 100, they add a control policy as follows:
+policy
+ control-policy control1
+  sequence 1
+   match route
+    site-id 100
+   !
+  action accept
+   set
+    service FW
+   !
+  !
+ !
+ default-action accept
+ !
+!
+The following illustration shows how traffic reaches ER100 through one of the two routers providing firewall services, ER1 or ER2.
+Figure 10. Organization Site with Firewall Service
+Use Case: TLOC Route Filtering by Affinity Group
+An organization’s headquarters site has a device ER20 with no direct route to ER100. Each of the routers ER1, ER2, ER3, and ER4 can provide a path to ER100. To reduce resource demands on Cisco vSmart controllers and on ER20, the organization's network administrators configure ER20 with an affinity group preference list of 1, 2. This causes the Cisco vSmart controllers to filter out TLOC routes from router ER3, which has an affinity group of 3.
+Figure 11. Organization Site
+The example is simplified, with only a small number of TLOC routes, but in a network with hundreds of available TLOC routes, this mechanism can significantly reduce resource demands.
+Configure Router Affinity Groups Using Cisco vManage
+Configure an Affinity Group or Affinity Group Preference on a Device, Using Cisco vManage
+Configure a Cisco vSmart Controller to Provide Only Paths in the Affinity Preference List, Using Cisco vManage
+Configure Affinity Group by Control Policy Using Cisco vManage
+Configure an Affinity Group or Affinity Group Preference on a Device, Using Cisco vManage
+Minimum supported releases: Cisco IOS XE Release 17.8.1a, Cisco SD-WAN Release 20.8.1, Cisco vManage Release 20.8.1
+From the Cisco vManage menu, choose Configuration > Templates.
+Click Feature Templates.
+Do one of the following:
+Create a system template for the device.
+In the table, locate the existing system template for the device. In the row for the template, click … and choose Edit.
+To assign an affinity group to a border router, in the Advanced section, in the Affinity Group field, change the mode to Global and enter an affinity group number, in the range 1 to 63.
+If an affinity group has been configured previously on the device, the new value replaces the previous.
+To configure an affinity group preference order for a border router or an edge router, in the Advanced section, in the Affinity Group Preference field, change the mode to Global and enter a comma-separated list of affinity group numbers. This determines the order of preference for connecting to border routers. The affinity groups are in the range 1 to 63.
+Example: 10, 11, 1, 5
+
+Note
+If you configure a Cisco vSmart controller to filter out routes that are not in the affinity group preference list, then the device can only connect to routers in the affinity group. See Configure a Cisco vSmart Controller to Provide Only Paths in the Affinity Preference List, Using Cisco vManage.
+If you are editing an existing template, click Update and then Configure Device to push the update to the devices using the template.
+Configure a Cisco vSmart Controller to Provide Only Paths in the Affinity Preference List, Using Cisco vManage
+Minimum supported releases: Cisco IOS XE Release 17.8.1a, Cisco SD-WAN Release 20.8.1, Cisco vManage Release 20.8.1
+Before You Begin
+The last step of this procedure requires logging in to the Cisco vSmart controllers that serve the regions where you are configuring this, to execute a command using the CLI.
+Configure a Cisco vSmart Controller to Provide Only Paths in the Affinity Preference List
+From the Cisco vManage menu, choose Configuration > Templates.
+Click Feature Templates.
+Do one of the following:
+Create an OMP template for a Cisco vSmart controller.
+In the table, locate the existing OMP template for the Cisco vSmart controller. In the row for the template, click … and choose Edit.
+In the Best Path section, in the Enable Filtering Route Updates Based on Affinity field, choose Global mode and choose On.
+If you are editing an existing template, click Update and then Configure Device to push the update to the Cisco vSmart controllers using the template.
+Connect to each Cisco vSmart controller and clear OMP routes to ensure that only the paths in the affinity group preference list are used.
+vSmart#config terminal
+vSmart(config)#omp
+vSmart(config-omp)#filter-route outbound affinity-group-preference
+vSmart(config-filter-route)#exit
+vSmart(config-omp)#exit
+vSmart(config)#exit
+vSmart#clear omp all
+Configure Affinity Group by Control Policy Using Cisco vManage
+Minimum releases: Cisco SD-WAN Controllers Release 20.11.1, Cisco IOS XE Release 17.11.1a
+From the Cisco vManage menu, choose Configuration > Policies.
+Click Centralized Policy.
+Click Add Policy.
+Click Next to show the page for configuring topology.
+Click the Add Topology drop-down menu and choose the Custom Control option.
+Click Sequence Type and choose either the Route or TLOC option.
+Click Sequence Rule to add a sequence rule.
+Click Match and define a match condition.
+The details depend on your objectives. For example, to match TLOCs using MPLS, do the following:
+Click TLOC.
+In the Match Conditions area, in the Color field, choose mpls.
+Click Actions in the new rule to define the action for the rule.
+Click Accept to specify that the rule applies when its match condition is met.
+Click Affinity.
+In the Affinity field, enter a number for the affinity value to assign to the matched route or TLOC.
+Click Save Control Policy.
+Configure Router Affinity Groups Using the CLI
+Configure an Affinity Group on a Router Using the CLI
+Configure Affinity Group Preference on a Router Using the CLI
+Configure a Cisco vSmart Controller to Provide Only Paths in an Affinity Group Preference List Using a CLI Template
+Configure an Affinity Group on a Router Using the CLI
+Minimum supported releases: Cisco IOS XE Release 17.8.1a, Cisco SD-WAN Release 20.8.1, Cisco vManage Release 20.8.1
+Enter configuration mode.
+Device#config-transaction
+Enter system configuration mode.
+Device(config)#system
+Configure an affinity group ID in the range 1 to 63.
+If an affinity group has been configured previously on the device, the new value replaces the previous.
+Device(config-system)#affinity-group group-id
+Example
+Device#config-transaction
+Device(config)#system
+Device(config-system)#affinity-group 10
+Configure Affinity Group Preference on a Router Using the CLI
+Minimum supported releases: Cisco IOS XE Release 17.8.1a, Cisco SD-WAN Release 20.8.1, Cisco vManage Release 20.8.1
+Enter configuration mode.
+Device#config-transaction
+Enter system configuration mode.
+Device(config)#system
+Enter a list of group IDs, each in the range 1 to 63, to indicate the affinity group preference order, from highest priority to lowest priority. Separate group IDs with spaces.
+Device(config-system)#affinity-group preference group-id [group-id ...]
+Example
+Device(config-system)#affinity-group preference 10 11 1 5
+Configure a Cisco vSmart Controller to Provide Only Paths in an Affinity Group Preference List Using a CLI Template
+Minimum supported releases: Cisco IOS XE Release 17.8.1a, Cisco SD-WAN Release 20.8.1, Cisco vManage Release 20.8.1
+For more information about using CLI templates, see CLI Add-On Feature Templates and CLI Templates. By default, CLI templates execute commands in global configuration mode.
+Enter system OMP configuration mode.
+omp
+  no shutdown
+Configure the Cisco vSmart controller to provide each router only paths to routers in its affinity group preference list.
+The effect is to limit routers to connecting only to routers on their affinity group preference lists.
+filter-route
+  outbound affinity-group-preference
+
+Note
+You can use the no form of the command to disable this configuration. By default, it is disabled.
+Connect to the Cisco vSmart controller and clear OMP routes to ensure that only the paths in the affinity group preference list are used.
+vSmart#config terminal
+vSmart(config)#omp
+vSmart(config-omp)#filter-route outbound affinity-group-preference
+vSmart(config-filter-route)#exit
+vSmart(config-omp)#exit
+vSmart(config)#exit
+vSmart#clear omp all
+Example
+Add the following to a CLI template:
+omp
+  no shutdown
+  filter-route
+    outbound affinity-group preference
+  exit
+Enter the following on the Cisco vSmart controller:
+vSmart#config terminal
+vSmart(config)#omp
+vSmart(config-omp)#filter-route outbound affinity-group-preference
+vSmart(config-filter-route)#exit
+vSmart(config-omp)#exit
+vSmart(config)#exit
+vSmart#clear omp all
+Configure Affinity Group by Control Policy Using a CLI Template
+Minimum releases: Cisco SD-WAN Controllers Release 20.11.1, Cisco IOS XE Release 17.11.1a
+For more information about using CLI templates, see CLI Add-On Feature Templates and CLI Templates. By default, CLI templates execute commands in global configuration mode.
+In a control policy, create a sequence.
+policy
+ control-policy policy-name
+  sequence sequence-number
+Create a match condition for either routes or TLOCs.
+match {route | tloc}
+For example, you can match routes from all devices at a site 100 using:
+match route
+ site-id 100
+Create an action of type accept.
+action accept
+Set the affinity group number to assign to the matching routes or TLOCs.
+set
+affinity-group-number affinity-group-number
+Example
+This example creates a sequence that matches routes from devices at site 100 and assigns them the affinity group 5.
+policy
+ control-policy policy-1
+  sequence 1
+   match route
+    site-id 100
+  !
+  action accept
+   set
+    affinity-group-number 5
+   !
+  !
+ !
+!
+Example
+This example does the following:
+Matches routes from site 100 and assigns them affinity group 2
+Matches TLOCs with the system IP address 10.0.0.1, of color lte and encapsulation IPsec, and assigns them affinity group 5
+show running-config policy
+policy
+ control-policy policy-1
+  sequence 1
+   match route
+    site-id 100
+   !
+   action accept
+    set
+     affinity-group-number 2
+    !
+   !
+  !
+  sequence 2
+   match tloc
+    tloc 10.0.0.1 color lte encap ipsec
+   !
+   action accept
+    set
+     affinity-group-number 5
+    !
+   !
+  !
+  default-action reject
+ !
+!
+Verify an Affinity Group and Affinity Group Preference Using Cisco vManage
+Minimum supported releases: Cisco IOS XE Release 17.8.1a, Cisco SD-WAN Release 20.8.1, Cisco vManage Release 20.8.1
+From the Cisco vManage menu, choose Monitor > Devices.
+In the table, click a device.
+Click Real Time.
+In the Device Options field, choose OMP Summary.
+See the Affinity Group Number and Affinity Group Preference fields.
+Verify the Affinity Group and Affinity Group Preference Using the CLI
+Use the show sdwan running-config system command to view the affinity group and affinity group preference on a device. The affinity-group preference field shows the preference list.
+Example
+Device#show sdwan running-config system
+system
+ system-ip          192.168.0.1
+ domain-id          1
+ site-id            1100
+ affinity-group 10
+ affinity-group preference 15 16
+...
+Was this Document Helpful?
+Yes No
+Feedback
+Customers Also Viewed
+Cisco SD-WAN Multi-Region Fabric (also Hierarchical SD-WAN) Configuration Guide --- Transport Gateways
+Identify vEdge Certificate Expired on May 9, 2023
+Cisco SD-WAN Getting Started Guide --- Install and Upgrade Cisco IOS XE Release 17.2.1r and Later
++ Show 3 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)

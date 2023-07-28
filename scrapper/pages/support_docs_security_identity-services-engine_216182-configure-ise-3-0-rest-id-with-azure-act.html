@@ -1,0 +1,412 @@
+Configuration Examples and TechNotes
+Configure ISE 3.0 REST ID with Azure Active Directory
+Save
+Translations
+Download
+Print
+
+
+
+Updated:January 10, 2023
+Document ID:216182
+Bias-Free Language
+Contents
+Introduction
+Background Information
+Prerequisites
+Requirements
+Components Used
+Configure
+High-Level Flow Overview
+Configure Azure AD for Integration
+Configure ISE for Integration
+ISE Policy Examples for Different Use Cases
+Verify
+Troubleshoot
+Issues withREST Auth Service
+Issues withREST ID Authentication
+Work with the Log Files
+Introduction
+This document describes Cisco ISE 3.0 integration with Azure AD implemented through REST Identity service with Resource Owner Password Credentials.
+Background Information
+This document describes how to configure and troubleshoot Identity Services Engine (ISE) 3.0 integration with Microsoft (MS) Azure Active Directory (AD) implemented through Representational State Transfer (REST) Identity (ID) service with the help of Resource Owner Password Credentials (ROPC).
+Prerequisites
+Requirements
+Cisco recommends that you have basic knowledge of these topics:
+ISE
+MS Azure AD
+Understanding of ROPC protocol implementation and limitations; link
+Components Used
+The information in this document is based on these software and hardware versions:
+Cisco ISE Version 3.0
+MS Azure AD
+WS-C3850-24P with s/w 16.9.2
+ASAv with 9.10 (1)
+Windows 10.0.18363
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, ensure that you understand the potential impact of any command.
+Configure
+ISE REST ID functionality is based on the new service introduced in ISE 3.0 - REST Auth Service. This service is responsible for communication with Azure AD over Open Authorization (OAuth) ROPC exchanges in order to perform user authentication and group retrieval. REST Auth Service is disabled by default, and after the administrator enables it, it runs on all ISE nodes in the deployment. Since REST Auth Service communication with the cloud happens when at the time of the user authentication, any delays on the path bring additional latency into Authentication/Authorization flow. This latency is outside of ISE control, and any implementation of REST Auth has to be carefully planned and tested to avoid impact to other ISE services.
+High-Level Flow Overview
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+1. Azure cloud administrator creates a new application (App) Registration. Details of this App are later used on ISE in order to establish a connection with the Azure AD.
+2. Azure cloud admin has to configure the App with:
+Create a Client Secret
+Enable ROPC
+Add group claims
+Define Application Programming Interface (API) permissions
+3. ISE admin turns on the REST Auth Service. It needs to be done before any other action can be executed.
+4. Changes are written into the configuration database and replicated across the entire ISE deployment.
+5. REST Auth Service starts on all the nodes.
+6. ISE Admin configures the REST ID store with details from Step 2.
+7. Changes are written into the configuration database and replicated across the entire ISE deployment.
+8. ISE admin creates a new Identity store sequence or modifies the one that already exists and configures authentication/authorization policies.
+9. Changes are written into the configuration database and replicated across the entire ISE deployment.
+10. Endpoint initiates authentication. As per ROPC protocol specification, the user password has to be provided to the Microsoft identity platform in clear text over an encrypted HTTP connection; due to this fact, the only available authentications options supported by ISE as of now are:
+Extensible Authentication Protocol-Tunneled Transport Layer Security (EAP-TTLS) with Password Authentication Protocol (PAP) as the inner method
+AnyConnect SSL VPN authentication with PAP
+11. Exchange with ISE Policy Service Node (PSN) over Radius.
+12. Process Runtime (PrRT) sends a request to REST ID service with user details (Username/Password) over internal API.
+13.  REST ID service sends OAuth ROPC request to Azure AD over HyperText Transfer Protocol Secure (HTTPS).
+14. Azure AD performs user authentication and fetches user groups.
+15. Authentication/Authorization result returned to ISE.
+After point 15, the authentication result and fetched groups returned to PrRT, which involves policy evaluation flow and assign the final Authentication/Authorization result. Either Access-Accept with attributes from the authorization profile or Access-Reject returned to Network Access Device (NAD).
+Configure Azure AD for Integration
+1. Locate AppRegistration Service as shown in the image.
+Figure 2.
+a. Type AppRegistration in the Global search bar.
+b. Click on the App registration service.
+2. Create a new App Registration.
+Figure 3.
+3. Register a new App.
+Figure 4.
+a. Define the name of the App.
+b. Define which accounts can use new applications.
+c. Press the Register button.
+4. Navigate to Certificate & secrets.
+Figure 5.
+5. Create  New client secret  as shown in the image.
+Figure 6.
+6. Configure the  client secretas shown in the image.
+Figure 7.
+a. Define the description of a new secret.
+b. Choose the expiration period.
+c. Click theAdd button.
+7. Copy and save the secret value (it later needs to be used on ISE at the time of the integration configuration).
+Figure 8.
+8. Navigate back to the Overview  tab in order to copy the App ID  and  .
+   Figure 9. 
+9. Enable ROPC for the App.
+Figure 10.
+a. Navigate to theAuthentication tab.
+b. Locate the Advanced settings section.
+c. SelectYes for - Treat the application as a public client.
+d. Click theSave button.
+10. Add group claims  to the App.
+Figure 11.
+a. Navigate to Token configuration.
+b. Press on - Add groups claim .
+11. Define group types which need to be added
+Figure 12.
+a. Select - All groups.
+b. Click theAdd button.
+12. Add API permissions .
+Figure 13.
+a. Navigate to API permissions .
+b. Click on Add permission .
+13. Add Microsoft Graph  permissions.
+Figure 14.
+14. Add Application permissions .
+Figure 15.
+15. Add Group.Read.All  permission.
+Figure 16.
+a. Locate API type - Group.
+b. Select the Group.Read.All .
+c. Click the Add permissions  button.
+Note: User group data can be fetched from Azure AD in multiple ways with the help of different API permission. The method described in this example is proven to be successful in the Cisco TAC lab. Use other API permissions in case your Azure AD administrator recommends it.
+16. Grant admin consent  for API permissions.
+Figure 17.
+17. Confirm Grant consent for Admin.
+Figure 18.
+At this point, you can consider integration fully configured on the Azure AD side.
+Configure ISE for Integration
+1. Navigate to Identity Management settings.
+Figure 19.
+Navigate to Administration > Identity Management> Settings .
+2. Enable REST ID service (disabled by default).
+Figure 20.
+Navigate to REST ID Store Settings and change the status of REST ID Store Settings in order to Enable, then Submit  your changes.
+3. Create a REST ID store.
+Figure 21.
+Switch to the External Identity Sources  tab, click on REST (ROPC)  sub-tab, and click Add.
+4. Configure the REST ID store.
+Figure 22.
+a. Define the ID store name. Later this name can be found in the list of ISE dictionaries when you configure authorization policies. Also, this name is displayed in the list of ID stores available in the Authentication Policy settings and in the list of ID stores available in the Identity Store sequence configuration.
+b. Provide client ID (taken from Azure AD in Step 8. of the Azure AD integration configuration section).
+c. Provide client secret (taken from Azure AD in Step 7. of the Azure AD integration configuration section).
+d. Provide Tenant ID (taken from Azure AD in Step 8. of the Azure AD integration configuration section).
+e. Configure username Sufix - by default ISE PSN uses a username supplied by the end-user, which is provided in the sAMAccountName format (short username, for example, bob); in such case, Azure AD does not be able to locate the user. Username Sufix is the value added to the username supplied by the user in order to bring the username to the UPN format.
+Note: ROPC is limited to User authentication since it relies on the Username attribute during authentication. Device objects in Azure AD do not have Username attributes.
+f. Press on Test connection in order to confirm that ISE can use provided App details in order to establish a connection with Azure AD.
+g. Press on Load Groups in order to add groups available in the Azure AD to REST ID store. The example here shows how admin experience looks like.
+Note: Please be aware of the defect Cisco bug ID CSCvx00345, as it cause groups not to load. The defect is fixed in ISE 3.0 patch 2.
+Figure 23.
+h. Submit your changes.
+5. At this step, consider the creation of a new Identity Store Sequence, which includes a newly created REST ID store. 
+6. At the moment when the REST ID store or Identity Store sequence which contains it assigned to the authentication policy, Change a default action for Process Failure from DROP to REJECT as shown in the image.
+Figure 24.
+a. Locate Authentication policy that uses the REST ID store.
+b. Open Options drop-down list.
+c. The change default action for Process Failed from DROP to REJECT.
+This is needed in order to avoid PSN marked as dead on the NADs side at a time when specific failures happen within the REST ID store like:
+The user is not a member of any group in Azure AD.
+The user password has to be changed. 
+7. Add REST ID store dictionary into Authorization policy.
+Figure 25.
+a. Open All Dictionary drop-down list.
+b. Locate the dictionary named in the same way as your REST ID store.
+8. Add external identity groups (As of ISE 3.0, the only attribute available in the REST ID store dictionary is an external Group).
+Figure 26.
+ISE Policy Examples for Different Use Cases
+In the case of Dot1x authentication, the EAP Tunnel condition from the Network Access dictionary can be used to match EAP-TTLS attempts as shown in the image.
+Figure 27.
+a. Define EAP Tunnel EQUAL to EAP-TTLS to match attempts that need to be forwarded to the REST ID store.
+b. Select in REST ID store directly or Identity Store Sequence, which contains it in the Use column.
+Inside of individual authorization policies, external groups from Azure AD can be used along with EAP Tunnel type:
+Figure 28.
+For VPN based flow, you can use a tunnel-group name as a differentiator:
+Authentication policy: 
+Authorization policies:
+Figure 29.
+Verify
+Use this section to confirm that your configuration works properly.
+1. Confirm that REST Auth Service runs on the ISE node.
+In order to check this you, need to execute the show application status ise command in the Secure Shell (SSH) shell of a target ISE node:
+skuchere-ise30-1/admin# show application status ise
+
+ISE PROCESS NAME STATE PROCESS ID
+--------------------------------------------------------------------
+Database Listener running 101790
+Database Server running 92 PROCESSES
+Application Server running 39355
+Profiler Database running 107909
+ISE Indexing Engine running 115132
+AD Connector running 116376
+M&T Session Database running 107694
+M&T Log Processor running 112553
+Certificate Authority Service running 116226
+EST Service running 119875
+SXP Engine Service disabled
+Docker Daemon running 104217
+TC-NAC Service disabled
+pxGrid Infrastructure Service disabled
+pxGrid Publisher Subscriber Service disabled
+pxGrid Connection Manager disabled
+pxGrid Controller disabled
+PassiveID WMI Service disabled
+PassiveID Syslog Service disabled
+PassiveID API Service disabled
+PassiveID Agent Service disabled
+PassiveID Endpoint Service disabled
+PassiveID SPAN Service disabled
+DHCP Server (dhcpd) disabled
+DNS Server (named) disabled
+ISE Messaging Service running 104876
+ISE API Gateway Database Service running 106853
+ISE API Gateway Service running 110426
+Segmentation Policy Service disabled
+REST Auth Service running 63052
+SSE Connector disabled
+2. Verify that the REST ID store is used at the time of the authentication (check the Steps. section of the detailed authentication report).
+a. PSN starts Plain text authentication with selected REST ID store.
+b. Connection established with Azure Cloud.
+c. Actual authentication step - pay attention to the latency value presented here. In case if all your authentications with the Aure Cloud struggle from significant latency, this affects the other ISE flow, and as a result, the entire ISE deployment becomes unstable.
+d. Confirmation of successful authentication.
+e. Confirmation of group data presented in response.
+f. Session context populated with user group data. For more details about the ISE session management process, consider a review of this article - link.
+3. Confirm that expect Authentication/Authorization policies are selected (for this investigate Overview section of the detailed authentication report).
+Figure 30.
+Troubleshoot
+This section provides the information you can use to troubleshoot your configuration.
+Issues with REST Auth Service
+In order to troubleshoot any issues with REST Auth Service, you need to start with the review of the ADE.log file. Support bundle location -  /support/adeos/ade
+A search keyword for REST Auth Service is - ROPC-control.
+This example shows how REST Auth Service starts:
+2020-08-30T11:15:38.624197+02:00 skuchere-ise30-1 admin: info:[application:operation:ROPC-control.sh] Starting
+2020-08-30T11:15:39.217794+02:00 skuchere-ise30-1 admin: info:[application:operation:ROPC-control.sh] inside docker_image_exists
+2020-08-30T11:15:39.290301+02:00 skuchere-ise30-1 admin: info:[application:operation:ROPC-control.sh] Image exist with ID = 
+2020-08-30T11:15:39.291858+02:00 skuchere-ise30-1 admin: info:[application:operation:ROPC-control.sh] Docker image doesn't exist
+2020-08-30T11:15:39.293768+02:00 skuchere-ise30-1 admin: info:[application:operation:ROPC-control.sh] Load docker image ROPC
+2020-08-30T11:15:39.359490+02:00 skuchere-ise30-1 admin: info:[application:operation:ROPC-control.sh] Error: No such image: ROPC
+2020-08-30T11:15:42.789242+02:00 skuchere-ise30-1 admin: info:[application:operation:ROPC-control.sh] Loaded image: ROPC:latest
+2020-08-30T11:15:42.830411+02:00 skuchere-ise30-1 admin: info:[application:operation:ROPC-control.sh] Docker image ROPC successfully loaded.
+2020-08-30T11:15:42.832131+02:00 skuchere-ise30-1 admin: info:[application:operation:ROPC-control.sh] Setting up REST Auth Service
+2020-08-30T11:15:42.844051+02:00 skuchere-ise30-1 admin: info:[application:operation:ROPC-control.sh] inside docker_create_container
+2020-08-30T11:15:53.479968+02:00 skuchere-ise30-1 admin: info:[application:operation:ROPC-control.sh] Copying binaries to the docker container...
+2020-08-30T11:15:55.325973+02:00 skuchere-ise30-1 admin: info:[application:operation:ROPC-control.sh] Container run status false
+2020-08-30T11:15:57.103245+02:00 skuchere-ise30-1 admin: info:[application:operation:ROPC-control.sh] Container run status true
+2020-08-30T11:15:57.105752+02:00 skuchere-ise30-1 admin: info:[application:operation:ROPC-control.sh] Creating ROPC pid file
+2020-08-30T11:15:57.278374+02:00 skuchere-ise30-1 admin: info:[application:operation:ROPC-control.sh] Container run status true
+In cases when service fails to start or it goes down unexpectedly, it always makes sense to start by review the ADE.log around a problematic timeframe.
+Issues with REST ID Authentication
+In the case of authentication failures when the REST ID store is used, you always need to start from a detailed authentication report. In the Other Attributes area, you are able to see a section - RestAuthErrorMsg which contains  an error returned by Azure cloud:
+Figure 31.
+Work with the Log Files
+In ISE 3.0 due to the Controlled Introduction of REST ID feature, debugs for it enabled by default. All REST ID related logs are stored in ROPC files which can be viewed over CLI:
+skuchere-ise30-1/admin# sh logging application | i ropc
+755573 Oct 04 2020 09:10:29 ropc/ropc.log
+
+skuchere-ise30-1/admin# sh logging application ropc/ropc.log
+23:49:31.449 [http-nio-9601-exec-6] DEBUG c.c.i.r.c.ROPCController - Starting ROPC auth flow
+23:49:31.788 [http-nio-9601-exec-6] DEBUG c.c.i.r.u.ScimUtility - Found user and pass in the SCIM filter
+On ISE 3.0 with the installed patch, notice that the filename is rest-id-store.log and not ropc.log. The previous search example provided works because the folder name did not change.
+Or those files can be extracted from the ISE support bundle.
+Here are a couple of log examples that show different working and non-working scenarios:
+1. Certificate error when the Azure Graph is not trusted by the ISE node. This error can be seen when groups do not load in the REST ID store setting.
+20:44:54.420 [http-nio-9601-exec-7] DEBUG c.c.i.r.u.HttpClientWrapper - Start proxy load for URI 'https://graph.microsoft.com/v1.0/groups'
+
+20:44:54.805 [http-nio-9601-exec-7] ERROR c.c.i.r.p.a.AzureIdentityProviderFacade - Couldn't fetch application groups, REST error
+javax.net.ssl.SSLHandshakeException: sun.security.validator.ValidatorException: No trusted certificate found
+at sun.security.ssl.Alerts.getSSLException(Alerts.java:192)
+at sun.security.ssl.SSLSocketImpl.fatal(SSLSocketImpl.java:1946)
+at sun.security.ssl.Handshaker.fatalSE(Handshaker.java:316)
+at sun.security.ssl.Handshaker.fatalSE(Handshaker.java:310)
+at sun.security.ssl.ClientHandshaker.serverCertificate(ClientHandshaker.java:1639)
+This issue indicates that the Microsoft graph API certificate is not trusted by ISE. ISE 3.0.0.458 does not have a DigiCert Global Root G2 CA installed in the trusted store. This is documented in the defect
+-  Cisco bug ID CSCvv80297 To address this issue you need to install DigiCert Global Root G2 CA in ISE trusted store and mark it as trusted for Cisco services. 
+The certificate can be downloaded from here - https://www.digicert.com/kb/digicert-root-certificates.htm
+2. Wrong application secret.
+10:57:53.200 [http-nio-9601-exec-1] DEBUG c.c.i.r.e.c.CertificateCache - SSLContext initialized with trust managers
+10:57:54.205 [http-nio-9601-exec-1] ERROR c.c.i.r.u.RestUtility - Error response in 'POST' request. Status - '401'. Error - '{"error":"invalid_client","error_description":"AADSTS7000215: Invalid client secret is provided.\r\nTrace ID: 99cc29f7-502a-4aaa-b2cf-1daeb071b900\r\nCorrelation ID: a697714b-5ab2-4bd1-8896-f9ad40d625e5\r\nTimestamp: 2020-09-29 09:01:36Z","error_codes":[7000215],"timestamp":"2020-09-29 09:01:36Z","trace_id":"99cc29f7-502a-4aaa-b2cf-1daeb071b900","correlation_id":"a697714b-5ab2-4bd1-8896-f9ad40d625e5","error_uri":"https://login.microsoftonline.com/error?code=7000215"}'
+10:57:54.206 [http-nio-9601-exec-1] ERROR c.c.i.r.c.ROPCController - Request related Error
+com.cisco.ise.ROPC.entities.exceptions.InvalidApplicationAuthException: AADSTS7000215: Invalid client secret is provided.
+Trace ID: 99cc29f7-502a-4aaa-b2cf-1daeb071b900
+Correlation ID: a697714b-5ab2-4bd1-8896-f9ad40d625e5
+Timestamp: 2020-09-29 09:01:36Z - Error Codes: [7000215]
+at com.cisco.ise.ROPC.providers.azure.AzureIdentityProviderFacade.authenticateApplication(AzureIdentityProviderFacade.java:117)
+3. Wrong APP ID.
+21:34:36.090 [http-nio-9601-exec-4] DEBUG c.c.i.r.e.c.CertificateCache - SSLContext initialized with trust managers
+21:34:36.878 [http-nio-9601-exec-4] ERROR c.c.i.r.u.RestUtility - Error response in 'POST' request. Status - '400'. Error - '{"error":"unauthorized_client","error_description":"AADSTS700016: Application with identifier '825aab1f-be45-4d53-92fe-bb756' was not found in the directory '83cc4b2c-c608-4563-b6bd-dc8e83977ff6'. This can happen if the application has not been installed by the administrator of the tenant or consented to by any user in the tenant. You have sent your authentication request to the wrong tenant.\r\nTrace ID: 6dbd0fdd-0128-4ea8-b06a-5e78f37c0100\r\nCorrelation ID: eced0c34-fcc1-40b9-b033-70e5abe75985\r\nTimestamp: 2020-08-31 19:38:34Z","error_codes":[700016],"timestamp":"2020-08-31 19:38:34Z","trace_id":"6dbd0fdd-0128-4ea8-b06a-5e78f37c0100","correlation_id":"eced0c34-fcc1-40b9-b033-70e5abe75985","error_uri":"https://login.microsoftonline.com/error?code=700016"}'
+21:34:36.879 [http-nio-9601-exec-4] ERROR c.c.i.r.c.ROPCController - Request related Error
+com.cisco.ise.ROPC.entities.exceptions.InvalidApplicationAuthException: AADSTS700016: Application with identifier '825aab1f-be45-4d53-92fe-bb756' was not found in the directory '83cc4b2c-c608-4563-b6bd-dc8e83977ff6'. This can happen if the application has not been installed by the administrator of the tenant or consented to by any user in the tenant. You have sent your authentication request to the wrong tenant.
+Trace ID: 6dbd0fdd-0128-4ea8-b06a-5e78f37c0100
+Correlation ID: eced0c34-fcc1-40b9-b033-70e5abe75985
+Timestamp: 2020-08-31 19:38:34Z - Error Codes: [700016]
+4. User not found.
+10:43:01.351 [http-nio-9601-exec-2] ERROR c.c.i.r.u.RestUtility - Error response in 'POST' request. Status - '400'. Error - '{"error":"invalid_grant","error_description":"AADSTS50034: The user account bob does not exist in the 83cc4b2c-c608-4563-b6bd-dc8e83977ff6 directory. To sign into this application, the account must be added to the directory.\r\nTrace ID: 9417a19e-66f8-4887-ab7a-a9ee268b1a00\r\nCorrelation ID: df3722ff-cd29-4ea2-98fc-fff0117a8db9\r\nTimestamp: 2020-08-31 08:46:57Z","error_codes":[50034],"timestamp":"2020-08-31 08:46:57Z","trace_id":"9417a19e-66f8-4887-ab7a-a9ee268b1a00","correlation_id":"df3722ff-cd29-4ea2-98fc-fff0117a8db9","error_uri":"https://login.microsoftonline.com/error?code=50034"}'
+10:43:01.352 [http-nio-9601-exec-2] ERROR c.c.i.r.c.ROPCController - Request related Error
+com.cisco.ise.ROPC.entities.exceptions.ROPCResponseErrorException: {"error":"invalid_grant","error_description":"AADSTS50034: The user account bob does not exist in the 83cc4b2c-c608-4563-b6bd-dc8e83977ff6 directory. To sign into this application, the account must be added to the directory.\r\nTrace ID: 9417a19e-66f8-4887-ab7a-a9ee268b1a00\r\nCorrelation ID: df3722ff-cd29-4ea2-98fc-fff0117a8db9\r\nTimestamp: 2020-08-31 08:46:57Z","error_codes":[50034],"timestamp":"2020-08-31 08:46:57Z","trace_id":"9417a19e-66f8-4887-ab7a-a9ee268b1a00","correlation_id":"df3722ff-cd29-4ea2-98fc-fff0117a8db9","error_uri":"https://login.microsoftonline.com/error?code=50034"}
+at com.cisco.ise.ROPC.providers.azure.AzureIdentityProviderFacade.authenticateUser(AzureIdentityProviderFacade.java:87)
+at com.cisco.ise.ROPC.providers.azure.AzureROPCFlow.authenticateUser(AzureROPCFlow.java:100)
+at com.cisco.ise.ROPC.providers.azure.AzureROPCFlow.doEntireFlow(AzureROPCFlow.java:69)
+at com.cisco.ise.ROPC.controllers.ROPCController.ROPCAuthFlow(ROPCController.java:168)
+at com.cisco.ise.ROPC.controllers.ROPCController.get(ROPCController.java:85)
+at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+at java.lang.reflect.Method.invoke(Method.java:498)
+5. User password expired - typically can happen for the newly created user as the password defined by Azure admin needs to be changed at the time of the login to Office365.
+10:50:55.096 [http-nio-9601-exec-4] ERROR c.c.i.r.u.RestUtility - Error response in 'POST' request. Status - '401'. Error - '{"error":"invalid_grant","error_description":"AADSTS50055: The password is expired.\r\nTrace ID: 776120b2-9687-4f88-bf93-822a4d019c00\r\nCorrelation ID: 5defbdc6-3a7f-425f-91e9-ba3c10fcc410\r\nTimestamp: 2020-08-31 08:54:51Z","error_codes":[50055],"timestamp":"2020-08-31 08:54:51Z","trace_id":"776120b2-9687-4f88-bf93-822a4d019c00","correlation_id":"5defbdc6-3a7f-425f-91e9-ba3c10fcc410","error_uri":"https://login.microsoftonline.com/error?code=50055","suberror":"user_password_expired"}'
+10:50:55.097 [http-nio-9601-exec-4] ERROR c.c.i.r.c.ROPCController - Request related Error
+com.cisco.ise.ROPC.entities.exceptions.ROPCResponseErrorException: {"error":"invalid_grant","error_description":"AADSTS50055: The password is expired.\r\nTrace ID: 776120b2-9687-4f88-bf93-822a4d019c00\r\nCorrelation ID: 5defbdc6-3a7f-425f-91e9-ba3c10fcc410\r\nTimestamp: 2020-08-31 08:54:51Z","error_codes":[50055],"timestamp":"2020-08-31 08:54:51Z","trace_id":"776120b2-9687-4f88-bf93-822a4d019c00","correlation_id":"5defbdc6-3a7f-425f-91e9-ba3c10fcc410","error_uri":"https://login.microsoftonline.com/error?code=50055","suberror":"user_password_expired"}
+at com.cisco.ise.ROPC.providers.azure.AzureIdentityProviderFacade.authenticateUser(AzureIdentityProviderFacade.java:87)
+at com.cisco.ise.ROPC.providers.azure.AzureROPCFlow.authenticateUser(AzureROPCFlow.java:100)
+at com.cisco.ise.ROPC.providers.azure.AzureROPCFlow.doEntireFlow(AzureROPCFlow.java:69)
+at com.cisco.ise.ROPC.controllers.ROPCController.ROPCAuthFlow(ROPCController.java:168)
+at com.cisco.ise.ROPC.controllers.ROPCController.get(ROPCController.java:85)
+at sun.reflect.GeneratedMethodAccessor53.invoke(Unknown Source)
+at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+at java.lang.reflect.Method.invoke(Method.java:498)
+6. Groups cannot be loaded due to wrong API permissions.
+12:40:06.624 [http-nio-9601-exec-9] ERROR c.c.i.r.u.RestUtility - Error response in 'GET' request. Status - '403'. Error - '{
+"error": {
+"code": "Authorization_RequestDenied",
+"message": "Insufficient privileges to complete the operation.",
+"innerError": {
+"date": "2020-08-30T10:43:59",
+"request-id": "da458fa4-cc8a-4ae8-9720-b5370ad45297"
+}
+}
+}'
+7. Authentication fails when ROPC is not allowed on the Azure side.
+11:23:10.824 [http-nio-9601-exec-2] DEBUG c.c.i.r.e.c.CertificateCache - SSLContext initialized with trust managers
+11:23:11.776 [http-nio-9601-exec-2] ERROR c.c.i.r.u.RestUtility - Error response in 'POST' request. Status - '401'. Error - '{"error":"invalid_client","error_description":"AADSTS7000218: The request body must contain the parameter: 'client_assertion' or 'client_secret'.\r\nTrace ID: 856d1ced-06c3-4446-a856-813789579b00\r\nCorrelation ID: b0a9cb82-4f37-46b3-abf5-361d8ce34094\r\nTimestamp: 2020-08-31 09:27:08Z","error_codes":[7000218],"timestamp":"2020-08-31 09:27:08Z","trace_id":"856d1ced-06c3-4446-a856-813789579b00","correlation_id":"b0a9cb82-4f37-46b3-abf5-361d8ce34094","error_uri":"https://login.microsoftonline.com/error?code=7000218"}'
+11:23:11.777 [http-nio-9601-exec-2] ERROR c.c.i.r.c.ROPCController - Request related Error
+com.cisco.ise.ROPC.entities.exceptions.ROPCResponseErrorException: {"error":"invalid_client","error_description":"AADSTS7000218: The request body must contain the parameter: 'client_assertion' or 'client_secret'.\r\nTrace ID: 856d1ced-06c3-4446-a856-813789579b00\r\nCorrelation ID: b0a9cb82-4f37-46b3-abf5-361d8ce34094\r\nTimestamp: 2020-08-31 09:27:08Z","error_codes":[7000218],"timestamp":"2020-08-31 09:27:08Z","trace_id":"856d1ced-06c3-4446-a856-813789579b00","correlation_id":"b0a9cb82-4f37-46b3-abf5-361d8ce34094","error_uri":"https://login.microsoftonline.com/error?code=7000218"}
+at com.cisco.ise.ROPC.providers.azure.AzureIdentityProviderFacade.authenticateUser(AzureIdentityProviderFacade.java:87)
+at com.cisco.ise.ROPC.providers.azure.AzureROPCFlow.authenticateUser(AzureROPCFlow.java:100)
+at com.cisco.ise.ROPC.providers.azure.AzureROPCFlow.doEntireFlow(AzureROPCFlow.java:69)
+at com.cisco.ise.ROPC.controllers.ROPCController.ROPCAuthFlow(ROPCController.java:168)
+at com.cisco.ise.ROPC.controllers.ROPCController.get(ROPCController.java:85)
+at sun.reflect.GeneratedMethodAccessor53.invoke(Unknown Source)
+at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+at java.lang.reflect.Method.invoke(Method.java:498)
+8. Authentication fails since the user does not belong to any group on the Azure side.
+21:54:55.976 [http-nio-9601-exec-5] DEBUG c.c.i.r.e.c.CertificateCache - SSLContext initialized with trust managers
+21:54:57.312 [http-nio-9601-exec-5] ERROR c.c.i.r.p.a.AzureROPCFlow - Missing claims in the id token: "name" or "groups"
+21:54:57.313 [http-nio-9601-exec-5] ERROR c.c.i.r.c.ROPCController - Server Error
+com.cisco.ise.ROPC.entities.exceptions.JsonParseException: Json exception: Missing claims in the id token: "name" or "groups"
+at com.cisco.ise.ROPC.providers.azure.AzureROPCFlow.validateIdTokenPayload(AzureROPCFlow.java:93)
+9. Succesful user authentication and group retrieval.
+11:46:03.035 [http-nio-9601-exec-7] DEBUG c.c.i.r.c.ROPCController - Starting ROPC auth flow
+11:46:03.037 [http-nio-9601-exec-7] DEBUG c.c.i.r.u.ScimUtility - Found user and pass in the SCIM filter
+11:46:03.037 [http-nio-9601-exec-7] DEBUG c.c.i.r.c.ROPCController - Getting the right ROPC handler for the request IDPType AZURE
+11:46:03.037 [http-nio-9601-exec-7] DEBUG c.c.i.r.c.ROPCController - Getting user groups from handler
+11:46:03.038 [http-nio-9601-exec-7] DEBUG c.c.i.r.u.HttpClientWrapper - Start building http client
+11:46:03.039 [http-nio-9601-exec-7] DEBUG c.c.i.r.u.HttpClientWrapper - Start proxy load for URI 'https://login.microsoftonline.com/83cc4b2c-c608-4563-b6bd-dc8e83977ff6/oauth2/v2.0/token'
+11:46:03.039 [http-nio-9601-exec-7] DEBUG c.c.i.r.u.HttpClientWrapper - Start check if host is bypass
+11:46:03.039 [http-nio-9601-exec-7] DEBUG c.c.i.r.u.HttpClientWrapper - Iterating bypass hosts '192.168.1.10,10.201.228.98,10.62.145.72,172.16.201.204,172.16.201.203' to find host 'login.microsoftonline.com'
+11:46:03.040 [http-nio-9601-exec-7] DEBUG c.c.i.r.u.HttpClientWrapper - Proxy server found with address '192.168.255.40' and port '8080', load to httpclient
+11:46:03.040 [http-nio-9601-exec-7] DEBUG c.c.i.r.u.HttpClientWrapper - Start adding proxy credentials to builder
+11:46:03.040 [http-nio-9601-exec-7] DEBUG c.c.i.r.u.HttpClientWrapper - No credentials found for proxy
+11:46:03.040 [http-nio-9601-exec-7] DEBUG c.c.i.r.e.c.CertificateCache - Created SSLContext with TLSv1.2 algorithm
+11:46:03.041 [http-nio-9601-exec-7] DEBUG c.c.i.r.e.c.CertificateCache - SSLContext initialized with trust managers
+11:46:04.160 [http-nio-9601-exec-7] DEBUG c.c.i.r.c.ROPCController - The ROPCHandlerResponse is: {
+"schemas" : [ "urn:ietf:params:scim:schemas:core:2.0:User" ],
+"userName" : "username",
+"name" : {
+"formatted" : "bob"
+},
+"displayName" : "bob",
+"groups" : [ {
+"value" : "17db2c79-fb87-4027-ae13-88eb5467f25b"
+} ],
+"roles" : [ ]
+}
+Revision History
+Revision Publish Date Comments
+2.0
+10-Jan-2023
+Recertification
+1.0
+27-Oct-2020
+Initial Release
+Contributed by Cisco Engineers
+Serhii Kucherenko
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Configure Cisco ISE 3.2 EAP-TLS with Microsoft Azure Active Directory
+Cisco ISE with Microsoft Active Directory, Azure AD, and Intune
+ISE 3.1 with Azure AD
++ Show 3 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine

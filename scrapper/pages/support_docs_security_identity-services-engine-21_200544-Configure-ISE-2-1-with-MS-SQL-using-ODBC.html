@@ -1,0 +1,341 @@
+Configuration Examples and TechNotes
+Configure ISE 2.1 with MS SQL using ODBC
+Save
+Translations
+Download
+Print
+
+
+
+Updated:June 28, 2016
+Document ID:200544
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Configure
+Step 1. MS SQL Basic Configuration
+Step 2. ISE Basic Configuration
+Step 3. Configure User Authentication
+Step 4. Configure Group Retrieval
+Step 5. Configure Attributes Retrieval
+Troubleshoot
+Introduction
+This document describes how to configure Identity Services Engine (ISE) with Microsoft Standard Query Language (SQL) Server for ISE authentication using Open Database Connectivity (ODBC)
+Note: Open Database Connectivity (ODBC) authentication requires ISE to be able to fetch a plain text user password. The password can be encrypted in the database, but has to be decrypted by the stored procedure.
+Prerequisites
+Requirements
+ Cisco recommends that you have knowledge of these topics:
+Database and ODBC concepts
+Microsoft SQL Server
+Components Used
+The information in this document is based on these software and hardware versions:
+Identity Services Engine 2.1
+MSSQL Server 2008 R2
+Configure
+Step 1. MS SQL Basic Configuration
+Configuration steps include creating a database and one user for ISE with permissions to access that database.
+Note: ISE supports only SQL authentication, not the Windows account. If you need to change authentication mode, please refer to Change Server Authentication Mode
+1. Open SQL Server Management Studio (Start menu > Microsoft SQL Server 2008 R2) and create a database:
+2. Leave default options or adjust database settings as shown in this image:
+   3. Create a user and set permissions as shown in the images below:
+Step 2. ISE Basic Configuration
+Create an ODBC Identity Source at Administration > External Identity Source > ODBC and test connection:
+Step 3. Configure User Authentication
+ISE authentication to ODBC uses stored procedures.The stored procedure for authentication returns resultset with this syntax:
+Value
+Type
+Result
+Integer
+Group (for compatibility with ACS 4.2 only)
+Integer or varchar(255)
+Account Info
+varchar(255)
+Error String
+varchar(255)
+For other procedures, refer to Cisco Identity Services Engine 2.1 Administration Guide
+Tip: It is possible to return named parameters instead of resultset. It is just a different type of output, functionality is the same.
+1. Navigate to options and uncheck Prevent saving change that require table re-creation check box (optional):
+2. Create the table. Make sure you set the identity settings on the primary key. To set user_id as primary key, right click the column name:
+   Final SQL:
+   CREATE TABLE [dbo].[ISE_Users](
+ [user_id] [int] IDENTITY(1,1) NOT NULL,
+ [username] [varchar](max) NOT NULL,
+ [password] [varchar](max) NOT NULL,
+ CONSTRAINT [PK_ISE_Users] PRIMARY KEY CLUSTERED 
+(
+ [user_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY] 
+3. Run this query to insert one user:
+   insert into ISE_Users(username,password) values('odbcuser1','odbcpass'); 
+4. Create a procedure for plain text password authentication (used for PAP, EAP-GTC inner method, TACACS):
+   CREATE PROCEDURE [dbo].[ISEAuthUserPlainReturnsRecordset]
+ @username varchar(255), @password varchar(255)
+AS
+BEGIN
+ IF EXISTS( SELECT username
+ FROM ISE_Users
+ WHERE username = @username
+ AND password = @password )
+ SELECT 0,11,'This is a very good user, give him all access','No Error'
+ FROM ISE_Users
+ WHERE username = @username
+ ELSE
+ SELECT 3,0,'odbc','ODBC Authen Error'
+END
+   5. Create a procedure for plain text password fetching (used for CHAP, MSCHAPv1/v2, EAP-MD5, LEAP, EAP-MSCHAPv2 inner method, TACACS):
+   CREATE PROCEDURE [dbo].[ISEFetchPasswordReturnsRecordset]
+ @username varchar(255)
+AS
+BEGIN
+ IF EXISTS( SELECT username
+ FROM ISE_Users
+ WHERE username = @username)
+ SELECT 0,11,'This is a very good user, give him all access','No Error',password
+ FROM ISE_Users
+ WHERE username = @username
+ ELSE
+ SELECT 3,0,'odbc','ODBC Authen Error'
+END
+6. Create a procedure for check username or machine exists (used for MAB, fast reconnect of PEAP, EAP-FAST and EAP-TTLS):
+CREATE PROCEDURE [dbo].[ISEUserLookupReturnsRecordset]
+ @username varchar(255)
+AS
+BEGIN
+ IF EXISTS( SELECT username
+ FROM ISE_Users
+ WHERE username = @username)
+ SELECT 0,11,'This is a very good user, give him all access','No Error'
+ FROM ISE_Users
+ WHERE username = @username
+ ELSE
+ SELECT 3,0,'odbc','ODBC Authen Error'
+END 
+7. Test created procedures:
+   Test other procedures in the same way.
+8. Configure procedures on ISE and save:
+9. Create a simple authentication rule using ODBC and test it:
+
+b3560#test aaa group ISE236 odbcuser1 odbcpass legacy 
+Attempting authentication test to server-group ISE236 using radius
+User was successfully authenticated.
+Step 4. Configure Group Retrieval
+1. Create tables containing user groups and another used for many-to-many mapping:
+CREATE TABLE [dbo].[Groups](
+ [Group_ID] [int] IDENTITY(1,1) NOT NULL,
+ [Group_Name] [varchar](max) NOT NULL,
+ [Group_Desc] [text] NOT NULL,
+ CONSTRAINT [PK_Groups] PRIMARY KEY CLUSTERED 
+(
+ [Group_ID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMAR
+   CREATE TABLE [dbo].[User_Groups_Mapping](
+ [user_id] [int] NOT NULL,
+ [group_id] [int] NOT NULL
+) ON [PRIMARY]
+ALTER TABLE dbo.User_Groups_Mapping ADD CONSTRAINT
+ FK_User_Groups_Mapping_Groups FOREIGN KEY
+ (
+ group_id
+ ) REFERENCES dbo.Groups
+ (
+ Group_ID
+ ) ON UPDATE CASCADE 
+ ON DELETE CASCADE 
+ 
+GO
+ALTER TABLE dbo.User_Groups_Mapping ADD CONSTRAINT
+ FK_User_Groups_Mapping_ISE_Users FOREIGN KEY
+ (
+ user_id
+ ) REFERENCES dbo.ISE_Users
+ (
+ user_id
+ ) ON UPDATE CASCADE 
+ ON DELETE CASCADE 
+2. Add groups and mappings, so that ODBCUSER1 belongs to both groups:
+INSERT [dbo].[Groups] ([Group_ID], [Group_Name], [Group_Desc]) VALUES (1, N'ODBCGroup1', N'My Nice Group1')
+INSERT [dbo].[User_Groups_Mapping] ([user_id], [group_id]) VALUES (1, 1)
+INSERT [dbo].[Groups] ([Group_ID], [Group_Name], [Group_Desc]) VALUES (2, N'ODBCGroup2', N'My Nice Group2')
+INSERT [dbo].[User_Groups_Mapping] ([user_id], [group_id]) VALUES (1, 2)
+3. Create group retrieval procedure:
+CREATE PROCEDURE [dbo].[ISEGroupsRetrieval]
+ @username varchar(255), @result int output
+AS
+BEGIN
+ if exists (select * from ISE_Users where username = @username)
+ begin
+ set @result = 0
+ select Group_Name from Groups where group_id in (select group_ID from User_Groups_Mapping where User_Groups_Mapping.USER_ID IN (select USER_ID from ISE_Users where username=@username ) )
+ end
+ else
+ set @result = 1
+END
+4. Map it to Fetch groups:
+5. Fetch the groups and add them into the ODBC Identity Source:
+6. Add another user which does not belong to any group:
+insert into ISE_Users(username,password) values('odbcuser2','odbcpass'); 
+7. Create specific Policy Set and test:
+
+b3560#test aaa group ISE236 odbcuser2 odbcpass legacy 
+Attempting authentication test to server-group ISE236 using radius
+User authentication request was rejected by server.
+
+b3560#test aaa group ISE236 odbcuser1 odbcpass legacy 
+Attempting authentication test to server-group ISE236 using radius
+User was successfully authenticated.
+Step 5. Configure Attributes Retrieval
+1. In order to simplify this example, a flat table is used for attributes:
+ CREATE TABLE [dbo].[User_Attributes](
+ [user_id] [int] NOT NULL,
+ [Attribute_Name] [varchar](max) NOT NULL,
+ [Attribute_Value] [varchar](max) NOT NULL
+) ON [PRIMARY]
+
+GO
+
+ALTER TABLE [dbo].[User_Attributes] WITH CHECK ADD CONSTRAINT [FK_User_Attributes_ISE_Users] FOREIGN KEY([user_id])
+REFERENCES [dbo].[ISE_Users] ([user_id])
+ON UPDATE CASCADE
+ON DELETE CASCADE
+GO
+2. Create an attribute for one of the users:
+INSERT [dbo].[User_Attributes] ([user_id], [Attribute_Name], [Attribute_Value]) VALUES (2, N'AwsomenessLevel', N'100')
+INSERT [dbo].[User_Attributes] ([user_id], [Attribute_Name], [Attribute_Value]) VALUES (2, N'UserType', N'admin')
+3. Create stored procedure:
+
+CREATE PROCEDURE [dbo].[ISEAttrsRetrieval]
+ @username varchar(255), @result int output
+AS
+BEGIN
+ if exists (select * from ISE_Users where username = @username)
+ begin
+ set @result = 0
+ select attribute_name , attribute_value from user_attributes where USER_ID in(SELECT USER_ID from ISE_Users where username = @username)
+ end
+ else
+ set @result = 1
+END
+4. Map it to Fetch attributes:
+5. Fetch the attributes:
+
+6. Adjust ISE rules:
+Troubleshoot
+If the connection is not successful, check windows event log. On ISE use command show logging application prrt-management.log tail while attempting to connect.
+Example of bad authentication mode:
+bise236/admin# sh logg app prrt-management.log tail
+2016-06-08 09:03:59,822 WARN [admin-http-pool177][] cisco.cpm.odbcidstore.impl.MSSQLServerDbAccess -:bastien::- Connection to ODBC DB failed. Exception: com.microsoft.sqlserver.jdbc.S
+QLServerException: Login failed for user 'babaland\administrator'. ClientConnectionId:c74ade15-4f34-415a-9a94-4c54c58c0fc3
+com.microsoft.sqlserver.jdbc.SQLServerException: Login failed for user 'babaland\administrator'. ClientConnectionId:c74ade15-4f34-415a-9a94-4c54c58c0fc3
+ at com.microsoft.sqlserver.jdbc.SQLServerException.makeFromDatabaseError(SQLServerException.java:216)
+ at com.microsoft.sqlserver.jdbc.TDSTokenHandler.onEOF(tdsparser.java:254)
+ at com.microsoft.sqlserver.jdbc.TDSParser.parse(tdsparser.java:84)
+ at com.microsoft.sqlserver.jdbc.SQLServerConnection.sendLogon(SQLServerConnection.java:2908)
+ at com.microsoft.sqlserver.jdbc.SQLServerConnection.logon(SQLServerConnection.java:2234)
+ at com.microsoft.sqlserver.jdbc.SQLServerConnection.access$000(SQLServerConnection.java:41)
+ at com.microsoft.sqlserver.jdbc.SQLServerConnection$LogonCommand.doExecute(SQLServerConnection.java:2220)
+ at com.microsoft.sqlserver.jdbc.TDSCommand.execute(IOBuffer.java:5696)
+ at com.microsoft.sqlserver.jdbc.SQLServerConnection.executeCommand(SQLServerConnection.java:1715)
+ at com.microsoft.sqlserver.jdbc.SQLServerConnection.connectHelper(SQLServerConnection.java:1326)
+Example of user missing permissions to open database:
+2016-06-08 09:13:57,842 WARN [admin-http-pool159][] cisco.cpm.odbcidstore.impl.MSSQLServerDbAccess -:bastien::- Connection to ODBC DB failed. Exception: com.microsoft.sqlserver.jdbc.SQLServerException: Cannot open database "ISEDB" requested by the login. The login failed. ClientConnectionId:299c2956-6946-4282-b3ca-2aa86642a821
+com.microsoft.sqlserver.jdbc.SQLServerException: Cannot open database "ISEDB" requested by the login. The login failed. ClientConnectionId:299c2956-6946-4282-b3ca-2aa86642a821
+ at com.microsoft.sqlserver.jdbc.SQLServerException.makeFromDatabaseError(SQLServerException.java:216)
+ at com.microsoft.sqlserver.jdbc.TDSTokenHandler.onEOF(tdsparser.java:254)
+ at com.microsoft.sqlserver.jdbc.TDSParser.parse(tdsparser.java:84)
+ at com.microsoft.sqlserver.jdbc.SQLServerConnection.sendLogon(SQLServerConnection.java:2908)
+ at com.microsoft.sqlserver.jdbc.SQLServerConnection.logon(SQLServerConnection.java:2234)
+ at com.microsoft.sqlserver.jdbc.SQLServerConnection.access$000(SQLServerConnection.java:41)
+In order to troubleshoot DB operations, enable logging components odbc-id-store to DEBUG level under Administration > System > Logging > Debug Log Configuation.
+
+Logs are placed in prrt-management.log file.
+Example for odbuser2:
+
+2016-06-08 12:26:56,009 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcIdStore -:::- ODBC ID Store Operation: Authenticate Plain Text Password. Username=odbcuser2, SessionID=0a3027ecLA_rJLKsS5QAzuRvluGWzdYe67rIgcG3MMQcpE8yKnw
+2016-06-08 12:26:56,012 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.CustomerLog -:::- Write customer log message: 24852
+2016-06-08 12:26:56,012 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcConnectionPool -:::- OdbcConnectionPool - get connection
+2016-06-08 12:26:56,012 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcConnectionPool -:::- OdbcConnectionPool - use existing connection
+2016-06-08 12:26:56,013 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcConnectionPool -:::- OdbcConnectionPool - connections in use: 1
+2016-06-08 12:26:56,013 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Authenticate plain text password
+2016-06-08 12:26:56,013 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Prepare stored procedure call, procname=ISEAuthUserPlainReturnsRecordset
+2016-06-08 12:26:56,013 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Using recordset to obtain stored procedure result values
+2016-06-08 12:26:56,013 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.CustomerLog -:::- Write customer log message: 24855
+2016-06-08 12:26:56,013 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Text: {call ISEAuthUserPlainReturnsRecordset(?, ?)}
+2016-06-08 12:26:56,013 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Setup stored procedure input parameters, username=odbcuser2, password=***
+2016-06-08 12:26:56,014 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Execute stored procedure call
+2016-06-08 12:26:56,017 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Process stored procedure results
+2016-06-08 12:26:56,017 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Obtain stored procedure results from recordset
+2016-06-08 12:26:56,017 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Received result recordset, number of columns=4
+2016-06-08 12:26:56,017 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Results successfully parsed from recordset
+2016-06-08 12:26:56,018 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcConnectionPool -:::- OdbcConnectionPool - release connection
+2016-06-08 12:26:56,018 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcConnectionPool -:::- OdbcConnectionPool - connections in use: 0
+2016-06-08 12:26:56,018 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcIdStore -:::- Call to ODBC DB succeeded
+2016-06-08 12:26:56,018 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.OdbcAuthResult -:::- Authentication result: code=0, Conection succeeded=false, odbcDbErrorString=No Error, odbcStoredProcedureCustomerErrorString=null, accountInfo=This is a very good user, give him all access, group=11
+2016-06-08 12:26:56,019 DEBUG [Thread-4051][] cisco.cpm.odbcidstore.impl.CustomerLog -:::- Write customer log message: 24853
+2016-06-08 12:26:56,026 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcIdStore -:::- ODBC ID Store Operation: Get all user groups. Username=odbcuser2, SessionID=0a3027ecLA_rJLKsS5QAzuRvluGWzdYe67rIgcG3MMQcpE8yKnw
+2016-06-08 12:26:56,029 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcIdStore -:::- ODBC ID Store Operation: Fetch user groups. Username=odbcuser2, SessionID=0a3027ecLA_rJLKsS5QAzuRvluGWzdYe67rIgcG3MMQcpE8yKnw
+2016-06-08 12:26:56,029 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.CustomerLog -:::- Write customer log message: 24869
+2016-06-08 12:26:56,029 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnectionPool -:::- OdbcConnectionPool - get connection
+2016-06-08 12:26:56,029 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnectionPool -:::- OdbcConnectionPool - use existing connection
+2016-06-08 12:26:56,029 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnectionPool -:::- OdbcConnectionPool - connections in use: 1
+2016-06-08 12:26:56,029 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Fetch user groups
+2016-06-08 12:26:56,029 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Prepare stored procedure call, procname=ISEGroupsRetrieval
+2016-06-08 12:26:56,029 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Text: {call ISEGroupsRetrieval(?,?)}
+2016-06-08 12:26:56,029 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Setup stored procedure input parameters, username=odbcuser2
+2016-06-08 12:26:56,029 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Execute stored procedure call
+2016-06-08 12:26:56,031 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Process stored procedure results
+2016-06-08 12:26:56,032 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Received epmty result set, no groups/attributes data can be obtained
+2016-06-08 12:26:56,032 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Result code indicates success
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnectionPool -:::- OdbcConnectionPool - release connection
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnectionPool -:::- OdbcConnectionPool - connections in use: 0
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcIdStore -:::- Call to ODBC DB succeeded
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.CustomerLog -:::- Write customer log message: 24870
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcIdStore -:::- ODBC ID Store Operation: Get all user groups. Got groups...
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcIdStore -:::- ODBC ID Store Operation: Get all user groups. Username=odbcuser2, ExternalGroups=[]
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcIdStore -:::- ODBC ID Store Operation: Fetch user attributes. Username=odbcuser2, SessionID=0a3027ecLA_rJLKsS5QAzuRvluGWzdYe67rIgcG3MMQcpE8yKnw
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.CustomerLog -:::- Write customer log message: 24872
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnectionPool -:::- OdbcConnectionPool - get connection
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnectionPool -:::- OdbcConnectionPool - use existing connection
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnectionPool -:::- OdbcConnectionPool - connections in use: 1
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Fetch user attributes
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Prepare stored procedure call, procname=ISEAttrsRetrieval
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Text: {call ISEAttrsRetrieval(?,?)}
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Setup stored procedure input parameters, username=odbcuser2
+2016-06-08 12:26:56,033 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Execute stored procedure call
+2016-06-08 12:26:56,035 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Process stored procedure results
+2016-06-08 12:26:56,035 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Received result recordset, total number of columns=2
+2016-06-08 12:26:56,035 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- According to column number expect multiple rows (vertical attributes/groups retured result)
+2016-06-08 12:26:56,035 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Fetched data: AwsomenessLevel=100
+2016-06-08 12:26:56,035 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Fetched data: UserType=admin
+2016-06-08 12:26:56,035 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Results successfully parsed from recordset
+2016-06-08 12:26:56,035 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnection -:::- Result code indicates success
+2016-06-08 12:26:56,036 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnectionPool -:::- OdbcConnectionPool - release connection
+2016-06-08 12:26:56,036 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcConnectionPool -:::- OdbcConnectionPool - connections in use: 0
+2016-06-08 12:26:56,036 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcIdStore -:::- Call to ODBC DB succeeded
+2016-06-08 12:26:56,036 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.CustomerLog -:::- Write customer log message: 24873
+2016-06-08 12:26:56,036 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcIdStore -:::- ODBC ID Store Operation: Get all user attrs. Username=odbcuser2, Setting ISE_ODBC.AwsomenessLevel to 100
+2016-06-08 12:26:56,036 DEBUG [Thread-84][] cisco.cpm.odbcidstore.impl.OdbcIdStore -:::- ODBC ID Store Operation: Get all user attrs. Username=odbcuser2, Setting ISE_ODBC.UserType to admin
+Revision History
+Revision Publish Date Comments
+1.0
+28-Jun-2016
+Initial Release
+Contributed by Cisco Engineers
+Bastien Migette
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Configure EAP-TLS Authentication with ISE
+Perform Password Recovery for ISE Command Line Interface (CLI)
+Install Patch on ISE
++ Show 1 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine

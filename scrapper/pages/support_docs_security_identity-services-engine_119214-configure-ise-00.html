@@ -1,0 +1,294 @@
+Configuration Examples and TechNotes
+Configure ISE Version 1.4 Posture with Microsoft WSUS
+Save
+Translations
+Download
+Print
+
+Updated:August 3, 2015
+Document ID:119214
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Configure
+Network Diagram
+Microsoft WSUS
+ASA
+ISE
+Posture Remediation for WSUS
+Posture Requirement for WSUS
+AnyConnect Profile
+Client Provisioning Rules
+Authorization Profiles
+Authorization Rules
+Verify
+PC with Updated GPO Policies
+Approve a Critical Update on the WSUS
+Check the PC Status on the WSUS
+VPN Session Established
+Posture Module Receives Policies from the ISE and Performs Remediation
+Full Network Access
+Troubleshoot
+Important Notes
+Option Details for WSUS Remediation
+Windows Update Service
+SCCM Integration
+Related Information
+Introduction
+This document describes how to configure the Cisco Identity Services Engine (ISE) posture functionality when it is integrated with the Microsoft Windows Server Update Services (WSUS).
+Note: When you access the network, you are redirected to the ISE for Cisco AnyConnect Secure Mobility Client Version 4.1 provisioning with a posture module, which checks the compliance status on the WSUS and installs the necessary updates in order for the station to be compliant. Once the station is reported as compliant, the ISE allows for full network access.
+Prerequisites
+Requirements
+Cisco recommends that you have knowledge of these topics:
+Cisco ISE deployments, authentication, and authorization
+
+Basic knowledge about the way in which the ISE and the Cisco AnyConnect posture agent operate
+
+Configuration of the Cisco Adaptive Security Appliance (ASA)
+
+Basic VPN and 802.1x knowledge
+
+Configuration of the Microsoft WSUS
+Components Used
+The information in this document is based on these software and hardware versions:
+Microsoft Windows Version 7
+
+Microsoft Windows Version 2012 with WSUS Version 6.3
+
+Cisco ASA Versions 9.3.1 and later
+
+Cisco ISE software Versions 1.3 and later
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Configure
+This section describes how to configure the ISE and related network elements.
+Network Diagram
+This is the topology that is used for the examples throughout this document:
+Here is the traffic flow, as illustrated in the network diagram:
+The remote user connects through Cisco AnyConnect for VPN access to the ASA. This can be any type of unified access, such as an 802.1x/MAC Authentication Bypass (MAB) wired session that is terminated on the switch or a wireless session that is terminated on the Wireless LAN Controller (WLC).
+
+As a part of the authentication process, the ISE confirms that the posture status of the end station is not equal to compliant (ASA-VPN_quarantine authorization rule) and that the redirection attributes are returned in the Radius Access-Accept message. As a result, the ASA redirects all of the HTTP traffic to the ISE.
+
+The user opens a web browser and enters any address. After the redirection to the ISE, the Cisco AnyConnect 4 posture module is installed on the station. The posture module then downloads the policies from the ISE (requirement for WSUS).
+
+The posture module searches for Microsoft WSUS, and performs remediation.
+
+After successful remediation, the posture module sends a report to the ISE.
+
+The ISE issues a Radius Change of Authorization (CoA) that provides full network access to a compliant VPN user (ASA-VPN_compliant authorization rule).
+Note: In order for the remediation to work (the ability to install Microsoft Windows updates on a PC), the user should have local administrative rights.
+Microsoft WSUS
+Note: A detailed configuration of the WSUS is out of the scope of this document. For details, refer to the Deploy Windows Server Update Services in Your Organization Microsoft documentation.
+The WSUS service is deployed through the standard TCP port 8530. It is important to remember that for remediation, other ports are also used. This is why it is safe to add the IP address of WSUS to the redirection Access Control List (ACL) on the ASA (described later in this document).
+The group policy for the domain is configured for Microsoft Windows updates and points to the local WSUS server:
+These are the recommended updates that are enabled for granular policies that are based on different levels of severity:
+The client-side targeting allows for far greater flexibility. The ISE can use posture policies that are based on the different Microsoft Active Directory (AD) computer containers. The WSUS can approve updates that are based on this membership.
+ASA
+Simple Secure Sockets Layer (SSL) VPN access for the remote user is employed (the details of which are out of the scope of this document).
+Here is an example configuration:
+interface GigabitEthernet0/0
+ nameif outside
+ security-level 10
+ ip address 172.16.32.100 255.255.255.0 
+
+interface GigabitEthernet0/1
+ nameif inside
+ security-level 100
+ ip address 172.16.31.100 255.255.255.0
+
+aaa-server ISE protocol radius
+ interim-accounting-update periodic 1
+ dynamic-authorization
+aaa-server ISE (inside) host 172.16.31.202
+ key cisco
+
+webvpn
+ enable outside
+ anyconnect-essentials
+ anyconnect image disk0:/anyconnect-win-4.0.00051-k9.pkg 1
+ anyconnect enable
+ tunnel-group-list enable
+ error-recovery disable
+
+group-policy POLICY internal
+group-policy POLICY attributes
+ vpn-tunnel-protocol ikev1 ikev2 l2tp-ipsec ssl-client ssl-clientless
+
+tunnel-group SSLVPN type remote-access
+tunnel-group SSLVPN general-attributes
+ address-pool POOL-VPN
+ authentication-server-group ISE
+ accounting-server-group ISE
+ default-group-policy POLICY
+
+ip local pool POOL-VPN 172.16.50.50-172.16.50.60 mask 255.255.255.0
+It is important to configure an access-list on the ASA, which is used in order to determine the traffic that should be redirected to the ISE (for users that are not yet compliant):
+access-list Posture-redirect extended deny udp any any eq domain 
+access-list Posture-redirect extended deny ip any host 172.16.31.103 
+access-list Posture-redirect extended deny ip any host 172.16.31.202 
+access-list Posture-redirect extended deny icmp any any 
+access-list Posture-redirect extended permit tcp any any eq www 
+Only Domain Name System (DNS), ISE, WSUS, and Internet Control Message Protocol (ICMP) traffic is allowed for non-compliant users. All of the other traffic (HTTP) is redirected to the ISE for AnyConnect 4 provisioning, which is responsible for the posture and remediation.
+ISE
+Note: AnyConnect 4 provisioning and posture is out of the scope of this document. Refer to the AnyConnect 4.0 Integration with ISE Version 1.3 Configuration Example for more details, such as how to configure the ASA as a network device and install the Cisco AnyConnect 7 application.
+Posture Remediation for WSUS
+Complete these steps in order to configure the posture remediation for WSUS:
+Navigate to Policy > Conditions > Posture > Remediation Actions > Windows Server Update Services Remediation in order to create a new rule.
+
+Verify that the Microsoft Windows Updates setting is set to Severity Level. This part is responsible for detection if the remediation process is initiated.
+The Microsoft Windows Update Agent then connects to the WSUS and checks whether there are any Critical updates for that PC that await installation:
+Posture Requirement for WSUS
+Navigate to Policy > Conditions > Posture > Requirements in order to create a new rule. The rule uses a dummy condition called pr_WSUSRule, which means that the WSUS is contacted in order to check for the condition when remediation is necessary (Critical updates).
+Once this condition is met, the WSUS installs the updates that have been configured for that PC. These can include any type of updates, and also those with lower severity levels:
+AnyConnect Profile
+Configure the posture module profile, along with the AnyConnect 4 profile (as described in the AnyConnect 4.0 Integration with ISE Version 1.3 Configuration Example):
+Client Provisioning Rules
+Once the AnyConnect profile is ready, it can be referenced from the Client Provisioning policy:
+The entire application, along with the configuration, is installed on the endpoint, which is redirected to the Client Provisioning portal page. AnyConnect 4 might be upgraded and an additional module (posture) installed.
+Authorization Profiles
+Create an authorization profile for redirection to the Client Provisioning profile:
+Authorization Rules
+This image shows the authorization rules:
+For the first time, the ASA-VPN_quarantine rule is used. As a result, the Posture authorization profile is returned, and the endpoint is redirected to the Client Provisioning portal for AnyConnect 4 (with posture module) provisioning.
+Once compliant, the ASA-VPN_compliant rule is used and full network access is allowed.
+Verify
+This section provides information that you can use in order to verify that you configuration works properly.
+PC with Updated GPO Policies
+The domain policies with the WSUS configuration should be pushed after the PC logs into the domain. This can occur before the VPN session is established (out of band) or after if the Start Before Logon functionality is used (it can be also used for 802.1x wired/wireless access).
+Once the Microsoft Windows client has the correct configuration, this can be reflected from the Windows Update settings:
+If needed, a Group Policy Object (GPO) refresh and Microsoft Windows Update Agent server discovery can be used:
+C:\Users\Administrator>gpupdate /force
+Updating Policy...
+
+User Policy update has completed successfully.
+Computer Policy update has completed successfully.
+
+
+C:\Users\Administrator>wuauclt.exe /detectnow
+
+C:\Users\Administrator>
+Approve a Critical Update on the WSUS
+The approval process can benefit from client-site targeting:
+Resend the report with wuauclt if needed.
+Check the PC Status on the WSUS
+This image shows how to check the PC status on the WSUS:
+One update should be installed for the next refresh with the WSUS.
+VPN Session Established
+After the VPN session is established, the ASA-VPN_quarantine ISE authorization rule is used, which returns the Posture authorization profile. As a result, the HTTP traffic from the endpoint is redirected for the AnyConnect 4 update and posture module provisioning:
+At this point, the session status on the ASA indicates limited access with the redirection of the HTTP traffic to the ISE:
+asav# show vpn-sessiondb detail anyconnect 
+
+Session Type: AnyConnect Detailed
+
+Username     : cisco                  Index        : 69
+Assigned IP  : 172.16.50.50           Public IP    : 192.168.10.21
+
+<...some output omitted for clarity...>
+
+ISE Posture:
+  Redirect URL : https://ise14.example.com:8443/portal/gateway?sessionId=ac101f64000
+   45000556b6a3b&portal=283258a0-e96e-...
+  Redirect ACL : Posture-redirec
+Posture Module Receives Policies from the ISE and Performs Remediation
+The posture module receives the policies from the ISE. The ise-psc.log debugs show the requirement that is sent to the posture module:
+2015-06-05 07:33:40,493 DEBUG  [portal-http-service12][] cisco.cpm.posture.runtime.
+ PostureHandlerImpl -:cisco:ac101f6400037000556b40c1:::- NAC agent xml
+ <?xml version="1.0" encoding="UTF-8"?><cleanmachines>
+  <version>2</version>
+  <encryption>0</encryption>
+  <package>
+    <id>10</id>
+    <name>WSUS</name>
+    <version/>
+    <description>This endpoint has failed check for any AS installation</description>
+    <type>10</type>
+    <optional>0</optional>
+    <path>42#1</path>
+    <remediation_type>1</remediation_type>
+    <remediation_retry>0</remediation_retry>
+    <remediation_delay>0</remediation_delay>
+    <action>10</action>
+    <check>
+      <id>pr_WSUSCheck</id>
+    </check>
+    <criteria/>
+  </package>
+</cleanmachines>
+The posture module automatically triggers the Microsoft Windows Update Agent to connect to the WSUS and download updates as configured in the WSUS policies (all automatically without any user intervention):
+Note: Some of the updates might require a system restart.
+Full Network Access
+You will see this after the station is reported as compliant by the AnyConnect posture module:
+The report is sent to the ISE, which reevaluates the policy and hits the ASA-VPN_compliant authorization rule. This provides full network access (via the Radius CoA). Navigate to Operations > Authentications in order to confirm this:
+The debugs (ise-psc.log) also confirm the compliance status, the CoA trigger, and the final settings for the posture:
+DEBUG  [portal-http-service17][] cisco.cpm.posture.runtime.PostureManager -:cisco:
+ ac101f6400039000556b4200:::- Posture report token for endpoint mac
+ 08-00-27-DA-EF-AD is Healthy
+DEBUG  [portal-http-service17][] cisco.cpm.posture.runtime.PostureCoA -:cisco:
+ ac101f6400039000556b4200:::- entering triggerPostureCoA for session
+ ac101f6400039000556b4200
+DEBUG  [portal-http-service17][] cisco.cpm.posture.runtime.PostureCoA -:cisco:ac
+ 101f6400039000556b4200:::- Posture CoA is scheduled for session id
+ [ac101f6400039000556b4200]
+
+DEBUG  [portal-http-service17][] cisco.cpm.posture.runtime.PostureHandlerImpl -:cisco:
+ ac101f6400039000556b4200:::- DM_PKG report non-AUP:html = <!--X-Perfigo-DM-Error=0-->
+ <!--error=0--><!--X-Perfigo-DmLogoff-Exit=0--><!--X-Perfigo-Gp-Update=0-->
+ <!--X-Perfigo-Auto-Close-Login-Scr=0--><!--X-Perfigo-Auto-Close-Login-Scr-Time=0-->
+ <!--user role=--><!--X-Perfigo-OrigRole=--><!--X-Perfigo-UserKey=dummykey-->
+ <!--X-Perfigo-RedirectUrl=--><!--X-Perfigo-ShowInfo=--><!--X-Perfigo-Session=-->
+ <!--X-Perfigo-SSO-Done=1--><!--X-Perfigo-Provider=Device Filter-->
+ <!--X-Perfigo-UserName=cisco--><!--X-Perfigo-DHCP-Release-Delay=4-->
+ <!--X-Perfigo-DHCP-Renew-Delay=1--><!--X-Perfigo-Client-MAC=08:00:27:DA:EF:AD-->
+
+DEBUG  [pool-183-thread-1][]cisco.cpm.posture.runtime.PostureCoA -:cisco:
+ ac101f6400036000556b3f52:::- Posture CoA is triggered for endpoint [08-00-27-da-ef-ad]
+ with session [ac101f6400039000556b4200]
+Also, the ISE Detailed Posture Assessment report confirms that the station is compliant:
+Note: The exact Media Access Control (MAC) address of the physical network interface on the Microsoft Windows PC is known because of the ACIDEX extensions.
+Troubleshoot
+There is currently no troubleshooting information available for this configuration.
+Important Notes
+This section provides some important information about the configuration that is described in this document.
+Option Details for WSUS Remediation
+It is important to differentiate the requirement condition from remediation. AnyConnect triggers the Microsoft Windows Update Agent to check the compliance, dependent upon the Validate Windows updates using remediation setting.
+For this example, the Severity Level is used. With the Critical setting, the Microsoft Windows Agent checks whether there are any pending (not installed) critical updates. If there are, then remediation begins.
+The remediation process might then install all of the critical and less important updates based on the WSUS configuration (updates approved for the specific machine).
+With the Validate Windows updates using set as Cisco Rules, the conditions that are detailed in the requirement decide whether the station is compliant.
+Windows Update Service
+For deployments without a WSUS server, there is another remediation type that can be used called Windows Update Remediation:
+This remediation type allows control over the Microsoft Windows Update settings and enables you to perform immediate updates. A typical condition that is used with this remediation type is pc_AutoUpdateCheck. This allows you to check whether the Microsoft Windows Update setting is enabled on the endpoint. If not, you can enable it and perform the update.
+SCCM Integration
+A new feature for the ISE Version 1.4 called patch management allows for integration with many third-party vendors. Dependent upon the vendor, multiple options are available for both the conditions and remediations.
+For Microsoft, both the System Management Server (SMS) and the System Center Configuration Manager (SCCM) are supported.
+Related Information
+Posture Services on the Cisco ISE Configuration Guide
+
+Cisco Identity Services Engine Administrator Guide, Release 1.4
+
+Cisco Identity Services Engine Administrator Guide, Release 1.3
+
+Deploy Windows Server Update Services in Your Organization
+
+Technical Support & Documentation - Cisco Systems
+Revision History
+Revision Publish Date Comments
+1.0
+03-Aug-2015
+Initial Release
+Contributed by Cisco Engineers
+Michal Garcarz
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Configure EAP-TLS Authentication with ISE
+Perform Password Recovery for ISE Command Line Interface (CLI)
+Install Patch on ISE
++ Show 1 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine

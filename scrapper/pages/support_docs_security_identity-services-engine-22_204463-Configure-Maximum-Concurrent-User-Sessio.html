@@ -1,0 +1,352 @@
+Configuration Examples and TechNotes
+Configure Maximum Concurrent User Sessions on ISE 2.2
+Save
+Translations
+Download
+Print
+
+
+
+Updated:June 29, 2023
+Document ID:204463
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Background Information
+Network Diagram
+Scenarios
+Maximum Sessions per User
+Configuration
+Example
+Maximum Session for Group
+Configure
+Example
+Corner Cases
+Maximum Sessions for User in Group
+Configure
+Example
+Maximum Session for Group and Maximum Session for User in that Group
+Configure
+Example
+Counter Time limit
+Configure
+Example
+Maximum Session Feature and Guest Access
+Central Web Authentication
+Local Web Authentication
+Troubleshoot
+Radius live logs
+ISE Debugs
+Introduction
+
+This document describes how to configure the Maximum Sessions feature introduced in the Identity Services Engine (ISE) 2.2. 
+Prerequisites
+
+Requirements
+
+Cisco recommends that you have knowledge of these topics:
+RADIUS Protocol
+802.1x configuration on Wireless LAN Controller (WLC)
+ISE and its personas (roles)
+Components Used
+
+The information in this document is based on these software and hardware versions:
+
+Cisco Identity Service Engine version 2.2
+Wireless LAN Controller 8.0.100.0
+Cisco Catalyst Switch 3750 15.2(3)E2
+Windows 7 Machine
+Android Phone running 6.0.1
+Android Phone running 5.0
+Apple iPad iOS 9.1
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, ensure that you understand the potential impact of any command.
+Background Information
+The Maximum Sessions feature provides a way to control and enforce live sessions per user or per identity group. This document is for RADIUS sessions, but it could be used as well for the TACACS sessions.
+ISE version 2.2 can detect and build enforcement policy based on the concurrent session of:
+
+User Identity - limit number of sessions per specific user
+Identity Group - limit number of sessions per specific group
+User in a Group - limit number of sessions per user, that belongs to specific group
+Enforcement and count of a concurrent session is unique and managed by each Policy Service Node (PSN). There is no synchronization between the PSNs in terms of session count. The Concurrent Session feature is implemented in the runtime process,  and data is stored only in memory. In case of PSN restart, MaxSessions counters reset.
+User session count is case insensitive with regard to usernames, and independent of Network Access Device used (as long as you use the same PSN node).
+
+Network Diagram
+Scenarios
+Maximum Sessions per User
+
+Configuration
+
+Navigate to Administration > System > Settings > Max Sessions as shown in the image:
+
+
+
+To enable the feature, uncheck Unlimited session per user checkbox, which is checked by default. In the Maximum per user Sessions field, configure number of sessions specific user can have on each PSN. In this example, it is set to 2.
+
+Users from External Identity Sources (for example, Active Directory) are affected by this configuration as well.
+Example
+Bob is the username of an account from the Active Directory Domain which is connected and joined to ISE server. User Maximum Sessions is configured with value 2, which means that any session for same user beyond this number is not permitted (per PSN).
+
+As shown in the image, user Bob connects with Android Phone and Windows machine with the same credentials:
+
+
+
+
+Both sessions are permitted because maximum sessions limit is not exceeded. See detailed Radius Live log, shown in the image:
+
+
+22081 Max sessions policy passed step provides information that Maximum Concurrent Session check is successful.
+
+Once third connection with another device and same credentials is initiated, Bob receives PermitAccess, but Access-Reject is sent to authenticator:
+
+
+
+
+
+
+
+
+
+Session is not permitted, even though in the Radius live log you can see that it hits the correct Authorization Profile. In order to check the live sessions, navigate to Operations > Radius > Live Sessions:
+
+
+
+In this case, both of the sessions have status Started, which indicates Accounting Start arrived on ISE for the session. It is necessary to receive the Radius Accounting for Max Session to work properly, status Authenticated (Session permitted, but no accounting) is not taken into consideration during session count:
+
+
+
+Maximum Session for Group
+Configure
+
+Navigate to Administration > System>Settings > Max Sessions > Group:
+
+
+
+
+This configuration enforces 2 sessions as a maximum for internal identity group GroupTest2: You are able to configure the enforcement per Group only for the Internal Groups.
+Example
+Alice, Pablo and Peter are the users from the Internal ISE User Store. All of them are members of group named GroupTest2. As per the configuration in this example, maximum value of sessions is set to 2 based on the Group membership.
+
+Pablo and Peter connect to the network with their credentials from the Internal Group named GroupTest2:
+
+Once Alice tries to connect, MaxSessions limit per Group is enforced:
+
+
+Alice is not allowed to connect to the network because Max Session group limit is used up by Peter and Pablo:
+
+
+
+
+Corner Cases
+
+If User Maximum Sessions is configured, both features work independently. In this example, User Max Sessions is set to 1 and Maximum Session for Group is set to 2.
+
+Peter is permitted based on the Maximum Session for Group (2 sessions), but because of User Max Sessions configuration (one session) he fails to connect to the network:
+
+
+If the user is a member of more than one group at the same time, and the Max Sessions for Group is configured for them, once connected, ISE increases the counter of Max Session for Group cache for every group the user belongs to.
+
+In this example, Alice and Pablo are members of both GroupTest1 and GroupTest2. Veronica belongs only to GroupTest1 and Peter to GroupTest2
+Max Session for Group is set to 2 for GroupTest1 and GroupTest2:
+When Alice and Pablo are connected to the network, they exceed the session limits for both groups. Veronica, who belongs only to GroupTest1 and Peter, member of GroupTest2 are unable to connect because of Max Session for Group reached the maximum configured value:
+
+Maximum Sessions for User in Group
+Configure
+Navigate to Administration > System > Settings > Max Sessions > Group.
+
+
+
+This configuration enforces 2 sessions maximum for Internal Identity group GroupTest2.
+
+Example
+Alice is member of GroupTest2:
+
+
+
+This feature works similar to User Maximum Session - ISE limits the number of concurrent sessions User within specified Internal Group can have. This configuration affects only User, who belongs to the configured group.
+
+Alice, as a member of the GroupTest2, can have 2 simultaneous sessions. Once connected with the third device, ISE returns PermitAccess and Access-Reject based on exceeded Maximum Session for User in Group:
+
+
+
+Detailed Radius-Live logs:
+
+
+
+If User Maximum Sessions is enabled as well, then both features work independently. If a user Alice is member of the group GroupTest2 with Maximum Session for User in Group configured for 2, and in the same time User Max Sessions is configured to allow only one session per user, User Max Sessions take precedence:
+
+When Alice tries to connect with the second device, ISE returns Access-Reject based on Max Session User limit exceeded:
+
+
+
+The reason for denial could be checked under the detailed Radius Live-Log. Max sessions user limit is the reason for failure:
+
+
+
+
+Maximum Session for Group and Maximum Session for User in that Group
+Configure
+Navigate to Administration > System > Settings > Max Sessions > Group.
+
+
+
+
+This configuration enforces maximum session of 3 in Internal identity group GroupTest2, and 2 maximum session for User in that group.
+
+Example
+Alice and Pablo are members of GroupTest2. As per configuration in this example, maximum of 3 sessions is allowed in GroupTest2. ISE ensures that single user can have Maximum 2 sessions within this group.
+
+
+
+Alice connects via two devices. Both endpoints are connected to the network:
+
+
+
+When Alice is trying to connect via third device, access is denied with Maximum Session for User in Group limit exceeded:
+
+
+
+If Pablo tries to access the network, he is able to do so since Max Session for Group, GroupTest2, is not yet full:
+
+
+
+When Pablo tries to access the network from second device, he fails because he exceeded the Max Session limit for Group (even though he has only 1 session):
+
+
+
+
+
+As in previous examples, if you enable User Maximum Sessions, it works independently.
+
+Counter Time limit
+Configure
+
+Navigate to Administration > System > Settings > Max Sessions > Counter Time Limit.
+
+
+Counter Time limit is the feature which specifies the time interval during which session is counted in terms of the Maximum Session cache. This feature allows you to specify the time after which PSN deletes the session from the counter, and allows new sessions.
+
+To enable the feature, you need to uncheck Unlimited - no time limitcheckbox which is checked by default. In the editable field, you can set the time for how long the session is taken into consideration in the counters of MaxSession.
+
+Keep in mind that sessions after configured time are not disconnected or removed from the session database. There is no Terminate Chain of Authorization (CoA) after configured time.
+
+Example
+User Max Session is set to allow only one session for user:
+
+Alice connects to the network using the IPad at 11:00:34, the second authentication happens at 11:07, and even though User Maximum Session value is exceeded, access is permitted. Both authentications are successful because of Counter Time limit.
+
+Alice tries to connect with another device before 5 minutes from the last successful connection passes, ISE rejects authentication:
+
+
+
+After 5 minutes from the last authentication, Alice could connect to the network with additional device.
+
+
+
+On the live sessions, you could see all three sessions in the state Started:
+
+Maximum Session Feature and Guest Access
+Central Web Authentication
+
+With one session configured under User Maximum Session feature, you are still able to connect with the Guest1 account for both of the sessions:
+
+
+
+In order to limit the Guest Access, you can specify the Maximum simultaneous logins in the Guest Type configuration.
+
+Navigate to Work Centers > Guest Access > Portal & Components > Guest Types and change Maximum simultaneous logins option, as shown in the image:
+
+
+
+Local Web Authentication
+With one session configured under User Maximum Session, you are unable to connect:
+
+
+As per the Radius Live-logs, the Guest1 is always correctly authenticated in terms of the portal authentication. Once WLC sends the RADIUS request with the second session for the Guest1, ISE denies the access because of exceed user limit:
+
+Troubleshoot
+Radius live logs
+Detailed Radius Report is the very first place for troubleshooting the MaxSession Feature.
+
+This failure reason indicates that Global Max User Session Limit is exceeded for this session/user, as shown in the image:
+
+
+
+This failure reason indicates that Group Max Sessions limit is exceeded for this session/user, as shown in the image:
+This failure reason indicates that Group User Max Sessions limit is exceeded for this session/user.
+
+The check of MaxSession cache happens after Authorization Profile selection:
+
+Success:
+
+
+
+Failure:
+
+ISE Debugs
+
+Max Session logs are located in the prrt-server.log. In order to collect those, set runtime-AAA component to DEBUG level ( navigate to Administration > System > Logging > Debug Log Configuration > PSN), as shown in the image:
+In order to obtain File prrt-server.log, navigate to Operations > Troubleshoot > Download Logs > PSN > Debug Logs. Max Session logs are collected in the Endpoint Debugs as well (Operations > Troubleshoot > Diagnostic Tools > General Tools > EndPoint Debug).
+
+User Maximum Session check correctly passed:
+
+2017-01-29 08:33:11,310 INFO   [Thread-83][] cisco.cpm.prrt.impl.PrRTLoggerImpl -:::::- SessionCache,INFO ,0x7fe858867700,cntx=0000001335,sesn=pgruszczise22/275051099/8,CPMSessionID=0a3e944f00000e7d588da8a0,user=Bob,CallingStationID=c0-4a-00-14-56-f4,SessionCache::onMaxSessionsAznEvent: current global configuration data: auditSessionTtl=[3600], maxUserSessions=[2],SessionCache.cpp:283
+2017-01-29 08:33:11,311 INFO   [Thread-83][] cisco.cpm.prrt.impl.PrRTLoggerImpl -:::::- SessionCache,INFO ,0x7fe858867700,cntx=0000001335,sesn=pgruszczise22/275051099/8,CPMSessionID=0a3e944f00000e7d588da8a0,user=Bob,CallingStationID=c0-4a-00-14-56-f4,SessionCache::checkMaxSessions: user=[Bob] not found in cache due to first time authorization,SessionCache.cpp:1025
+2017-01-29 08:33:11,311 DEBUG  [Thread-83][] cisco.cpm.prrt.impl.PrRTLoggerImpl -:::::- SessionCache,DEBUG,0x7fe858867700,cntx=0000001335,sesn=pgruszczise22/275051099/8,CPMSessionID=0a3e944f00000e7d588da8a0,user=Bob,CallingStationID=c0-4a-00-14-56-f4,SessionCache::onMaxSessionsAznEvent: sessionID=[0a3e944f00000e7d588da8a0]; user=[Bob] - checkMaxSessions passed,SessionCache.cpp:360
+2017-01-29 08:33:11,311 INFO   [Thread-83][] cisco.cpm.prrt.impl.PrRTLoggerImpl -:::::- SessionCache,INFO ,0x7fe858867700,cntx=0000001335,sesn=pgruszczise22/275051099/8,CPMSessionID=0a3e944f00000e7d588da8a0,user=Bob,CallingStationID=c0-4a-00-14-56-f4,SessionCache::onMaxSessionsAznEvent: create a new session object sessionID=[0a3e944f00000e7d588da8a0]; user=[Bob],SessionCache.cpp:375
+ISE increments the SessionCounter only after it receives Accounting Start for the session:
+2017-01-29 08:33:11,619 DEBUG  [Thread-90][] cisco.cpm.prrt.impl.PrRTLoggerImpl -:::::- Radius,DEBUG,0x7fe858766700,cntx=0000001503,sesn=pgruszczise22/275051099/9,CPMSessionID=0a3e944f00000e7d588da8a0,CallingStationID=c0-4a-00-14-56-f4,FramedIPAddress=10.62.148.141,RADIUS PACKET:: Code=4(AccountingRequest) Identifier=0 Length=279
+     [1] User-Name - value: [Bob] 
+     [4] NAS-IP-Address - value: [10.62.148.79] 
+     [5] NAS-Port - value: [1] 
+     [8] Framed-IP-Address - value: [10.62.148.141] 
+     [25] Class - value: [****] 
+     [30] Called-Station-ID - value: [80-e0-1d-8b-72-00] 
+     [31] Calling-Station-ID - value: [c0-4a-00-14-56-f4] 
+     [32] NAS-Identifier - value: [WLC7] 
+     [40] Acct-Status-Type - value: [Start] 
+     [44] Acct-Session-Id - value: [588da8a0/c0:4a:00:14:56:f4/3789] 
+     [45] Acct-Authentic - value: [RADIUS] 
+     [55] Event-Timestamp - value: [1485678753] 
+     [61] NAS-Port-Type - value: [Wireless - IEEE 802.11] 
+     [64] Tunnel-Type - value: [(tag=0) VLAN] 
+     [65] Tunnel-Medium-Type - value: [(tag=0) 802] 
+     [81] Tunnel-Private-Group-ID - value: [(tag=0) 481] 
+     [26] cisco-av-pair - value: [audit-session-id=0a3e944f00000e7d588da8a0] 
+     [26] Airespace-Wlan-Id - value: [4] ,RADIUSHandler.cpp:2003
+
+(...)  
+
+2017-01-29 08:33:11,654 DEBUG  [Thread-83][] cisco.cpm.prrt.impl.PrRTLoggerImpl -:::::- SessionCache,DEBUG,0x7fe858867700,cntx=0000001503,sesn=pgruszczise22/275051099/9,CPMSessionID=0a3e944f00000e7d588da8a0,user=Bob,CallingStationID=c0-4a-00-14-56-f4,FramedIPAddress=10.62.148.141,SessionCache::onAccountingStart: user=[Bob]; sessionID=[0a3e944f00000e7d588da8a0],SessionCache.cpp:537
+2017-01-29 08:33:11,655 DEBUG  [Thread-83][] cisco.cpm.prrt.impl.PrRTLoggerImpl -:::::- SessionCache,DEBUG,0x7fe858867700,cntx=0000001503,sesn=pgruszczise22/275051099/9,CPMSessionID=0a3e944f00000e7d588da8a0,user=Bob,CallingStationID=c0-4a-00-14-56-f4,FramedIPAddress=10.62.148.141,SessionCache::incrementSessionCounters: user=[Bob] current user session count=[1],SessionCache.cpp:862
+
+User Maximum Session check failure:
+
+2017-01-29 08:37:00,534 INFO   [Thread-75][] cisco.cpm.prrt.impl.PrRTLoggerImpl -:::::- SessionCache,INFO ,0x7fe858a69700,cntx=0000005011,sesn=pgruszczise22/275051099/15,CPMSessionID=0a3e944f00000e7f588da966,user=Bob,CallingStationID=34-ab-37-60-63-88,SessionCache::onMaxSessionsAznEvent: current global configuration data: auditSessionTtl=[3600], maxUserSessions=[2],SessionCache.cpp:283
+2017-01-29 08:37:00,535 INFO   [Thread-75][] cisco.cpm.prrt.impl.PrRTLoggerImpl -:::::- SessionCache,INFO ,0x7fe858a69700,cntx=0000005011,sesn=pgruszczise22/275051099/15,CPMSessionID=0a3e944f00000e7f588da966,user=Bob,CallingStationID=34-ab-37-60-63-88,SessionCache::checkMaxSessions: user=[Bob] is not authorized because current active user sessions=[2] >= max-user-sessions=[2],SessionCache.cpp:1010
+2017-01-29 08:37:00,535 DEBUG  [Thread-75][] cisco.cpm.prrt.impl.PrRTLoggerImpl -:::::- SessionCache,DEBUG,0x7fe858a69700,cntx=0000005011,sesn=pgruszczise22/275051099/15,CPMSessionID=0a3e944f00000e7f588da966,user=Bob,CallingStationID=34-ab-37-60-63-88,SessionCache::onMaxSessionsAznEvent: sessionID=[0a3e944f00000e7f588da966]; user=[Bob] - checkMaxSessions failed,SessionCache.cpp:341
+2017-01-29 08:37:00,535 DEBUG  [Thread-75][] cisco.cpm.prrt.impl.PrRTLoggerImpl -:::::- RadiusAuthorization,DEBUG,0x7fe858a69700,cntx=0000005011,sesn=pgruszczise22/275051099/15,CPMSessionID=0a3e944f00000e7f588da966,user=Bob,CallingStationID=34-ab-37-60-63-88,RadiusAuthorization::onResponseMaxSessionsAznEvent return from SessionCache,RadiusAuthorization.cpp:371
+Revision History
+Revision Publish Date Comments
+2.0
+29-Jun-2023
+Added Alt Text. Updated PII, Introduction, Branding Requirements, Machine Translation, Spelling and Formatting.
+1.0
+23-Mar-2017
+Initial Release
+Contributed by Cisco Engineers
+Piotr Gruszczynski
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Configure EAP-TLS Authentication with ISE
+Perform Password Recovery for ISE Command Line Interface (CLI)
+Install Patch on ISE
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine 2.2

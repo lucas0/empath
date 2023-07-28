@@ -1,0 +1,874 @@
+White Papers
+Cisco ACI Multi-Site and Service Node Integration White Paper
+White Paper
+
+Updated:February 22, 2023
+Bias-Free Language
+
+Table of Contents
+Table of Contents
+Introduction
+Prerequisites
+Executive summary
+Service node integration with Cisco ACI Multi-Site architecture
+Independent service node in each site
+Configuration
+Configuration steps
+GUI and CLI output example for verification
+Additional configuration examples
+FAQ
+Conclusion
+For more information
+    Introduction
+This document describes the deployment considerations for integrating Layer 4 through Layer 7 (L4–L7) network services in a Cisco® Application Centric Infrastructure (Cisco ACI™) Multi-Site fabric. The document specifically focuses on stateful firewalls and load balancers. The following use cases are considered:
+●      Layer 3 firewall design
+●      Layer 3 load balancer design
+●      North-south and east-west service insertion design
+●      Independent clustered service nodes in each site
+Prerequisites
+To best understand the design presented in this document, you should have basic knowledge about the Cisco ACI Multi-Site solution, the deployment of L3Out connectivity between the Multi-Site fabric and the external Layer 3 domain, the functionality of service graphs with Policy-Based Redirect (PBR), and how they integrate.
+Starting from Release 3.0(1) of the Cisco ACI software, Cisco offers the Cisco ACI Multi-Site solution, which allows you to interconnect multiple Cisco ACI sites, or fabrics, under the control of the different Cisco Application Policy Infrastructure Controller (APIC) clusters. This solution provides an operationally simple way to interconnect and manage different Cisco ACI fabrics that may be either physically co-located or geographically dispersed. For more information about the Cisco Multi-Site architecture, please refer to the following white paper: https://www.cisco.com/c/en/us/solutions/collateral/data-center-virtualization/application-centric-infrastructure/white-paper-c11-739609.html
+Cisco ACI offers the capability to insert L4–L7 services, such as firewalls, load balancers, and Intrusion Prevention Services (IPSs), using a feature called a service graph. For more information, please refer to the Cisco ACI service-graph-design white paper: https://www.cisco.com/c/en/us/solutions/collateral/data-center-virtualization/application-centric-infrastructure/white-paper-c11-734298.html
+The service graph functionality can then be enhanced by associating to it one or more Policy-Based Redirection (PBR) policies. For more detailed information on PBR, please refer to the Cisco ACI PBR white paper: https://www.cisco.com/c/en/us/solutions/data-center-virtualization/application-centric-infrastructure/white-paper-c11-739971.html
+Executive summary
+As of Cisco ACI Release 4.2(1), the recommended option for integrating L4–L7 services in a Cisco ACI Multi-Site architecture calls for the deployment of independent service nodes in each site (Figure 1). This is the logical consequence of the fact that the ACI Multi-Site architecture has been designed to interconnect separate ACI fabrics, at both the network fault domain and management levels. The focus in this document, therefore, will be exclusively on this deployment model.
+Figure 1.            
+Recommended network services deployment options with Cisco ACI Multi-Site solution
+This model mandates that symmetric traffic flows through the service nodes be maintained, because the connection state is not synchronized between independent service nodes deployed in different sites. This requirement can be achieved with the following approaches:
+●      Use of host-route advertisement for north-south communication with stateful firewall nodes connected via L3Out: support for host-route advertisement is extended to regular L3Outs deployed on border leaf nodes from ACI Release 4.0(1) onwards. This allows connecting independent firewall nodes deployed between the border leaf nodes and the external WAN edge routers because inbound traffic is always optimally steered toward the site where the destination endpoint resides, while the outbound traffic usually goes back through the same local L3Out connection. This approach, while fully supported and useful in many cases, relies on a more traditional routing design and only applies to north-south communication; this document therefore focuses on the second approach, described below, which leverages the advanced service insertion capabilities offered by an ACI network infrastructure.
+●      Use of service-graph with PBR for both north-south and east-west communication: you can deploy service-graph with Policy-Based Redirect (PBR) for both north-south and east-west security policy enforcement. This approach is the most flexible and recommended solution. It consists of defining a PBR policy in each site that specifies at least a local active service node (but it is also possible to deploy multiple active service nodes in the same site leveraging symmetric PBR). The Cisco Nexus® 9000 Series Switches (EX platform or newer), used as leaf nodes, would then apply the PBR policy, selecting one of the available service nodes for the two directions of each given traffic flow (based on hashing). Prior to ACI Release 4.1(1), the use of PBR mandates that the service nodes be deployed in L3 routed mode only. After ACI Release 4.1(1), the service nodes can be deployed in L1/L2 inline/transparent mode as well.
+Figure 2 illustrates the other two models for the deployment of clustered service nodes between sites.
+Figure 2.            
+Limited support or unsupported network services deployment options with Cisco ACI Multi-Site solution
+●      Active/standby service nodes pair stretched across sites: This model can be applied to both north-south and east-west traffic flows. This fail-safe model does not allow the creation of an asymmetric traffic path that could lead to communication drops. At the same time, because of the existence of a single active service node connected to the Multi-Site fabric, this option has certain traffic-path inefficiencies, because by design some traffic flows will hair-pin across the Intersite Network (ISN). Therefore, you should be sure to properly dimension the bandwidth available across sites and consider the possible latency impact on application components connected to separate sites. Also, this approach is only supported if ACI only performs Layer 2 forwarding (firewall as the default gateway for the endpoints or firewall in transparent mode) or when the active/standby firewall pair is connected to the fabrics via L3Out connections.
+●      Active/active clustered service nodes stretched across sites: This model can’t be applied to Multi-site environment as of ACI Release 4.2(1), though an active/active firewall cluster can be stretched across pods in a Multi-pod environment.
+Note:      Cisco ACI Multi-Pod remains the recommended architectural approach for the deployment of active/standby service node pairs across data centers and active/active clustered service nodes across data centers. For more information, please refer to the following white paper: https://www.cisco.com/c/en/us/solutions/collateral/data-center-virtualization/application-centric-infrastructure/white-paper-c11-739571.html
+Service node integration with Cisco ACI Multi-Site architecture
+Design options and considerations
+Several deployment models are available for integrating network services in a Cisco ACI Multi-Site architecture. To determine the best options to choose, you should consider all the specific requirements and characteristics of the design:
+●      Service node insertion use case
+◦    North-south service node (or perimeter service node), for controlling communications between the data center and the external Layer 3 network domain.
+◦    East-west service node, for applying policies for traffic flows within the data center and across sites. For the east-west enforcement, there are two cases to consider: in the first one, the service node is used to apply policies between Endpoint Group (EPG) that are part of the same Virtual Routing and Forwarding (VRF). The second scenario, very commonly deployed, is the one where a service node (or its virtual context) front-ends each tenant/VRF, so as to be able to apply security policies to all of the inter-VRF traffic.
+●      Service node appliance form factor
+◦    Physical appliance
+◦    Virtual appliance
+●      Service node type
+◦    Inline (Layer 1), transparent (Layer 2), or routed (Layer 3) mode firewall/IPS with PBR
+◦    Routed (Layer 3) mode load balancer with SNAT or without SNAT
+●      Service node high-availability model
+◦    Independent clustered service nodes in each site
+◦    Active/standby HA pair in each site
+◦    Active/active cluster in each site
+◦    Independent active nodes in each site
+●      Connectivity to the external Layer 3 network domain
+◦    Traditional L3Outs deployed on the border leaf nodes
+◦    Layer 3 EVPN services over fabric WAN (also known as GOLF L3Outs)
+This document focuses on the service node insertion use cases discussed below, describing traffic flows and associated deployment considerations for each option in detail:
+●      North-south (intra-VRF): traffic flows between the external Layer 3 network domain and the web endpoint group (EPG) part of the same VRF.
+●      East-west (intra-VRF): traffic flows between EPGs that are in the same VRF
+●      East-west (inter-VRF): traffic flows between EPGs that are in different VRFs
+Figures 3 and 4 show the use cases covered in this document.
+Figure 3.            
+North-south service nodes and east-west service nodes (intra-VRF)
+Figure 4.            
+East-west service nodes (inter-VRF)
+Independent service node in each site
+Design overview
+Figure 5 shows a high-level view of the topology representing the recommended deployment option with independent clustered service nodes in each site. We are going to use routed mode firewall, routed mode load balancer, and traditional L3Outs as an example in this document.
+Figure 5.            
+Independent clustered service nodes in each site
+The deployment of independent service nodes across sites raises an operational concern about how to maintain policy configuration consistency across them. In the specific example of Cisco’s own branded firewalls, some options are available:
+●      Cisco Security Manager for ASA appliances: For more information, see https://www.cisco.com/c/en/us/products/security/security-manager/index.html.
+●      Cisco Firepower® Management Center (FMC) for Cisco Firepower Next-Generation Firewall (NGFW) devices: For more information, see https://www.cisco.com/c/en/us/products/security/firesight-management-center/index.html.
+When planning for the deployment of this model, it is important to keep in mind a few important design requirements:
+●      Regarding software, this requires running ACI Release 3.2(1) or newer; regarding hardware, support is limited to ACI deployments leveraging second-generation leaf nodes (EX model or newer).
+●      The policy to be applied (the ‘intent”) is defined directly on Cisco ACI Multi-Site Orchestrator and could for example specify any communication between the external EPG (modeling the external Layer 3 network domain) and the internal Web EPG must be sent through a service node. That specific service node is then offered, at the site level, by the specific physical or virtual service nodes locally deployed.
+●      In the current implementation, the PBR policy applied on a leaf switch can only redirect traffic to a service node deployed in the local site. As a consequence, it becomes paramount to improve the resiliency of the local service nodes. This can be achieved with the different options shown in Figure 6.
+Figure 6.            
+Deployment options to increase the resiliency of service nodes in a single site
+The first two models are obvious, as they both ensure that the service node is seen by the fabric as a single entity, so the PBR policy would only contain a single MAC/IP pair. With the third option, multiple MAC/IP pairs are instead specified in the same PBR policy, so that a given traffic flow can be redirected to a service node. Use of symmetric PBR ensures that both the incoming and return directions of the same flow are steered through the same service node.
+Note:      Symmetric PBR is only supported with second-generation Cisco Nexus 9300 leaf switches (EX models and newer).
+As previously mentioned, service graph with PBR can be used to handle service-node insertion for both north-south and east-west flows, as illustrated in Figure 7.
+Figure 7.            
+Service-node insertion for north-south and east-west traffic flows (one-arm example)
+Several considerations apply when deploying service graph with PBR in a Multi-Site architecture:
+●      The service graph with PBR integration with Multi-Site is only supported when the service node is deployed in unmanaged mode. This implies that ACI only takes care of steering the traffic through the service node; the configuration of the service node is, instead, not handled by the APIC. As such, there is no requirement to support any device package, and any service node (from Cisco or a third-party vendor) can be integrated with this approach.
+●      In the example in Figure 7, the service node is deployed in one-arm mode, leveraging a single interface to connect to a dedicated service Bridge Domain (BD) defined in the ACI fabric. It is worth being reminded that in order to leverage service graph with PBR, the service node must be connected to a BD and not to an L3Out logical connection, which essentially means that no dynamic routing protocol can be used between the service node and the ACI fabric. The deployment of one-arm mode is therefore advantageous, because it simplifies the routing configuration of the service node, which requires only the definition of a default route pointing to the service BD IP address as next-hop. That said, two-arm deployment models (with inside and outside interfaces connected to separate BDs) are also fully supported, as shown in Figure 8.
+●      The service BD(s) must be stretched across sites. This means that the interfaces of the service nodes in different sites must be in the same service BD. The recommendation is to do this without extending BUM flooding, to avoid spreading broadcast storms outside a single fabric.
+●      For the north-south use case, the regular EPGs such as Web EPG and App EPG can be stretched across sites or locally confined in a site. As of ACI Release 4.2, the external EPG (L3Out EPG) must also be a stretched object (that is, defined on the Multi-Site Orchestrator as part of a template mapped to all the deployed sites), though the L3Out itself can be stretched across sites or locally confined in a site.
+●      For the east-west use case, the regular EPGs such as Web EPG and App EPG can be stretched across sites or locally confined in a site (or a combination of the two). Each EPG must be part of different subnet if multiple EPGs are in the same BD. It’s because the EPG subnet must be configured under the consumer EPG. The consumer EPG subnet must not be /32 for IPv4 or /128 for IPv6 because of CSCwa08796. Please refer to the FAQ for the reason why the EPG subnet must be configured under the consumer EPG.
+●      Prior to ACI Release 4.2(5) or 5.0, the north-south use case is supported only intra-VRF. The east-west use case can be supported either intra-VRF or inter-VRF (and inter-tenant). The north-south inter-VRF (and inter-tenant) use case requires ACI Release 4.2(5), 5.1(1) or later.
+●      North-south intra-VRF or inter-VRF use case with intersite L3Out requires ACI Release 4.2(5), 5.1(1) or later.
+●      Consumer endpoints of an east-west contract with PBR must not be connected under the border leaf node where an intersite L3Out resides.
+Figure 8.            
+Other service-insertion examples
+Note:      Though this document uses mainly a two-arm mode design in its examples, both one-arm and two-arm are valid options.
+The following are general L3 PBR design considerations that are applied to PBR in Multi-site as well:
+●      In a Multi-Site design, redirection to a PBR node is only supported to an interface that is connected to a bridge domain (i.e. the interface cannot be connected to an L3Out). However, the same physical interface connecting a PBR node to the fabric could be used for both types of connectivity when leveraging different logical interfaces (each associated to a separate VLAN tag). For example:
+◦    The interface of the service node (PBR node) is connected to Leaf1 Ethernet 1/1 and uses VLAN 10 to connect to the service bridge domain. This is the interface used for PBR for east-west communication between EPGs.
+◦    The interface of the service node is connected to the same Leaf1 Ethernet 1/1 and uses VLAN 20 to connect to an L3Out (the L3Out must use SVIs in that case). This is the interface that could be used for north-south traffic, using the service node as a perimeter FW.
+●      The PBR node interfaces can be part of the consumer/provider bridge domain, or you can define different dedicated bridge domains.
+●      The PBR node can be deployed in two-arm mode or in one-arm mode with a single interface connected to a service bridge domain.
+●      Prior to ACI Release 5.2, which does not support dynamic PBR destination MAC address detection, the active service nodes should always use the same virtual MAC (vMAC) address, because traffic redirection is performed by rewriting the destination MAC address to the vMAC address. This requirement implies that when a service node failover occurs, the standby unit that is activated must start using that same vMAC address (this is the case with Cisco ASA and Cisco Firepower models). Depending on the service node vendor, this might not be the default behavior, but it might have the vMAC address as a configuration option. Starting from ACI Release 5.2, this consideration is no longer applicable if dynamic PBR destination MAC detection is used instead of static PBR destination MAC configuration.
+While not the main focus of this document, the following are general L1/L2 PBR design considerations that are also applied to PBR in Multi-site:
+●      ACI Release 4.1(1) or later is required.
+●      The PBR node interfaces must be part of dedicated bridge domains.
+●      The PBR node can be deployed in two-arm mode, not one-arm mode.
+Note:      The term “PBR node” refers to the network services node (firewall, load balancer, etc.) specified in the PBR policy.
+For more information about PBR design considerations and configurations, refer to the document at https://www.cisco.com/c/en/us/solutions/data-center-virtualization/application-centric-infrastructure/white-paper-c11-739971.html.
+How to keep traffic symmetric
+The critical requirement for integrating stateful service nodes with ACI Multi-Site is that you must avoid creating an asymmetric traffic path for the incoming and return directions of traffic flow, because doing so would cause communication drops due to the stateful nature of service nodes such as a firewall (when state information cannot be replicated across independent pairs of service nodes). Figure 9 illustrates an example. For incoming traffic from an external client to an internal endpoint in site2, traffic may be steered toward the L3Out in site1 depending on the routing design. However, the outbound traffic from the internal endpoint goes out through the local L3Out in site2. The return traffic would hence be dropped by the external firewall connected to site2 since the firewall doesn’t have the connection state information for the traffic flow that was created earlier on the external firewall connected to site1.
+Even if the external firewall connected to site 2 has an Access Control List (ACL) to permit outgoing traffic, the external firewall connected to site 2 will drop the asymmetric outgoing traffic because firewalls are generally stateful regardless of traffic direction. For example, Cisco ASA and FTD firewalls only match the first packet of a connection to an ACL. For Transmission Control Protocol (TCP), any new connection initiation segment that is not a SYN will be dropped by an implicit stateful check and will never be matched against an ACL permit-rule by default. Only User Datagram Protocol (UDP) connections may be permitted in an asymmetrical fashion with bidirectional ACLs.
+A solution is therefore required to keep both directions of traffic flowing through the same service node. The asymmetric traffic path shown in the previous figure for traffic destined to endpoints that are part of the bridge domains that are stretched across sites, can be avoided by leveraging host-route advertisement to optimize the traffic path for ingress communication, but this approach to avoid asymmetricity can be used for a north-south traffic path only.
+Figure 9.            
+Why traffic symmetricity is important in multilocation data centers
+Alternatively, the use of service graph with PBR helps ensure that traffic is forced through the service node before being delivered to the destination. This forwarding occurs based on the configured policy, independent of the information contained in the routing table of the leaf nodes. When integrating PBR in Multi-site, the architecture ensures that the PBR policy for incoming and return traffic is always applied on the same leaf node and can always redirect the traffic to the service node deployed in the local site.
+Figure 10 illustrates the traffic flow example for north-south communication: in this case, the PBR policy is always applied on the non-border leaf (compute leaf) where the internal endpoint is connected and never on the border leaf receiving the inbound traffic, regardless of which EPG is the consumer or the provider of the contract. It is important to highlight this behavior requires the VRF enforcement mode configuration to be ingress, which is the default setting.
+  Figure 10.         
+Use ACI PBR to keep traffic symmetric
+Note:      The PBR policy applied on a leaf node can only redirect traffic to a service node deployed in the local site. Thus, it can avoid unnecessary traffic hair-pinning across sites as well.
+Tables 1 and 2 summarize where the PBR policy is applied in Multi-Site for each supported case. Traffic flow examples are explained later in this document.
+Table 1.        PBR policy enforcement in different use cases in Multi-Site (ACI Release 3.2(1))
+VRF design
+North-South Policy enforcement (L3out-to-EPG)
+East-West Policy enforcement (EPG-to-EPG)
+Intra-VRF
+Non border leaf (Ingress mode enforcement)
+Consumer Leaf
+Inter-VRF
+Not supported
+Consumer Leaf
+Table 2.        PBR policy enforcement in different use cases in Multi-Site (After ACI Release 4.0(1))
+VRF design
+North-South Policy enforcement (L3out-to-EPG)
+East-West Policy enforcement (EPG-to-EPG)
+Intra-VRF
+Non border leaf (Ingress mode enforcement)
+Provider Leaf
+Inter-VRF
+Consumer leaf (The L3Out EPG must be the provider)*
+Provider Leaf
+* Requires Cisco ACI Release 4.2(5), 5.1(1) or later.
+Note:      Examples in this document use the behavior after ACI Release 4.0(1), which means that for east-west traffic the PBR policy is always applied on the provider leaf node.
+Firewall with PBR
+This section explains firewall insertion with PBR for north-south and east-west traffic use cases. This option requires a service graph with ACI Release 3.2(1) or later.
+North-south traffic use case
+Figure 11 shows the Cisco ACI network design example for north-south routed firewall insertion with PBR. L3Out EPG and Web EPG have a contract with a firewall service graph attached to it. You have multiple PBR nodes, which, for example, can be represented by multiple high-availability pairs deployed in separate sites (other possible deployment options were shown in Figure 6).
+Figure 11.         
+Example of a north-south firewall with PBR design
+Figure 12 illustrates an example of service-graph PBR deployment for steering the firewall to the communication between the external network and an internal Web EPG. In the example where the internal Web EPG and the L3Out are defined in the same VRF and with the default VRF configuration (that is, ingress policy enforcement), the border leaf node doesn’t enforce contract policy.
+●      The traffic received from the external network is forwarded to the compute leaf node connected to the destination endpoint.
+●      At that point, the PBR policy is applied (because the leaf node knows both the source and destination class IDs), and traffic is redirected to the local active service node specified in the PBR policy (or to one of the local nodes, based on the hashing decision, when deploying multiple independent nodes per site).
+●      After the service node applies the configured security policy, the traffic is then sent back to the destination endpoint.
+Figure 12.         
+Use of PBR for inbound traffic flows (north-south)
+The outbound flows are characterized by the following sequence of events:
+●      The PBR policy is again applied on the same compute leaf node where it was applied for the inbound direction, which means that the return traffic is steered toward the same service node that already saw the incoming connection (and hence created the connection state).
+●      Once the firewall has applied the locally configured security policies, the traffic is then sent back to the fabric and forwarded to the external client via the local L3Out connection.
+Figure 13.         
+Use of PBR for outbound traffic flows (north-south)
+When comparing the two previous figures, it is evident, regarding the endpoint sitting in site 2, that there may be an “asymmetric” use of the L3Out connection (that is, inbound traffic uses L3Out-Site1, whereas outbound traffic is sent through L3Out-Site2), but a “fully symmetric” use of the same service node for both directions of the communication. In case the internal EPG and the L3Out EPG are part of separate VRFs, which consumer or provider leaf applies the PBR policy differs if the L3Out EPG is the consumer. Thus, north-south inter-VRF service insertion with PBR in Multi-Site is supported if the L3Out EPG is the provider. Tables 1 and 2, above, summarize the policy enforcement in the different use cases.
+When you use a traditional L3Out connection, the web server subnet stretched across sites is advertised through the border leaf nodes in both sites. As previously discussed, depending on the specific routing metric design, incoming traffic may be steered to the border leaf nodes of one of the sites. This suboptimal hair-pinning of inbound traffic can be avoided by leveraging host-route advertisement to optimize the traffic path for ingress communication. With the use of service graph and PBR, such an approach represents only an optimization, but it is not necessary to avoid the establishment of asymmetric traffic across stateful services (as the previous example in figures 12 and 13 describes). Figure 14 illustrates an example: the destination IP address is the endpoint 10.10.10.11 located in Site1, and, because of the host route advertisement function, traffic originating from an external client can be selectively steered to Site1 and reach the destination leaf where the 10.10.10.11 endpoint is located. The destination leaf in Site1 then selects the local active PBR node, which sends traffic back to the destination. Similar behavior is achieved for traffic destined for the endpoint 10.10.10.21 in Site2.
+Figure 14.         
+Use of host route advertisement for ingress traffic optimization (north-south)
+East-west traffic use case
+Figure 15 shows the typical Cisco ACI network design for east-west firewall insertion with PBR. This design is similar to that for the north-south firewall use case. The consumer Web EPG and the provider App EPG have a contract with a firewall service graph.
+Figure 15.         
+East-west firewall with PBR design example
+Note:      Though this example is intra-VRF contract, inter-VRF contract for east-west communication is also supported.
+In this case, in order to avoid the creation of an asymmetric path across separate firewall nodes, we can leverage the fact that a contract between two EPGs has always a “consumer” and a “provider” side. It is hence possible to “anchor” the application of the PBR policy on only one side of the contract relationship, so as to be able to use the same firewall node for both directions of traffic.
+●      The example in Figure 16 shows the specific behavior implemented as part of the ACI Release 4.0(1), where the PBR policy is always applied on the provider leaf node.
+●      When the consumer Web endpoint sends traffic toward the App endpoints, the consumer leaf just forwards the traffic toward the provider leaf where the App endpoint has been discovered.
+●      The PBR policy kicks in and redirects the traffic through the local active firewall node.
+●      Once the firewall has applied the locally configured security policies, the traffic is sent back toward the fabric and forwarded to the App endpoint.
+Figure 16.         
+Use of PBR for consumer-to-provider traffic flows (east-west)
+When the App endpoint replies back:
+●      The PBR policy should be applied on the same provider leaf (else the traffic could be steered to a different firewall node than the one used for the incoming direction). The traffic is then steered through the same firewall node that built the connection state by receiving the incoming traffic.
+●      Once the firewall has applied the security policy, the traffic is sent back toward the remote site and forwarded to the Web endpoint.
+●      The consumer leaf doesn’t apply the policy, as this was already done on the provider leaf.
+Figure 17.         
+Use of PBR for provider-to-consumer traffic flows (east-west)
+If the source endpoint and the destination endpoints are in the same site, traffic is always forwarded within the site, and there is no traffic hair-pinning across sites.
+Figure 18.         
+East-west traffic within a site
+Note:      For the east-west use case, in the current implementation an IP subnet must be configured under the consumer EPG. The reason is that the provider leaf must be able to resolve both provider and consumer EPG class IDs to apply the PBR policy. By leaking the consumer EPG subnet to the provider leaf, the provider leaf can resolve the class ID for the consumer EPG regardless of endpoint-learning status. The consumer EPG subnet must not be /32 for IPv4 or /128 for IPv6 because of CSCwa08796.
+It is worth highlighting how the behavior shown in figures 16 to 18, above, is different from ACI Release 3.2(1), where the PBR policy is anchored to the consumer leaf node instead of to the provider leaf node. In that case, the EPG subnet must be configured under the provider EPG instead of under the consumer EPG. Other than this change of where PBR policy is applied, the logic followed to avoid creation of an asymmetric traffic path across separate firewall nodes remains exactly the same.
+Important note: When service-node insertion for east-west communication is required, it is strongly recommended to deploy the ACI Release 4.0(1) onward. This is to avoid complications when migrating from Release 3.2(x) to Release 4.x, given the change of PBR policy enforcement from the consumer to the provider leaf node discussed above.
+Load balancer with Source Network Address Translation (SNAT)
+This section explains load balancer insertion with Source Network Address Translation (SNAT) for north-south and east-west traffic use cases. In this deployment model, applying a PBR policy is not required because both incoming traffic flows (toward the VIP address) and return traffic flows (toward the IP address translated by SNAT) are destined to the load balancer and do not need redirection services.
+Though this document uses a contract with a load balancer service graph as an example, a service graph is not mandatory for this design. The comparison between use of a service graph without PBR and non-use of a service graph are as follows:
+●      Use of service graph without PBR
+◦    This provides a view of service insertion in a contract between consumer and provider EPGs.
+◦    Inter-VRF contract for north-south is not supported.
+●      Non-use of service graph:
+◦    Two different contracts are required. One is between an EPG for clients and an EPG for the load balancer. The other is between an EPG for the load balancer and an EPG for real servers associated to the Verification IP (VIP). (If there is no contract security requirement, use of the same EPG for clients/real servers and the load balancer is also an option.)
+◦    Inter-VRF contract for north-south is possible.
+North-south traffic use case
+Figure 19 shows the Cisco ACI network design example for north-south routed load balancer insertion with SNAT. Consumer L3Out EPG and provider Web EPG have a contract with a load balancer service graph. Endpoints in the Web EPG are real servers associated to the VIP of the load balancer. You can have multiple load balancers, which can be represented by multiple high-availability pairs deployed in separate sites.
+The assumption here is that each load balancer pair has assigned a unique VIP address that is part of the same service BD as shown in the example below. In this scenario, Global Server Load Balancing (GSLB) can be used for load-balancing the access to a specific application through multiple VIPs.
+Note:      If it’s not a service graph, using the same service BD for each load balancer pair is not mandatory. Each load balancer pair can use a unique VIP address in different service BD.
+Figure 19.         
+Example of a north-south load balancer with a SNAT design
+Note:      If it’s not a service graph, an inter-VRF design is also possible.
+Figure 20 illustrates an example of communication between the external network and an internal Web EPG in a Multi-Site deployment where we have two connections: one is between the external network and the VIP (the front-end connection) and the other one between the load balancer and the real servers in the Web EPG (the back-end connection). In this example, the internal Web EPG and the L3Out are defined in the same VRF
+●      The incoming traffic originating from the external client is destined to the VIP, so it will be received on the L3Out connection of one of the connected sites and will then reach the load balancer without PBR as long as the VIP is reachable.
+●      The load balancer changes the destination IP to one of the real servers associated to the VIP. In this example, the load balancer also translates the source IP to the SNAT IP owned by the load balancer.
+●      After that, the traffic is forwarded to the real server.
+Note:      The suboptimal hair-pinning of inbound traffic can be avoided by leveraging host-route advertising to optimize the traffic path for the ingress direction, if the VIP of the load balancer belongs to a stretched subnet. Alternatively, it is possible to use VIP addresses in separate IP subnets for the load balancer deployed in different sites.
+Figure 20.         
+Load balancer with SNAT inbound traffic flows (north-south)
+Because the return traffic is destined to the SNAT IP owned by the load balancer that took care of the incoming traffic, PBR is not required for the return traffic either.
+●      The load balancer receives the traffic from the Web endpoint and changes the source and destination IP addresses (the source becomes the VIP; the destination becomes the external client).
+●      The traffic is sent back to the fabric and forwarded to the external client via a local L3Out connection.
+Though there may be an “asymmetric” use of the L3Out connection (for example, for VIP2, inbound traffic uses L3Out-Site1, whereas outbound traffic is sent through L3Out-Site2), there is always a “fully symmetric” use of the same service node for both legs of the communication.
+Figure 21.         
+Load balancer with SNAT inbound traffic flows (north-south)
+Though the examples above have the load balancer and the real server in the same site, they can also be in different sites (figures 22 and 23) because the VIP, the SNAT IP, and the real servers’ addresses are always reachable from different site. That said, the use of a local real-server farm is ideal in terms of traffic path optimization.
+Figure 22.         
+Load balancer with SNAT inbound traffic flows (with VIP and real server in different sites)
+Figure 23.         
+Load balancer with SNAT outbound traffic flows (with VIP and real server in different sites)
+East-west traffic use case
+Figure 24 shows the typical Cisco ACI network design for east-west routed load balancer insertion with SNAT. This design is similar to that for the north-south routed load balancer use case. In this example, the consumer Web EPG and the provider App EPG have a contract with a load balancer service graph. Endpoints in the App EPG are real servers associated to the VIP on the load balancer.
+As previously discussed for the north-south use case, the assumption is that each load balancer pair has assigned a unique VIP address that is part of the same service BD. If it’s not a service graph, each load balancer pair can use a unique VIP address in different service BD.
+Figure 24.         
+Example of an east-west load balancer with a SNAT design
+Note:      Though this example is intra-VRF contract, an inter-VRF contract for east-west communication is also supported.
+Figure 25 illustrates an example of east-west communication between a consumer EPG Web and a provider EPG App in a Multi-Site scenario where we have two connections: one is between the Web endpoint and the VIP (the front-end connection) and the other is between the load balancer and the real servers in the App EPG (the back-end connection).
+●      The traffic originating from the Web endpoint is destined to the VIP, so it will reach the load balancer without requiring PBR as long as the VIP is reachable.
+●      The load balancer changes the destination IP to one of the real servers associated to the VIP. At the same time, the load balancer translates the source IP to the SNAT IP owned by the load balancer.
+●      The traffic is then sent back to the fabric and forwarded to the real server.
+Figure 25.         
+Load balancer with SNAT incoming traffic flows (east-west)
+For the provider to consumer traffic direction:
+●      The return traffic originated by the App real server is destined to the SNAT IP owned by the load balancer that took care of the incoming traffic; therefore, applying the PBR policy is not required for the return traffic either.
+●      The load balancer changes the source and destination IPs and sends the traffic back to the fabric.
+●      The traffic is forwarded back to the consumer endpoint.
+Figure 26.         
+Load balancer with SNAT return traffic flows (east-west)
+Note:      Though, in this example, the load balancer and the real server are in the same site, they can be in different sites, similar to the north-south routed load balancer insertion example earlier.
+The use of SNAT is very handy to make the return traffic go back to the load balancer and simplifies the design. However, a possibly undesirable consequence is that real servers lose visibility into the client’s source IP address in the IP header. When such visibility is a design requirement, you should avoid using SNAT on the load balancer for the source IP preservation; this mandates the introduction of PBR to properly steer the return traffic through the same load balancer that handled the first leg of the communication.
+Load balancer without SNAT (with PBR for return traffic)
+In this deployment model, PBR is required for return traffic because the load balancer doesn’t perform SNAT for incoming traffic. Incoming traffic toward the VIP still doesn’t require PBR. There are two important considerations for deploying this design option with ACI Multi-Site:
+●      The load balancer and the real-server farm where traffic is load-balanced must be in same site.
+●      This option requires the deployment of ACI Release 4.0(1) or later.
+North-south traffic use case
+Figure 27 shows the Cisco ACI network design example for north-south routed load balancer insertion without SNAT. The consumer L3Out EPG and the provider Web EPG have a contract with a load balancer service graph. Endpoints in the Web EPG are real servers associated to the VIP of the load balancer. There can be multiple load balancers, which can be represented by multiple high-availability pairs deployed in separate sites.
+The usual assumption here is that each load balancer gets assigned a unique VIP address that is part of the same BD and that global server load balancing (GSLB) is then used for load-balancing traffic for a given application to multiple VIPs. Also, since PBR must be associated to a contract between the Web EPG and the L3Out EPG, it is currently required for those to be part of the same VRF.
+Figure 27.         
+Example of a north-south load balancer without a SNAT design
+Figure 28 illustrates an example of an inbound traffic flow between the external network and an internal Web EPG in a Multi-Site deployment where we have two connections: one is between the external client and the VIP (the front-end connection) and the other is between the load balancer and the real servers in Web EPG (the back-end connection).
+●      The incoming traffic originated from the external client and destined to the VIP is received on the L3Out connection of a given site, and reaches the load balancer without requiring PBR as long as the VIP is reachable.
+●      The load balancer changes the destination IP to one of the real servers associated to the VIP, but leaves unaltered the source IP addresses (representing the external client) and forwards the traffic back to the fabric.
+●      The traffic is then forwarded to the real server, which must be deployed in the local site.
+As usual, the suboptimal hair-pinning of inbound traffic shown in Figure 28 can be avoided by leveraging host-route advertisement to optimize the traffic path for ingress communication or by taking the VIP addresses of the load balancers deployed in separate sites from different BDs and IP subnets.
+Figure 28.         
+Load balancer without SNAT inbound traffic flows (north-south)
+For the outbound direction, the traffic is destined to the original client’s IP address connection; therefore, PBR is required to steer the return traffic back to the load balancer. Otherwise the external client would receive the traffic where the source IP is the real server’s IP instead of the VIP. Such traffic will be dropped because the external client didn’t initiate traffic to the real server IP.
+●      The Web EPG sends traffic back to the external client. The PBR policy is always applied on the compute leaf node where the Web endpoint is connected, which means that the return traffic is steered toward the same load balancer because the load balancer and the real server must be in the same site in this deployment model.
+●      The load balancer changes only the source IP address to match the locally defined VIP and sends the traffic back to the fabric.
+●      The traffic is forwarded toward the external client leveraging a local L3Out connection.
+Figure 29.         
+Load balancer without SNAT outbound traffic flows (north-south)
+Though there may be an “asymmetric” use of the L3Out connection (that is, for VIP2, inbound traffic uses L3Out in Site1, whereas outbound traffic is sent through L3Out in Site2), there is always a “fully symmetric” use of the same service node for both legs of the communication as long as the load balancer and the real servers are deployed in the same site. Otherwise, the return traffic would be redirected to the load balancer in a different site and lose traffic symmetricity.
+Figures 30 and 31 illustrate an example of this problem: the load balancer in Site1 has both local site endpoint 10.10.10.11 and remote site endpoint 10.10.10.21 as real servers associated to VIP1. If the incoming traffic to VIP1 is load balanced to 10.10.10.21 in Site2, the PBR policy for the return traffic enforced on the provider leaf in Site2 would redirect the traffic to the local load balancer, creating traffic asymmetry.
+Figure 30.         
+Load balancer without SNAT inbound traffic flows (Having the VIP and real server in different sites is not supported.)
+Figure 31.         
+Load balancer without SNAT inbound traffic flows (Having the VIP and real server in different sites is not supported.)
+East-west traffic use case
+Figure 32 shows the typical Cisco ACI network design for east-west routed load balancer insertion without SNAT. This design is similar to that for the north-south load balancer use case previously discussed. The consumer Web EPG and the provider App EPG have a contract with a load balancer service graph. The endpoints in App EPG are real servers associated to the VIP on the load balancer and must be connected in the same site where the VIP is active.
+The assumption here is that the VIP is in the same BD, each load balancer pair has a unique VIP address, and Global Server Load Balancing (GSLB) is used for load balancing to multiple VIPs.
+Figure 32.         
+Example of east-west load balancer without a SNAT design
+Figure 33 illustrates an example of east-west communication between a consumer EPG Web and a provider EPG App in an ACI Multi-Site architecture. Here we have two connections: one is between a Web endpoint and the VIP (the front-end connection and the other is between the load balancer and the real servers in the App EPG (the back-end connection).
+●      The consumer-to-provider traffic is destined to the VIP, so the traffic reaches the load balancer without the need of PBR as long as the VIP is reachable. Notice how the VIP could be locally deployed or available in a remote site.
+●      The load balancer changes the destination IP to one of the real servers associated to the VIP, but it doesn’t alter the source IP (since SNAT is not enabled). The traffic is then sent back to the fabric.
+●      The traffic is forwarded to the real server, which must be connected in the same site.
+In the example below, the Web endpoint accesses the VIP addresses of both of the load balancers deployed in the local and remote sites, which then redirect traffic to local server farms.
+Figure 33.         
+Load balancer without SNAT incoming traffic flows (east-west)
+Because the return traffic is destined to the original source IP of the Web endpoint, PBR is required to force the return traffic through the same load balancer used for the consumer-to-provider direction.
+●      The App endpoint sends the traffic back to the Web endpoint PBR, and the policy is applied on the provider leaf node where the App endpoint is connected. This ensures that the return traffic is steered toward the same load balancer because the load balancer and the real server must always be in the same site in this deployment model. Otherwise, the return traffic would be redirected to a different load balancer from the one used for the first leg of the communication, thus causing loss of traffic symmetricity (similar to what was shown previously, in figures 30 and 31).
+●      The load balancer changes only the source IP address to match the locally defined VIP and sends the traffic back to the fabric.
+The traffic is forwarded toward the Web endpoint that could be locally connected or deployed in a remote site.
+Figure 34.         
+Load balancer without SNAT return traffic flows (east-west)
+Firewall with PBR and load balancer without SNAT (with PBR for return traffic)
+This section covers a two-node firewall and load balancer insertion use case for north-south and east-west communication. PBR is enabled for both directions (provider-to-consumer traffic and vice versa) to redirect traffic to the firewall, but PBR for the load balancer is only needed for provider-to-consumer traffic (since SNAT is not configured).
+The same specific design considerations mentioned in the previous section for the load balancer only scenario are still valid here; thus, it is mandatory for the load balancer and the real servers to reside in the same site; ACI Release 4.0(1) is the minimum software requirement.
+Though the example we present has the first service function as the firewall and the second as the load balancer without SNAT, other service-function combinations or sequences are also possible. For example, those in the bulleted list below are also possible. (As of ACI Release 4.2, a service graph can contain up to two service functions in case of Multi-Site).
+●      The first service function is the firewall; the second is the load balancer with SNAT.
+●      The first service function is the load balancer with SNAT; the second is the firewall.
+●      The first service function is the load balancer without SNAT; the second is the firewall.
+●      The first service function is the firewall; the second is the IPS.
+North-south traffic use case
+Figure 35 shows the Cisco ACI network design example for a north-south routed firewall with PBR and a load balancer without SNAT. The consumer L3Out EPG and the provider Web EPG have a contract with a firewall and load balancer service graph. The endpoints in Web EPG are real servers associated to the VIP on the load balancer. You have multiple firewalls and load balancers, which can be represented by multiple high-availability pairs deployed in separate sites.
+Figure 35.         
+Design example of a north-south firewall with PBR and a load balancer without SNAT
+Figure 36 illustrates an example of an inbound traffic flow between the external network and an internal Web EPG in a Multi-Site deployment, where we have two connections: one is between the external network and the VIP (the front-end connection) and the other is between the load balancer and the real servers part of the Web EPG (the back-end connection).
+●      Traffic originating from a client in the external network is destined to the VIP, thus the traffic reaches the leaf where the load balancer is connected as long as the VIP is reachable. Notice how the VIP could be locally deployed or reachable in a remote site.
+●      The PBR policy is applied on the load balancer leaf and redirects the traffic to the first service function, which is the firewall (since it’s the compute leaf for the traffic from the external network to the VIP).
+●      The traffic is then sent back to the fabric and reaches the VIP residing on the load balancer.
+●      The load balancer changes the destination IP to one of the real servers associated to the VIP and sends the traffic back to the fabric (the load balancer doesn’t change the source IP address since SNAT is not enabled).
+●      The traffic is forwarded to the real server destination, which must be deployed in the local site.
+The suboptimal hair-pinning of inbound traffic shown in Figure 36 can be avoided by leveraging host-route advertisement to optimize the traffic path for ingress communication when the VIP of the load balancer belongs to a same stretched BD.
+  Figure 36.         
+Firewall with PBR and load balancer without SNAT inbound traffic flows (north-south)
+As previously discussed, since the return traffic is destined to the original IP address of the external client, PBR is required to steer the return traffic through the load balancer.
+●      Since the PBR policy is associated to a contract between the Web EPG and the external client, it is applied on the compute leaf where the Web endpoint is connected and redirects the traffic to the local load balancer.
+●      Once the load balancer receives the traffic, it changes the source IP to the VIP and forwards the traffic back to the ACI fabric.
+●      At this point the second redirection associated to the contract between the Web EPG and the external client kicks in, and the traffic is forwarded to the firewall.
+●      After the firewall has applied the locally configured security policies, it forwards the traffic back to the fabric so as to reach the external client through the local L3Out connection.
+Figure 37.         
+Firewall with PBR and load balancer without SNAT outbound traffic flows (north-south)
+East-west traffic use case
+Figure 38 shows the Cisco ACI network design example for an east-west routed firewall with PBR and a load balancer without SNAT. This design is similar to the one for the north-south use case previously discussed. A consumer Web EPG and a provider App EPG have a contract with an associated two-node service graph (firewall and load balancer). The endpoints in the App EPG are real servers associated to the VIP of the load balancer.
+Figure 38.         
+Design example of an east-west firewall with PBR and a load balancer without SNAT
+Figure 39 illustrates an example of east-west communication between the consumer EPG Web and the provider EPG App in a Multi-Site deployment where we have two connections: one is between a Web endpoint and the VIP (the front-end connection) and the other is between the load balancer and the real servers in App EPG (the back-end connection). As usual for all the scenarios not leveraging SNAT, the load balancer and real server must be in same site.
+●      The traffic originating in the consumer (Web) endpoint is destined to the VIP, so it reaches the leaf where the load balancer is connected as long as the VIP is reachable.
+●      The PBR policy is applied on the load balancer leaf and redirects traffic to the firewall (since it’s the provider leaf for the traffic from the consumer to the VIP).
+●      The firewall applies its security policies and then sends the traffic back to the fabric onward to the VIP.
+●      The load balancer changes the destination IP to one of the real servers associated to the VIP and forwards the traffic to the destination. In this example, the load balancer doesn’t perform SNAT and hence does not alter the source IP address.
+  Figure 39.         
+Firewall with PBR and load balancer without SNAT inbound traffic flows (east-west)
+Because the return traffic is destined to the original source IP (the Web endpoint), PBR is required to steer the return traffic to the load balancer.
+●      The provider endpoint sends the traffic toward the consumer endpoint. The PBR policy gets applied on the leaf where the App endpoint is connected, as it’s the provider leaf for the traffic from the App endpoint to the Web endpoint. The traffic gets steered to the load balancer, which must be located in the same site.
+●      The load balancer changes the source IP to match the VIP address and sends the traffic back to the ACI fabric.
+●      Another PBR policy is then applied on the load balancer leaf to redirect the traffic to the firewall.
+●      The firewall performs its security policy enforcement and sends the traffic back to the fabric.
+●      The traffic is forwarded to the consumer (Web) endpoint, which can be located in the local site or in a remote site.
+  Figure 40.         
+Firewall with PBR and load balancer without SNAT outbound traffic flows (east-west)
+Configuration
+This section presents configuration examples for various use cases of services integration in an ACI Multi-Site architecture. General configuration steps for the intra-VRF one-node firewall service graph use case are covered in the section Configuration steps. Inter-VRF, load balancer, and two-node service graph use cases are covered in the section Additional configuration examples.
+Configuration steps
+Overview
+This section describes the general configuration steps for north-south and east-west firewall insertion using the topology in Figure 41 as an example. A two-arm mode firewall is used for north-south communication and a one-arm mode firewall is used for east-west communication. The reasons this chapter uses this example are that it’s generally preferable to use different firewall interfaces for external facing and internal facing, and one-arm mode can simplify firewall routing configuration for east-west communication. Though the same firewall is used for both north-south and east-west communications in this example, use of different firewalls is also possible.
+Note:      This document shows GUI screenshots taken from Cisco APIC 4.2(1) and Cisco Multi-Site Orchestrator (MSO) 2.2(1) releases. Thus, the GUI “look and feel” in this document might be slightly different from your specific APIC or MSO GUI.
+Figure 41.         
+North-south traffic contract with firewall and east-west traffic contract with firewall
+Some objects must be created on each APIC domain and on the Multi-Site Orchestrator (MSO) before going into the service graph and PBR–specific configuration. This section doesn’t cover how to create tenants, VRFs, BDs, EPGs, L3Out, and contracts. The assumption is that items below are already configured.
+●      On the APIC in each site:
+◦    Create the L3Out connections in each site (north-south use case).
+●      On MSO templates:
+◦    Create VRF(s), and consumer, provider, and service BDs.
+◦    Create consumer and provider EPGs.
+◦    Create External-Web and Web-App contracts and ensure they are provided/consumed by the EPGs (we will then attach the service-graph to those contracts).
+Note:      For more information on the use of MSO schemas and templates to deploy site-specific configurations and/or objects stretched across sites, please refer to the configuration guide below:
+https://www.cisco.com/c/en/us/td/docs/switches/datacenter/aci/aci_multi-site/sw/2x/configuration/Cisco-ACI-Multi-Site-Configuration-Guide-221/Cisco-ACI-Multi-Site-Configuration-Guide-221_chapter_0110.html
+For the deployment of a service graph with PBR specific to a Multi-Site architecture, there are different configuration steps that must be performed on each APIC domain and on the Multi-Site Orchestrator:
+●      On the APIC in each site:
+◦    Create the L4–L7 device(s) (logical device(s)).
+◦    Create the PBR policy.
+●      On MSO at the template level:
+◦    Create the service graph.
+◦    Associate the service graph with the contract.
+◦    For the east-west use case, configure the IP subnet under the consumer EPG.
+●      On MSO at the site level:
+◦    Select the L4–L7 device(s) (logical device(s)) exposed from each APIC domain.
+◦    Select the cluster interface(s) and the PBR policy.
+The following sections provide more detailed information on each of the configuration steps listed above.
+APIC configuration
+The steps explained in this section must be performed in each APIC domain. Because the PBR redirection of traffic to a service node deployed in a remote site is not supported, it is currently mandatory for each site to have deployed at least a local L4–L7 device and an associated PBR policy (the various options to provide redundancy to the service node functions offered in the local site were shown in Figure 6).
+Create the L4–L7 device (logical device)
+This step needs to be repeated in each APIC domain.
+Notice how the L4–L7 device configuration has no PBR-specific configuration. One or more L4–L7 devices can be configured. In this example, two devices are configured, ASAv1 and ASAv2, as an active/standby high-availability cluster pair. Though an active/standby virtual firewall is used in this example, use of more than two devices and physical domains are supported as well.
+The location is Tenant > Services > L4-L7 > Devices
+Figure 42.         
+Create the L4–L7 device
+Configuration specifics used in this document are the following:
+●      Unmanaged mode (Multi-site supports unmanaged-mode service graphs only)
+●      L4–L7 device name: Site1-FW or Site2-FW
+●      Service type: Firewall
+●      Device type: VIRTUAL
+●      VMM domain: S1-VMM or S2-VMM (This is optional; the virtual firewall could also be connected to the fabric as a physical resource instead.)
+●      Function type: GoTo (Layer 3 mode)
+●      Concrete device1: ASAv1
+●      Concrete device2: ASAv2
+●      Cluster interface FW-external is Gigabitethernet0/0 of each ASAv.
+●      Cluster interface FW-internal is Gigabitethernet0/1 of each ASAv.
+Create the PBR policy
+This step needs to be repeated in each APIC domain.
+You must configure the PBR node IP address and MAC address. The PBR node IP and MAC addresses defined in the PBR policy are the virtual IP and MAC addresses for the active/standby high-availability cluster pair defined in Figure 42. Though this example doesn’t use tracking, tracking and other PBR policy options can be enabled. Tracking and other PBR policy options could be useful if there are multiple PBR destinations in the same PBR policy. For more information, please refer to the Cisco ACI PBR white paper: https://www.cisco.com/c/en/us/solutions/data-center-virtualization/application-centric-infrastructure/white-paper-c11-739971.html
+The location is Tenant > Protocol Policies > L4-L7 Policy Based Redirect.
+Figure 43.         
+Create the PBR policy
+Because this example uses two interfaces of the firewall, two PBR policies per site need to be configured. Configurations used in this document are as follows:
+●      Site1 (San Francisco)
+◦    FW-external: 192.168.11.1 with MAC 00:50:56:95:26:00
+◦    FW-internal: 192.168.12.1 with MAC 00:50:56:95:c1:ae
+●      Site2 (Miami)
+◦    FW-external: 192.168.11.2 with MAC 00:50:56:a0:92:ef
+◦    FW-internal: 192.168.12.2 with MAC 00:50:56:a0:c1:e0
+Note:      Starting from APIC Release 5.2, MAC configuration is not mandatory for L3 PBR if IP-SLA tracking is enabled. The dynamic MAC address detection feature is also useful for the case where the active/standby high-availability cluster pair doesn’t use the virtual MAC address because the MAC address of the PBR destination IP is changed after the failover.
+MSO template–level configuration
+Create the service graph
+Create the service graph in the MSO template associated to a specific tenant and mapped to all the sites where such tenant is deployed. The service graph is an abstract definition of the sequence of service functions required between EPGs. In this example, we are going to create a service graph with a firewall node, since the intent is to redirect through the firewall the traffic flows (all of them or specific ones) between the pair of specified EPGs.
+The location is Schema > TEMPLATES > SERVICE GRAPH.
+  Figure 44.         
+Create the service graph
+Associate the service graph with the contract
+Associate the service graph with the contract. A service graph can be associated to one or more contracts. In this example, we are going to associate the FW-Graph created in the previous step with both north-south and east-west contracts. It’s worth mentioning that redirection is done for the specific traffic matched with the filters in the contract with the service graph. If there is another contract without service graph between the same consumer and provider EPGs, that traffic is not redirected.
+When you click a service node, a pop-up window opens up asking you to select the bridge domains to be used for the consumer and provider connectors of the service node. In our specific example, we want to use a two-arm firewall to enforce security policies for north-south communication, thus two different BDs are specified (FW-external BD for the consumer connector and FW-internal BD for the provider connector). Those BDs must have been previously provisioned as stretched objects from MSO (that is, configured as “L2 Stretched” in a template associated to both sites, with BUM forwarding disabled to help containing the propagation of L2 flooding across the sites).
+The location is Scheme > TEMPLATES > CONTRACT.
+Figure 45.         
+Associate the service graph with the contract for north-south (two-arm)
+Figure 46.         
+Select BDs to the consumer and provider connectors for north-south (two-arm)
+The step needs to be repeated for the other contract that is for east-west communication. For enforcing security policies on east-west communication, we want instead to use in our specific example a firewall node deployed in one-arm mode. This implies that the same FW-internal BD can be specified for both the consumer and the provider connectors.
+Note:      It is important to ensure that the deployed firewall model (virtual or physical) can support one-arm mode deployments. For example, with Cisco ASA and FTD models, a specific configuration command must be enabled for supporting this use case. You can find more information at the links below:
+https://www.cisco.com/c/en/us/support/security/asa-5500-series-next-generation-firewalls/products-installation-and-configuration-guides-list.html
+https://www.cisco.com/c/en/us/support/security/firepower-ngfw/products-installation-and-configuration-guides-list.html
+Figure 47.         
+Associate the service graph with the contract for east-west traffic flows (one-arm use case)
+Figure 48.         
+Selected BDs to the consumer and provider connectors for east-west traffic flows (one-arm use case)
+In summary, the specific configuration used in this document for the deployment of the service node connectors is the following:
+●      North-south contract (two-arm firewall)
+◦    Consumer connector: FW-external BD
+◦    Provider connector: FW-internal BD
+●      East-west contract (one-arm firewall)
+◦    Consumer connector: FW-internal BD
+◦    Provider connector: FW-internal BD
+Configure the IP subnet under the consumer EPG (east-west use case)
+As mentioned in the first part of this document, when applying a PBR policy for east-west policy enforcement on the firewall, it is critical to avoid creating asymmetric traffic paths through the independent service nodes deployed in each site. This can be achieved by “anchoring” the application of the PBR policy on the provider leaf node (that is, the leaf node where the provider endpoint is connected). In order to achieve this, it is currently required to configure the IP subnet under the consumer EPG to install the consumer EPG class ID classification information associated with the subnet to the provider leaf because PBR policy is always applied on the provider leaf.
+Note:      If running ACI Release 3.2(x), the IP subnet must be configured under the provider EPG instead of under the consumer EPG, since the PBR policy in this case is always applied on the consumer leaf node.
+The location is Schema > AP > EPG.
+  Figure 49.         
+Configure the IP subnet under the consumer EPG for an east-west use case
+Configurations used in this document are following:
+●      Web EPG (consumer for east-west contract)
+◦    10.10.10.254/24 (This usually matches the IP subnet configured under the corresponding Web BD.)
+◦    NO DEFAULT SVI GATEWAY (It’s because you should have already defined the IP subnet to be used as the default gateway as part of the Web BD configuration.)
+MSO site level configuration
+At this point, you can probably notice the appearance of a red information icon in each site-level configuration. This simply means that some site-specific configuration must still be completed. Hence the next step, performed at the site level, consists in selecting the L4–L7 device to use and its specific connectors.
+The L4–L7 device and its connectors configured in the previous section should be offered as the options to select. If you don’t see those options, please verify to have defined an L4–L7 logical device in each APIC domain (as previously shown in the section “Create the L4–L7 device (logical device)”).
+Select the L4–L7 device exposed by APIC
+Select the L4–L7 device for the service graph. You need to repeat this step for each site-level configuration.
+The location is Schema > SITE > SERVICE GRAPH.
+  Figure 50.         
+Select the logical device
+Configurations used in this document are as follows:
+●      Site1 (San Francisco)
+◦    Site1-FW (active/standby pair deployed in Site1)
+●      Site2 (Miami)
+◦    Site2-FW (active/standby pair deployed in Site2)
+Select the cluster interface and the PBR policy
+Select the connectors for each contract with the service graph. You need to repeat this step for each site-level configuration.
+For the two-arm firewall deployment used for north-south policy enforcement, it is required to specify two different interfaces as connectors (FW-external and FW-internal) and associate a specific PBR policy to each. This is because inbound traffic flows originating from external clients must be redirected to the external interface of the firewall before reaching the internal destination endpoint, whereas outbound traffic flows destined to the external clients must be redirected to the internal interface of the firewall.
+The location is Schema > SITE > CONTRACT > SERVICE GRAPH.
+Figure 51.         
+Select the service node in the service graph for north-south (two-arm)
+Figure 52.         
+Select the cluster interface and the PBR policy for north-south (two-arm)
+For the one-arm firewall deployment used for east-west policy enforcement, it is required to specify the same interface (FW-internal) as both the consumer and provider connectors and to associate the same PBR policy to it. This is because east-west traffic flows must always be redirected to the same firewall interface for both consumer-to-provider and provider-to-consumer directions.
+Figure 53.         
+Select the service node in the service graph for east-west traffic flows (one-arm use case)
+Figure 54.         
+Select the cluster interface and the PBR policy for east-west traffic flows (one-arm use case)
+In summary, the specific site-level configurations used for our example are as follows:
+●      North-south contract
+◦    Consumer connector
+◦    Cluster interface: FW-external
+◦    PBR policy: FW-external
+◦    Provider connector
+◦    Cluster interface: FW-internal
+◦    PBR policy: FW-internal
+●      East-west contract
+◦    Consumer connector
+◦    Cluster interface: FW-internal
+◦    PBR policy: FW-internal
+◦    Provider connector
+◦    Cluster interface: FW-internal
+◦    PBR policy: FW-internal
+Deploy the template
+The final step is to deploy the template.
+The location is Scheme > TEMPLATES.
+  Figure 55.         
+Deploy the template
+GUI and CLI output example for verification
+Overview
+The followings are typical steps for troubleshooting. This section explains how to verify step 2 and 3 that are specific to a service graph. This document doesn’t cover general ACI endpoint learning or forwarding troubleshooting steps. For more information about the Cisco ACI troubleshooting, refer to the following link: https://www.cisco.com/c/dam/en/us/td/docs/switches/datacenter/aci/apic/sw/4-x/troubleshooting/Cisco_TroubleshootingApplicationCentricInfrastructureSecondEdition.pdf.
+1.     Check if the communication between EPGs can be established without attaching the service graph with PBR to the contract:
+◦    Consumer and provider endpoints are learned.
+◦    Consumer and provider endpoints can communicate within the same site and across sites.
+2.     Verify the service graph deployment (on each APIC):
+◦    Deployed graph Instances have no fault.
+◦    VLANs and class IDs for service node are deployed.
+◦    Service node endpoints are learned.
+3.     Check that the traffic is successfully redirected:
+◦    Capture the traffic on the service node.
+◦    Check that the policy is properly programmed on the leaf nodes.
+4.     Check that the incoming traffic arrives on the consumer and provider endpoints.
+Check that a service graph is deployed
+Deployed graph instances
+After a service graph is successfully applied, you can see the deployed graph instance for each contract with a service graph (Figure 56). If a service graph instantiation fails, you will see faults in the deployed graph instance.
+The location is Tenant > Services > L4-L7 > Deployed Graph instances.
+Figure 56.         
+Check deployed graph instance
+VLANs and class IDs for service node
+If you see a fault, it’s most likely because there is something wrong with the APIC configuration. For example, the encap VLAN is not available in the domain used for the L4–L7 device.
+Once the service graph is successfully deployed without any fault in the deployed graph instances, EPGs and BDs for service node get created. Figures 57 and 58 show where to find the class IDs for the service-node interfaces (Service EPGs). In this example, the site1 FW-external class ID is 16388 and the site1 FW-internal class ID is 49156.
+The location is Tenant > Services > L4-L7 > Deployed Graph instances > Function Nodes.
+  Figure 57.         
+Service node interface class ID
+These VLANs are deployed on the service leaf node where the service nodes are connected. VLAN and endpoint learning status can be checked by using “show vlan extended” and ‘show endpoint” on the service leaf node CLI. If you don’t see the IPs of service nodes learned as endpoints in the ACI fabric, most likely it’s a problem of connectivity or a configuration issue between the service leaf and the service node. Please check the following statuses that might have something wrong:
+●      Interface status on leaf interfaces connected to the service node.
+●      The leaf interface path and VLAN encap.
+●      The service node VLAN and IP address.
+●      The intermediate switch VLAN configuration if you have it between the service leaf node and the service node.
+Check if the traffic is redirected
+Capture the traffic on the service node
+If end-to-end traffic stops working once you enable PBR, even though the service-node endpoints are learned in the ACI fabric, the next troubleshooting step is to check if traffic is redirected and where the traffic is dropped.
+To verify whether traffic is actually redirected to the service node, you can enable capture on the PBR destination. Figure 58 shows an example of where you should see the traffic redirected. In this example, 10.10.11.11 in site1 Web EPG tries to access 10.10.12.12 in site2 App EPG. Because the endpoint 10.10.12.12 is in the provider EPG, the PBR policy is applied in site2, thus traffic should be seen on the PBR destination in site2.
+Figure 58.         
+Traffic flow example
+If you see that consumer-to-provider traffic is received on the service node but not on the provider endpoint, please check the following, which are common mistakes:
+●      Service node routing table reaches the provider subnet (The service node must be able to reach the provider and consumer subnets.)
+●      Service node security policy such as ACL permits the traffic.
+Check policies on leaf and spines nodes
+If you don’t see the traffic being received by the service node, you may need to take a look at the leaf and spine nodes to see if policies are programmed on the switch nodes to permit or redirect the traffic.
+Note:      The policies are programmed based on EPG deployment status on the leaf. The show command output in this section uses the leaf that has consumer EPG, provider EPG, and EPGs for the service node.
+Figures 59 and 60 show the zoning-rule status before and after a service graph deployment in site1. In this example, the VRF scope ID is 3047427, the consumer EPG class ID is 32771, and the provider EPG class ID is 49154.
+Before deploying the service graph, a leaf node has four permit zoning-rules. Two are for a north-south contract between the L3Out EPG and the Web EPG. The others are for an east-west contract between the Web EPG and the App EPG.
+Figure 59.         
+EPG class IDs and zoning-rules (before service graph deployment)
+Table 3.        Permit rules without a service graph
+Source class ID
+Destination class ID
+Action
+32773 (L3Out EPG)
+32771 (Web EPG)
+Permit
+32271 (Web EPG)
+32773 (L3Out EPG)
+Permit
+32271 (Web EPG)
+32772 (App EPG)
+Permit
+32772 (App EPG)
+32271 (Web EPG)
+Permit
+Once the service graph is deployed, the zoning-rules get updated and the service node’s class IDs are inserted based on the service graph configuration. Zoning-rules highlighted in red are related to the north-south contract and the ones highlighted in blue are related to the east-west contract.
+Figure 60.         
+EPG class IDs and zoning-rules (after service graph deployment)
+Table 4.        Permit and redirects rules with service graph
+Source class ID
+Destination class ID
+Action
+32773 (L3Out EPG)
+32771 (Web EPG)
+Redirect to destgrp-6 (FW-external)
+49156 (FW-internal)
+32271 (Web EPG)
+Permit
+32271 (Web EPG)
+32773 (L3Out EPG)
+Redirect to destgrp-5 (FW-internal)
+16388 (FW-external)
+32773 (L3Out EPG)
+Permit
+32271 (Web EPG)
+32772 (App EPG)
+Redirect to destgrp-5 (FW-internal) with redir_override
+49156 (FW-internal)
+32772 (App EPG)
+Permit
+32772 (App EPG)
+32271 (Web EPG)
+Redirect to destgrp-5 (FW-internal)
+49156 (FW-internal)
+32271 (Web EPG)
+Permit
+Note:      The zoning-rule for east-west consumer-to-provider communication is created with action “redir_override”: this is required in the specific PBR deployment with ACI Multi-Site. With this action, the hardware creates two entries to take different actions depending on whether the destination (provider) is in the local site or not. If the destination is in the local site, the PBR policy is applied. If the destination is not in the local site, the traffic is just permitted so that the redirection can instead happen on the leaf in the site where the provider endpoint resides. That’s how to get a provider leaf to always apply PBR policy.
+Important Note: It is critical to ensure that it is always possible to clearly identify a consumer and a provider side in zoning-rules for each given contract relationship between EPGs.
+This means that the same EPG should never consume and provide the same contract and the definition of different contracts may be needed depending on the specific deployment scenario.
+Also, if two different contracts were applied between the same pair of EPGs (so to be able to differentiate the provider and consumer EPG for each of them), it is critical to ensure that the zoning-rules created by those two contracts don’t have overlapping rules with same contract and filter priorities. Defining zoning-rules with the same priority that identify the same type of traffic could lead to a not deterministic forwarding behavior (creating asymmetric traffic through different firewalls). As a typical example, it would not work to create two contracts both using a “permit any” rule to redirect all the traffic. If one contract is “permit any” and the other contract is “permit ICMP only”, the zoning-rules created by the contract with “permit ICMP only” have higher priority. The table and figure below illustrate this example. In this case, ICMP traffic between Web and App EPGs is always redirected on the leaf where an endpoint in the Web EPG (the provider of the Contract2) resides whereas other traffic between Web and App EPGs is always redirected on the leaf where an endpoint in the App EPG (the provider of the Contract1) resides.
+Figure 61.         
+EPG class IDs and contracts (after service graph deployments)
+Table 5.        Permit and redirects rules with service graphs
+  Source class ID
+Destination class ID
+Filter
+Action
+Zoning-rule priority
+Contract1
+32271 (Web EPG)
+32772 (App EPG)
+default (permit any)
+Redirect to destgrp-5 (FW-internal) with redir_override
+9
+49156 (FW-internal)
+32772 (App EPG)
+default (permit any)
+Permit
+9
+32772 (App EPG)
+32271 (Web EPG)
+default (permit any)
+Redirect to destgrp-5 (FW-internal)
+9
+49156 (FW-internal)
+32271 (Web EPG)
+default (permit any)
+Permit
+9
+Contract2
+32271 (Web EPG)
+32772 (App EPG)
+Permit ICMP only
+Redirect to destgrp-5 (FW-internal)
+7
+49156 (FW-internal)
+32772 (App EPG)
+Permit ICMP only
+Permit
+7
+32772 (App EPG)
+32271 (Web EPG)
+Permit ICMP only
+Redirect to destgrp-5 (FW-internal) with redir_override
+7
+49156 (FW-internal)
+32271 (Web EPG)
+default (permit any*)
+Permit
+9
+* By default, the zoning-rule for the traffic from provider side of the service node to the provider EPG uses default filter (permit any) even though the filter used in the contract is not default filter. This behavior can be changed by using “filter-from-contract” option in the Service Graph.
+For more information about zoning-rules and priorities, please refer to the Contract priorities section in the ACI Contract Guide: https://www.cisco.com/c/en/us/solutions/collateral/data-center-virtualization/application-centric-infrastructure/white-paper-c11-743951.html#Contractpriorities.
+Figure 62 shows how to check the destinations for a redirect destination group (destgrp).
+Figure 62.         
+Check redirect group
+If you check the same information on the APIC and on the leaf nodes in site2, you will see similar outputs with different class IDs because each site uses different class IDs. With ACI Multi-Site, the spines have translation tables to change the class IDs for inter-site traffic so that policy can be maintained consistently across sites (namespace normalization).
+Figure 63 shows the translation tables and class IDs in site1 and site2.
+Figure 63.         
+Translation tables on spine nodes
+Table 6.        EPG class ID translation
+EPG/VRF
+Site1 class ID
+Site1 VRF
+Site2 class ID
+Site2 VRF
+Web EPG
+32271
+3047427
+16387
+2523145
+App EPG
+32772
+3047427
+32773
+2523145
+L3Out EPG
+32773
+3047427
+49155
+2523145
+FW-external
+16388
+3047427
+49157
+2523145
+FW-internal
+49156
+3047427
+49156
+2523145
+Note:      49153 in site1 and 32770 in site2 are the VRF class IDs.
+If you don’t see the traffic in the service node even though you see zoning-rules and translation tables accordingly programmed on the switch nodes, the traffic might be dropped somewhere else or the policy might not be enforced on the leaf node. To check specific forwarding information on each ACI switch node, ELAM (Embedded Logical Analyzer Module) Assistant App is available. For more information, see Cisco ACI App Center: https://dcappcenter.cisco.com/.
+Additional configuration examples
+This section covers configuration examples for the use cases listed below. Because most of the configuration steps are identical to the ones already shown in the example in the previous section using a firewall-only service graph, this section mostly covers configuration considerations, and not all of the detailed steps.
+●      Two-node service graph with firewall and load balancer
+●      Intra-tenant Inter-VRF service graph with firewall only
+●      Inter-tenant inter-VRF service graph with firewall only
+●      Intra-tenant inter-VRF service graph with firewall and load balancer
+Two-node service graph with firewall and load balancer
+This is a two-node service graph deployment example where traffic must be steered through a service-node chain with a firewall and a load balancer. In addition to the configuration required for redirection to the firewall, you also need to configure the L4–L7 logical device and the PBR policy for the load balancer. If the load balancer performs SNAT, a PBR policy for the load balancer is not needed.
+Figure 64.         
+Two-node service graph with firewall and load balancer (east-west)
+Specific configuration considerations for this design are as follows:
+●      Deploy the subnet under the consumer EPG for the east-west service graph.
+●      Configure L4–L7 devices and PBR policies for both the firewall and the load balancer (at the APIC level).
+●      Create a two-node service graph on MSO.
+In addition to an L4–L7 device for the firewall, an L4–L7 device and a PBR policy for the load balancer need to be configured on each APIC domain. Though an active-standby high-availability cluster pair of load balancers should be used in real life deployments, we use one load balancer with one-arm design in this configuration example.
+The location is Tenant > Services > L4-L7 > Devices.
+Figure 65.         
+L4–L7 device for load balancer (APIC in each site)
+If the load balancer doesn’t perform SNAT, in addition to a PBR policy for the firewall, we also need a PBR policy to steer through the load balancer the return flow originated from the real server.
+The location is Tenant > Protocol Policies > L4-L7 Policy Based Redirect.
+Figure 66.         
+PBR policy for load balancer (APIC in each site)
+Create the service graph in MSO template. In this example, we are going to create a service graph with firewall and load balancer.
+The location is Scheme > TEMPLATES > SERVICE GRAPH.
+Figure 67.         
+Create a two-node service graph (MSO template level)
+Associate the service graph with the contract.
+The location is Scheme > TEMPLATES > CONTRACT.
+Figure 68.         
+Associate the service graph with the east-west contract (firewall and load balancer)
+When you click a service node, a pop-up window opens up asking you to select the bridge domains for the consumer and provider connectors. In this this example, both the firewall and load balancer are deployed in one-arm mode. Hence, FW-internal BD is used for both consumer and provider connectors of the firewall, and the LB-onearm BD is used for both consumer and provider connectors of the load balancer.
+Figure 69.         
+Select BDs for the consumer and provider connectors (firewall and load balancer)
+Select the L4-L7 Device for Service Graph. You need to repeat this step for each site-level configuration.
+The location is Scheme > SITE > SERVICE GRAPH.
+  Figure 70.         
+Select the L4–L7 device (MSO site level)
+Select the connectors for each contract where the service graph is applied. You need to repeat this step for each site-level configuration. After that, the template needs to be deployed to the sites.
+The location is Scheme > SITE > CONTRACT > SERVICE GRAPH.
+  Figure 71.         
+Select the cluster interface and the PBR policy (MSO site level)
+Note:      If the load balancer doesn’t perform SNAT, the PBR policy needs to be selected on the provider connector of the load balancer, as shown in Figure 71. If the load balancer performs SNAT, there is no need to associate a PBR policy to the provider or to the consumer connector of the load balancer.
+Intra-tenant inter-VRF service graph with firewall
+This is a specific example of inter-VRF policy enforcement via redirection to a firewall node. The contract scope and BD subnet options need to be configured accordingly, as explained in the rest of this chapter.
+Figure 72.         
+Intra-tenant inter-VRF service graph with firewall
+Note:      The firewall BD can be in either the consumer or the provider VRF.
+Configuration considerations for this design are as follows:
+●      Contract scope must be “application-profile,” “tenant,” or “global” for inter-VRF policy enforcement (since this contact is applied between EPGs belonging to separate VRFs).
+●      The consumer and provider EPG subnet options must be set to “shared between VRFs” for inter-VRF route leak.
+The location is Schema > TEMPLATE > CONTRACT > SCOPE.
+Figure 73.         
+Contract scope setting (MSO template level)
+Since this is an inter-VRF contract, the subnet under the provider EPG must be set (to enable route-leaking) in addition to the subnet under the consumer EPG required for a service graph with ACI Multi-Site. Also, both consumer and provider EPG subnets need to be have “shared between VRF’s” enabled to leak the subnets between VRFs.
+The location is Scheme > TEMPLATE > EPG > GATEWAY IP.
+  Figure 74.         
+Consumer and provider EPG subnet options (MSO template level)
+Figure 75 shows a verification example for inter-VRF route leaking. After the template is deployed, both consumer and provider VRFs should have both consumer and provider subnets.
+Figure 75.         
+Consumer and provider VRFs’ routing tables
+Inter-tenant inter-VRF service graph with firewall
+Figure 76.         
+Inter-tenant inter-VRF service graph with firewall
+Configuration considerations for this design are as follows:
+●      Contract scope must be “global” for inter-tenant inter-VRF policy enforcement.
+●      Consumer and provider EPG subnets’ options must be set to “shared between VRFs” for enabling inter-VRF route-leaking.
+●      Service graph template and contract must be defined in the provider tenant.
+●      L4–L7 device, PBR policy, and service BD must be referable from the provider tenant.
+Note:      General inter-tenant and inter-VRF contracts with PBR consideration are applied to Multi-Site service integrations as well. Please take a look at the inter-VRF configuration examples in the ACI PBR white paper: https://www.cisco.com/c/en/us/solutions/data-center-virtualization/application-centric-infrastructure/white-paper-c11-739971.html#_Toc17153755.
+In this example, a template for provider and a template for consumer are defined in the same schema on MSO. MSO-SG-WP is the template associated to the provider tenant, whereas MSO-SG-WP-consumer is the template used for the consumer tenant. Figure 77 summarizes what is configured in each template.
+Figure 77.         
+Consumer tenant template and provider tenant template (MSO template level)
+Since this is an inter-tenant contract, the contract scope must be global. The contract with global scope is visible from other tenants, thus the consumer EPG can consume that contract.
+The location is Scheme > TEMPLATE > CONTRACT > SCOPE.
+Figure 78.         
+Contract-scope setting in a provider tenant (MSO template level)
+Figure 79.         
+Contract relationship in a consumer tenant (MSO template level)
+The remaining steps are the same as those described for the intra-tenant inter-VRF configuration.
+Intra-tenant inter-VRF service graph with firewall and load balancer
+This is an intra-tenant inter-VRF two-node service graph deployment example. This is the combination of the previous sections: Two-node service graph with firewall and load balancer, and intra-tenant inter-VRF service graph with firewall. Please take a look at the previous sections to understand considerations for each example.
+Figure 80.         
+Intra-tenant inter-VRF service graph with firewall and load balancer
+The additional consideration for this example is the need to leak the VIP address of the load balancer to the consumer VRF if the load balancer BD is in the provider VRF. Otherwise, the consumer endpoint cannot reach the VIP address in the different VRF. Though this sub-section uses intra-tenant inter-VRF service graph, the consideration is applicable to inter-tenant inter-VRF too.
+Note:      This is a general consideration for an inter-VRF contract if you need to allow direct communication between the consumer or provider EPG and the PBR node interface, such as a communication between the consumer EPG and the VIP address of the load balancer. Please take a look at the ACI PBR white paper.
+The configuration location to specify what subnet is leaked to the other VRF is at Scheme > SITE > CONTRACT > SERVICE GRAPH where cluster interfaces and PBR policies are selected. If the service node type is Load Balancer, Add Subnets option is available on the consumer connector.
+Figure 81.         
+Configure the subnet to leak the load balancer subnet to the other VRF (MSO site level)
+By configuring Add Subnets, the subnet is leaked to the consumer VRF as shown below:
+F1-P1-Leaf-101# show in route vrf MSO-SG-WP:vrf1
+<snip>
+10.10.10.0/24, ubest/mbest: 1/0, attached, direct, pervasive
+ *via 10.1.56.64%overlay-1, [1/0], 00:02:28, static, tag 4294967294, rwVnid: vxlan-2097156
+10.10.10.254/32, ubest/mbest: 1/0, attached, pervasive
+ *via 10.10.10.254, vlan69, [0/0], 00:05:03, local, local
+192.168.21.0/24, ubest/mbest: 1/0, attached, direct, pervasive
+ *via 10.1.56.64%overlay-1, [1/0], 00:05:03, static, rwVnid: vxlan-2457601
+In this example, the provider EPG subnet doesn’t have to be leaked to the consumer VRF unless the consumer endpoints need to talk to the provider endpoints directly.
+Other steps are the same as those described for the two-node service graph with firewall and load balancer, and intra-tenant inter-VRF configuration.
+FAQ
+This section covers FAQs.
+Q.  Can we have multiple EPGs consuming or providing the same contract with an attached service graph with PBR?
+A.  Yes, the same considerations apply as for a single-site deployment. Figure 82 illustrates an example. You can even mix a site-local EPG and a stretched EPG across sites, though the service EPG must always be stretched. In the example in Figure 80, EPG2 and EPG4 are providers, and EPG1 and EPG3 are consumers. As of Cisco ACI Release 5.0(2), site-local EPGs such as EPG3 and EPG4 in this example must have at least one contract without PBR with a stretched EPG or a local EPG in different site because of CSCvu23330.
+Figure 82.                              
+Multiple EPGs consuming and providing the same contract with PBR
+Q.  What’s the reason why the EPG subnet must be configured under the consumer EPG for the east-west (EPG-to-EPG) use case?
+A.  It’s to ensure that the provider leaf can always identify the consumer EPG class ID even if the provider leaf has not yet learned the consumer endpoint information (including the class ID of the EPG where it belongs).
+When applying a PBR policy for east-west traffic, it is critical to avoid creating asymmetric traffic paths through the independent service nodes deployed in each site. This can be achieved by “anchoring” the PBR policy enforcement on the provider leaf node. In order to achieve this, it is required to ensure that all the information required to apply the policy (such as the class ID of the destination of the traffic) is known on the provider leaf node at any given point in time. Class ID information for the consumer endpoint can be learned dynamically based on data plane activity, but since, as discussed below, there may be scenarios where this cannot be guaranteed, it becomes mandatory to statically configure under the consumer EPG the IP prefix “covering” all the endpoints that are part of that EPG and thus install that prefix (and the associated consumer EPG class ID) on the provider leaf.
+The example in Figure 83 shows this function in the simple “network-centric” scenario where the entire IP prefix 10.10.11.0/24 can be used to identify the endpoints part of the consumer EPG Web. Even if the flow is initiated from the provider endpoint (hence, before the consumer endpoint information can even be learned based on data-plane activity), the installation of the 10.10.11.0/24 prefix (and associated class ID) ensures that the PBR policy can be applied on the provider leaf node (please refer to Table 4, above, for the zoning-rules, which explain the use of the “redir_override” option to avoid PBR policy enforcement on the consumer leaf).
+Figure 83.                              
+East-west traffic flow example (provider-to-consumer)
+Since, based on the current implementation, the consumer leaf doesn’t apply policy on the consumer-to-provider direction if the destination is not learned locally because of “redir_override," the PBR enforcement for the consumer-to-provider return flow is applied on the provider leaf, causing the redirection also of the return flow to the service node deployed in Site 2 (Figure 84).
+Figure 84.                              
+East-west traffic flow example (consumer-to-provider)
+In the example shown above, it was simple to define an IP prefix identifying all the endpoints part of the consumer EPG, since it was a “network-centric” approach where the consumer EPG was the only EPG part of the BD where that IP subnet was defined. This may not be the case in more “application-centric” deployments where multiple EPGs are part of the same BD and hence the endpoints addressed from the BD subnet do not belong to a single EPG. In that case, it may become more challenging to define an IP prefix identifying only the endpoints part of the specific consumer EPG (you also need to keep in mind the defect CSCwa08796, which prevents configuring a set of specific /32 or /128 prefixes).
+What would happen if the prefix under the consumer EPG was not configured? Although MSO prevents east-west service graph configuration without such configuration (to prevent the issue discussed below), if there is no consumer EPG subnet information on the provider leaf, and the provider leaf doesn’t learn the consumer endpoint based on data plane traffic, a traffic flow initiated from the provider endpoint could only be enforced on the consumer leaf, as illustrated in Figure 85.
+Figure 85.                              
+East-west traffic flow example
+The return flow could then only be applied on the provider leaf (for the reasons previously explained above), causing the redirection of the traffic to the service node deployed in Site 2 (Figure 86). The end result is the creation of an asymmetric traffic paths, causing a drop of stateful communication.
+Figure 86.                              
+East-west traffic flow example (BAD example: return flow)
+A typical objection to what is discussed above is that communication is typically initiated from the consumer endpoint, and this would eventually lead to get its information dynamically learned on the provider leaf node (removing the asymmetric behavior shown in figures 85 or 86). Unfortunately, this cannot be deterministically guaranteed, because there are scenarios where:
+●      There is no direct communication from the consumer endpoint to the provider endpoint, as, for example:
+◦    Load balancer or other service device that performs NAT is inserted between the consumer and the provider endpoints with unidirectional PBR. (For example, the consumer endpoint sends traffic to a VIP on the load balancer, then the traffic arrives on the provider leaf. In that case, even if the source IP is the consumer endpoint IP, the provider leaf doesn't learn the consumer endpoint IP as a remote endpoint because data-plane IP learning is disabled on the service EPG for the load balancer).
+●      The remote consumer IP endpoint will be aged out due to an aging timer (for example, there may be a long-lived TCP session, and communication happens only once per a 10-minute or longer interval). Until the consumer IP endpoint is re-learnt, the asymmetric behavior happens.
+●      The consumer endpoint information cannot be learned on the provider leaf node, as, for example:
+◦    The user explicitely disables data-plane IP learning (through the specific APIC configuration knob).
+◦    Deployment of intersite L3Out that prevents remote endpoint learning on the border leaf nodes.
+◦    Reaching the single leaf endpoints scale limit, preventing the learning of new endpoint information.
+●      There are deployments where the definition of a “consumer” and “provider” side in the contract relationship between EPGs does not necessarily reflect how traffic flows are initiated (for example, there can be TCP servers residing in the consumer EPG and TCP clients in the Provider EPG).
+Q.  Would an inter-tenant inter-VRF design work?
+A.  Yes, though north-south service insertion doesn’t support inter-VRF. Please take a look at Additional configuration examples.
+Q.  Can we use a managed-mode service graph?
+A.  No, Multi-site supports unmanaged-mode service graphs only. Starting from Cisco ACI Release 5.2(1), APIC supports unmanaged-mode service graphs only.
+Q.  Can we redirect traffic to a service node in a different site?
+A.  No, the use of a PBR destination in a remote site is not supported. Each site must deploy local service node(s).
+Q.  Can a service graph integration work with GOLF L3Outs?
+A.  Yes, though using host-route advertisement is mandatory if a BD is stretched.
+Q.  Do we have scale considerations?
+A.  Please take a look at the Cisco ACI verified scalability guide: https://www.cisco.com/c/en/us/support/cloud-systems-management/application-policy-infrastructure-controller-apic/tsd-products-support-series-home.html.
+Q.  Can we use vzAny?
+A.  As of Cisco ACI Release 5.2(3), vzAny with PBR is not supported in MSO.
+Q.  Can the VIP of the load balancer be defined outside of the Self IP BD subnet?
+A.  Yes. In that case, L3Out is required for announcing VIP reachability to the fabric. Also, SNAT is mandatory because MSO service graph doesn’t support the use of an L3Out as a service-node connector as of Cisco ACI Release 5.2(3).
+Conclusion
+There are three different deployment models to integrate service nodes with Cisco ACI Multi-Site fabrics:
+1.     Independent active/standby service node pair in each site (recommended)
+2.     Active/standby service node pair connected to separate sites (not recommended)
+3.     Active/active service node cluster stretched across separate sites (not recommended and not supported)
+The use of PBR is the recommended approach to integrate independent firewall pairs connected to separate sites.
+The options and considerations are summarized in Table 7.
+Table 7.        Service integration modes for Cisco ACI Multi-Site fabric
+Service node
+Independent service node in each site (recommended)
+Transparent (L1/L2) mode firewall
+Yes
+●  ACI is gateway; use PBR **
+Routed mode (L3) firewall
+Yes
+●  ACI is gateway; use PBR
+or
+●  Connect firewall as an L3Out external device with host-route advertisement (north-south)
+Routed mode
+load balancer
+Yes
+●  NAT on load balancer
+or
+●  ACI is gateway; use PBR for return traffic *
+Table 8.        Where PBR policy is enforced
+Scenario
+Cisco ACI Release 3.2
+Cisco ACI Release 4.0 onward
+North-south (L3Out EPG to EPG) intra-VRF. ingress enforcement
+Compute leaf
+Compute leaf
+North-south (L3Out EPG to EPG) inter-VRF
+Not supported
+Consumer leaf (The L3Out EPG must be the provider) ***
+East-west (EPG to EPG) intra-VRF
+Consumer leaf
+Provider leaf
+East-west (EPG to EPG) inter-VRF
+Consumer leaf
+Provider leaf
+* Requires Cisco ACI Release 4.0 or later.
+**Requires Cisco ACI Release 4.1 or later.
+***Requires Cisco ACI Release 4.2(5), 5.1(1) or later.
+For more information
+https://www.cisco.com/c/en/us/solutions/data-center-virtualization/application-centric-infrastructure/white-paper-listing.html
+https://www.cisco.com/c/en/us/solutions/collateral/data-center-virtualization/application-centric-infrastructure/white-paper-c11-737855.html
+https://www.cisco.com/c/en/us/solutions/data-center-virtualization/application-centric-infrastructure/white-paper-c11-739971.html
+https://www.cisco.com/c/en/us/solutions/collateral/data-center-virtualization/application-centric-infrastructure/white-paper-c11-739609.html
+     

@@ -1,0 +1,280 @@
+Configuration Examples and TechNotes
+Configure ISE 2.0 and Encrypt AnyConnect 4.2 Posture BitlLocker Encryption
+Save
+Translations
+Print
+Updated:June 26, 2018
+Document ID:200271
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Configure
+Network Diagram
+ASA
+BitLocker on Windows 7
+ISE
+Step 1. Network Device
+Step 2. Posture Condition and Policies
+Step 3. Client Provisioning Resources and Policy
+Step 4. Authorization Rules
+Verify
+Step 1. VPN Session Establishment
+Step 2. Client Provisioning
+Step 3. Posture Check and CoA
+Bugs
+Troubleshoot
+Related Information
+Introduction
+This document describes how to encrypt endpoint's disk partition with the use of Microsoft BitLocker and how to configure Cisco Identity Services Engine (ISE) in order to provide full access to the network, only when the correct encryption is configured. Cisco ISE version 2.0 along with AnyConnect Secure Mobility Client 4.2 supports posture for disk encryption.
+Prerequisites
+Requirements
+Cisco recommends that you have knowledge of these topics:
+Adaptive Security Appliance (ASA) CLI configuration and Secure Socket Layer (SSL) VPN configuration
+Remote access VPN configuration on the ASA
+ISE and posture services
+Components Used
+The information in this document is based on these software versions:
+Cisco ASA software versions 9.2.1 and later
+Microsoft Windows Version 7 with Cisco AnyConnect Secure Mobility Client Version 4.2 and later
+Cisco ISE, Release 2.0 and later
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, ensure that you understand the potential impact of any command.
+Configure
+Network Diagram
+The flow is as follows:
+VPN session initiated by AnyConnect client is authenticated via ISE. Posture status of the endpoint is not known, rule ASA VPN unknown is hit and as a result the session is redirected to the ISE for provisioning
+User opens web browser, HTTP traffic is redirected by ASA to ISE. ISE pushes the newest version of AnyConnect along with posture and compliance module to the endpoint
+Once posture module is executed, it checks if partition E: is fully encrypted by BitLocker. If yes, the report is sent to ISE which triggers Radius Change of Authorization (CoA) without any ACL (full access)
+VPN session on ASA is updated, redirect ACL is removed and the session has full access
+VPN session is presented as an example. Posture functionality works fine too for other types of the access.
+ASA
+It is configured from remote SSL VPN access with the use of ISE as Authentication, Authorization, and Accounting (AAA) server. Radius CoA along with REDIRECT ACL needs to be configured:
+aaa-server ISE20 protocol radius
+ authorize-only
+ interim-accounting-update periodic 1
+ dynamic-authorization
+aaa-server ISE20 (inside) host 10.48.17.235
+ key cisco
+
+tunnel-group TAC type remote-access
+tunnel-group TAC general-attributes
+ address-pool POOL
+authentication-server-group ISE20
+ accounting-server-group ISE20
+ default-group-policy AllProtocols
+tunnel-group TAC webvpn-attributes
+ group-alias TAC enable
+
+group-policy AllProtocols internal
+group-policy AllProtocols attributes
+ vpn-tunnel-protocol ikev1 ikev2 ssl-client ssl-clientless
+
+webvpn
+ enable outside
+ anyconnect image disk0:/anyconnect-win-4.2.00096-k9.pkg 1
+ anyconnect enable
+ tunnel-group-list enable
+ error-recovery disable
+
+access-list REDIRECT extended deny udp any any eq domain 
+access-list REDIRECT extended deny ip any host 10.48.17.235 
+access-list REDIRECT extended deny icmp any any 
+access-list REDIRECT extended permit tcp any any eq www
+
+ip local pool POOL 172.16.31.10-172.16.31.20 mask 255.255.255.0
+For more details refer:
+AnyConnect 4.0 Integration with ISE Version 1.3 Configuration Example
+BitLocker on Windows 7
+Navigate to Control Panel > System and Security > BitLocker Drive Encryption, enable E: partition encryption. Protect it by password (PIN) as shown in the image.
+Once it is encrypted, mount it (with the provision of the password) and ensure that it is accessible as shown in the image.
+For more details, follow Microsoft documentation:
+Windows BitLocker Drive Encryption Step-by-Step Guide
+ISE
+Step 1. Network Device
+Navigate to Administration > Network Resources > Network Devices, Add ASA with Device Type = ASA. This is used as a condition in the authorization rules but it is not mandatory (other types of conditions can be used).
+If appropriate, Network Device Group does not exist. In order to create, navigate to Administration > Network Resources > Network Device Groups.
+Step 2. Posture Condition and Policies
+Ensure posture conditions are updated: Navigate to Administration > System > Settings > Posture > Updates > Update Now.
+Navigate to Policy > Policy Elements > Conditions > Posture > Disk Encryption Condition, add a new condition as shown in the image.
+This condition checks if BitLocker for Windows 7 is installed and if E: partition is fully encrypted.
+Note: BitLocker is disk level encryption and it does not support Specific Location with path argument, only disk letter.
+Navigate to Policy > Policy Elements > Results > Posture > Requirements in order to create a new requirement which uses the condition as shown in the image.
+Navigate to Policy > Posture, add a condition for all Windows in order to use the requirement as shown in the image.
+Step 3. Client Provisioning Resources and Policy
+Navigate to Policy > Policy Elements > Client Provisioning > Resources, download Compliance Module from Cisco.com and manually upload AnyConnect 4.2 package as shown in the image.
+Navigate to Add > NAC Agent or AnyConnect Posture Profile, create AnyConnect Posture profile (name: AnyConnectPosture) with default settings.
+Navigate to Add > AnyConnect Configuration, add AnyConnect profile (name: AnyConnect Configuration) as shown in the image.
+Navigate to Policy > Client Provisioning and modify default policy for Windows in order to use configured AnyConnect profile as shown in the image.
+Step 4. Authorization Rules
+Navigate to Policy > Policy Elements > Results > Authorization, add Authorization Profile (name: RedirectForPosture) which redirects to a default Client Provisioning Portal as shown in the image.
+REDIRECT ACL is defined on ASA.
+Navigate to Policy > Authorization, create 3 authorization rules as shown in the image.
+If the endpoint is compliant, full access is provided. If status is unknown or non compliant, redirection for Client Provisioning is returned.
+Verify
+Use this section in order to confirm that your configuration works properly.
+Step 1. VPN Session Establishment
+Once the VPN session is established, ASA might want to perform an upgrade of AnyConnect modules as shown in the image.
+On ISE the last rule is hit, as a result RedirectForPosture permissions are returned as shown in the image.
+Once ASA finishes building the VPN session, it reports that redirection must occur:
+ASAv# show vpn-sessiondb detail anyconnect 
+
+Session Type: AnyConnect Detailed
+
+Username     : cisco                  Index        : 32
+Assigned IP  : 172.16.31.10           Public IP    : 10.61.90.226
+Protocol     : AnyConnect-Parent SSL-Tunnel DTLS-Tunnel
+License      : AnyConnect Premium
+Encryption   : AnyConnect-Parent: (1)none  SSL-Tunnel: (1)AES256  DTLS-Tunnel: (1)AES256
+Hashing      : AnyConnect-Parent: (1)none  SSL-Tunnel: (1)SHA384  DTLS-Tunnel: (1)SHA1
+Bytes Tx     : 53201                  Bytes Rx     : 122712
+Pkts Tx      : 134                    Pkts Rx      : 557
+Pkts Tx Drop : 0                      Pkts Rx Drop : 0
+Group Policy : AllProtocols           Tunnel Group : TAC
+Login Time   : 21:29:50 UTC Sat Nov 14 2015
+Duration     : 0h:56m:53s
+Inactivity   : 0h:00m:00s
+VLAN Mapping : N/A                    VLAN         : none
+Audt Sess ID : c0a80101000200005647a7ce
+Security Grp : none
+
+<some output omitted for clarity>
+
+ISE Posture:
+  Redirect URL : https://mgarcarz-ise20.example.com:8443/portal/gateway?sessionId=&portal=0d2ed780-6d90-11e5-978e-00505...
+  Redirect ACL : REDIRECT
+Step 2. Client Provisioning
+At that stage, endpoint web browser traffic is redirected to ISE for client provisioning as shown in the image.
+If needed, AnyConnect along with Posture and compliance module is updated as shown in the image.
+Step 3. Posture Check and CoA
+Posture module is executed, discover ISE (it might require to have DNS A record for enroll.cisco.com in order to succeed), download and check posture conditions as shown in the image.
+Once it is confirmed that E: partition is fully encrypted by BitLocker, the correct report is sent to ISE as shown in the image.
+This triggers CoA to reauthorize VPN session, as shown in the image.
+ASA removes redirection ACL which provides full access. AnyConnect reports compliance as shown in the image.
+Also, detailed reports on ISE can confirm that both conditions are satisfied (Posture Assesment by Condition is the new ISE 2.0 report that shows every condition). The first condition (hd_inst_BitLockerDriveEncryption_6_x) checks for the installation/process, the second one (hd_loc_bitlocker_specific_1) checks if specific location (E:) is fully encrypted as shown in the image.
+ISE Posture Assesment by Endpoint report confirms that all the conditions are satisfied, as shown in the image.
+The same can be confirmed from ise-psc.log debugs. Posture request received by ISE and the response:
+2015-11-14 14:59:01,963 DEBUG  [portal-http-service28][] cisco.cpm.posture.runtime.PostureHandlerImpl -::c0a801010001700056473ebe:::- Received posture request [parameters: reqtype=validate, userip=10.62.145.44, clientmac=08-00-27-81-50-86, os=WINDOWS, osVerison=1.2.1.6.1.1, architecture=9, provider=Device Filter, state=, ops=1, avpid=, avvname=Microsoft Corp.:!::!::!:, avpname=Windows Defender:!::!::!:, avpversion=6.1.7600.16385:!::!::!:, avpfeature=AS:!::!::!:, userAgent=Mozilla/4.0 (compatible; WINDOWS; 1.2.1.6.1.1; AnyConnect Posture Agent v.4.2.00096), session_id=c0a801010001700056473ebe
+2015-11-14 14:59:01,963 DEBUG  [portal-http-service28][] cisco.cpm.posture.runtime.PostureHandlerImpl -:cisco:c0a801010001700056473ebe:::- Creating a new session info for mac 08-00-27-81-50-86
+2015-11-14 14:59:01,963 DEBUG  [portal-http-service28][] cisco.cpm.posture.runtime.PostureHandlerImpl -:cisco:c0a801010001700056473ebe:::- Turning on enryption for endpoint with mac 08-00-27-81-50-86 and os WINDOWS, osVersion=1.2.1.6.1.1
+2015-11-14 14:59:01,974 DEBUG  [portal-http-service28][] cpm.posture.runtime.agent.AgentXmlGenerator -:cisco:c0a801010001700056473ebe:::- Agent criteria for rule [Name=bitlocker, Description=, Operating Systems=[Windows All], Vendor=com.cisco.cpm.posture.edf.AVASVendor@96b084e, Check Type=Installation, Allow older def date=0, Days Allowed=Undefined, Product Name=[com.cisco.cpm.posture.edf.AVASProduct@44870fea]] -  (  ( (hd_inst_BitLockerDriveEncryption_6_x) )  & (hd_loc_bitlocker_specific_1) )
+
+The response with the posture requirement (condition + remediation) is in XML format:
+2015-11-14 14:59:02,052 DEBUG  [portal-http-service28][] cisco.cpm.posture.runtime.PostureHandlerImpl -:cisco:c0a801010001700056473ebe:::- NAC agent xml <?xml version="1.0" encoding="UTF-8"?><cleanmachines>
+  <version>2</version>
+  <encryption>0</encryption>
+  <package>
+    <id>10</id>
+    <name>Bitlocker</name>
+    <version/>
+    <description>Bitlocker encryption not enabled on the endpoint. Station not compliant.</description>
+    <type>3</type>
+    <optional>0</optional>
+    <action>3</action>
+    <check>
+      <id>hd_loc_bitlocker_specific_1</id>
+      <category>10</category>
+      <type>1002</type>
+      <param>180</param>
+      <path>E:</path>
+      <value>full</value>
+      <value_type>2</value_type>
+    </check>
+    <check>
+      <id>hd_inst_BitLockerDriveEncryption_6_x</id>
+      <category>10</category>
+      <type>1001</type>
+      <param>180</param>
+      <operation>regex match</operation>
+      <value>^6\..+$|^6$</value>
+      <value_type>3</value_type>
+    </check>
+    <criteria>( (  ( (hd_inst_BitLockerDriveEncryption_6_x) )  &amp; (hd_loc_bitlocker_specific_1) ) )</criteria>
+  </package>
+</cleanmachines>
+After encrypted report is received by ISE:
+2015-11-14 14:59:04,816 DEBUG  [portal-http-service28][] cisco.cpm.posture.runtime.PostureHandlerImpl -:cisco:c0a801010001700056473ebe:::- Decrypting report
+2015-11-14 14:59:04,817 DEBUG  [portal-http-service28][] cisco.cpm.posture.runtime.PostureHandlerImpl -:cisco:c0a801010001700056473ebe:::- Decrypted report [[ <report><version>1000</version><encryption>0</encryption><key></key><os_type>WINDOWS</os_type><osversion>1.2.1.6.1.1</osversion><build_number>7600</build_number><architecture>9</architecture><user_name>[device-filter-AC]</user_name><agent>x.y.z.d-todo</agent><sys_name>ADMIN-KOMPUTER</sys_name><sys_user>admin</sys_user><sys_domain>n/a</sys_domain><sys_user_domain>admin-Komputer</sys_user_domain><av><av_vendor_name>Microsoft Corp.</av_vendor_name><av_prod_name>Windows Defender</av_prod_name><av_prod_version>6.1.7600.16385</av_prod_version><av_def_version>1.141.3676.0</av_def_version><av_def_date>01/11/2013</av_def_date><av_prod_features>AS</av_prod_features></av><package><id>10</id><status>1</status><check><chk_id>hd_loc_bitlocker_specific_1</chk_id><chk_status>1</chk_status></check><check><chk_id>hd_inst_BitLockerDriveEncryption_6_x</chk_id><chk_status>1</chk_status></check></package></report> ]]
+Station is marked as compliant and ISE sends CoA:
+2015-11-14 14:59:04,823 INFO   [portal-http-service28][] cisco.cpm.posture.runtime.PostureManager -:cisco:c0a801010001700056473ebe:::- Posture state is compliant for endpoint with mac 08-00-27-81-50-86
+2015-11-14 14:59:06,825 DEBUG  [pool-5399-thread-1][] cisco.cpm.posture.runtime.PostureCoA -:cisco:c0a801010000f0005647358b:::- Posture CoA is triggered for endpoint [08-00-27-81-50-86] with session [c0a801010001700056473ebe
+Also, the final configuration is sent by ISE:
+2015-11-14 14:59:04,827 DEBUG  [portal-http-service28][] cisco.cpm.posture.runtime.PostureHandlerImpl -:cisco:c0a801010001700056473ebe:::- Sending response to endpoint 08-00-27-81-50-86 http response [[ <!--X-Perfigo-DM-Error=0--><!--error=0--><!--X-Perfigo-DmLogoff-Exit=0--><!--X-Perfigo-Gp-Update=0--><!--X-Perfigo-Auto-Close-Login-Scr=0--><!--X-Perfigo-Auto-Close-Login-Scr-Time=0--><!--user role=--><!--X-Perfigo-OrigRole=--><!--X-Perfigo-UserKey=dummykey--><!--X-Perfigo-RedirectUrl=--><!--X-Perfigo-ShowInfo=--><!--X-Perfigo-Session=--><!--X-Perfigo-SSO-Done=1--><!--X-Perfigo-Provider=Device Filter--><!--X-Perfigo-UserName=cisco--><!--X-Perfigo-DHCP-Release-Delay=4--><!--X-Perfigo-DHCP-Renew-Delay=1--><!--X-Perfigo-Client-MAC=08:00:27:81:50:86--> ]]
+These steps can be also confirmed from the client side (AnyConnect DART):
+Date        : 11/14/2015
+Time        : 14:58:41
+Type        : Warning
+Source      : acvpnui
+
+Description : Function: Module::UpdateControls
+File: .\Module.cpp
+Line: 344
+No matching element found for updating: [System Scan], [label], [nac_panel_message_history], [Scanning system ... ] 
+
+******************************************
+
+Date        : 11/14/2015
+Time        : 14:58:43
+Type        : Warning
+Source      : acvpnui
+
+Description : Function: Module::UpdateControls
+File: .\Module.cpp
+Line: 344
+No matching element found for updating: [System Scan], [label], [nac_panel_message_history], [Checking requirement 1 of 1. ]
+
+******************************************
+
+Date        : 11/14/2015
+Time        : 14:58:46
+Type        : Warning
+Source      : acvpnui
+
+Description : Function: CNacApiShim::PostureNotification
+File: .\NacShim.cpp
+Line: 461
+Clearing Posture List.
+For successful session, AnyConnect UI System Scan / Message History reports:
+     14:41:59    Searching for policy server.
+     14:42:03    Checking for product updates...
+     14:42:03    The AnyConnect Downloader is performing update checks...
+     14:42:04    Checking for profile updates...
+     14:42:04    Checking for product updates...
+     14:42:04    Checking for customization updates...
+     14:42:04    Performing any required updates...
+     14:42:04    The AnyConnect Downloader updates have been completed.
+     14:42:03    Update complete.
+     14:42:03    Scanning system ... 
+     14:42:05    Checking requirement 1 of 1. 
+     14:42:05    Updating network settings. 
+     14:42:10    Compliant.
+
+Bugs
+CSCux15941 - ISE 2.0 and AC4.2 posture bitlocker encryption with location failing (char \ / not supported)
+Troubleshoot
+This section provides information you can use in order to troubleshoot your configuration.
+If the endpoint is non-compliant, it is reported by AnyConnect UI (also configured remediation is executed) as shown in the image.
+ISE is able to provide the details on the failing conditions, as shown in the image.
+The same can be checked from the CLI logs (examples of the logs in section Verify).
+Related Information
+Configuring an External Server for Security Appliance User Authorization
+Cisco ASA Series VPN CLI Configuration Guide, 9.1
+Cisco Identity Services Engine Administrator Guide, Release 2.0
+Technical Support & Documentation - Cisco Systems
+Contributed by Cisco Engineers
+Michal Garcarz
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Configure EAP-TLS Authentication with ISE
+Perform Password Recovery for ISE Command Line Interface (CLI)
+Install Patch on ISE
++ Show 1 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine
+Secure Client (including AnyConnect)

@@ -1,0 +1,718 @@
+Configuration Examples and TechNotes
+Configure ISE 2.2 IPSEC to Secure NAD (ASA) Communication
+Save
+Translations
+Download
+Print
+
+
+
+Updated:March 30, 2017
+Document ID:210520
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Background Information
+ISE IPSec Architecture
+Configure
+Network Diagram
+ASA Configuration
+Configure the ASA Interfaces
+Configure the IKEv1 Policy and Enable IKEv1 on the Outside Interface
+Configure the Tunnel Group (LAN-to-LAN Connection Profile)
+Configure the ACL for the VPN Traffic of Interest
+Configure the IKEv1 Transform Set
+Configure a Crypto Map and Apply it to an Interface
+ASA Final Configuration
+ISE Configuration
+Configure IP address on  ISE
+Add NAD to IPSec Group on ISE
+Enable IPSEC on ISE
+Verify
+ASA
+ESR
+ISE
+Troubleshoot
+Configure FlexVPN Site-to-Site (DVTI to Crypto Map) between NAD and ISE 2.2
+ASA Configuration
+ESR Configuration on ISE
+FlexVPN Design Considerations
+Introduction
+This document describes how to configure and troubleshoot RADIUS IPSEC to secure Cisco Identity Service Engine (ISE) 2.2 - Network Access Device (NAD) communication. RADIUS traffic should be encrypted within site-to-site (LAN-to-LAN) IPSec Internet Key Exchange Version 1 and 2 (IKEv1 and IKEv2) tunnel between Adaptive Security Appliance (ASA) and ISE. This document does not cover AnyConnect SSL VPN configuration part.
+Prerequisites
+Requirements
+Cisco recommends that you have knowledge of these topics:
+ISE
+Cisco ASA
+General IPSec concepts
+General RADIUS concepts
+Components Used
+The information in this document is based on these software and hardware versions:
+Cisco 5515-X Series ASA  that runs software Version 9.4(2)11
+Cisco Identity Service Engine version 2.2
+Windows 7 Service Pack 1
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, make sure that you understand the potential impact of any command.
+Background Information
+The objective is to secure protocols which use insecure MD5 hash, Radius and TACACS with IPSec. Take this into consideration:
+Cisco ISE supports IPSec in Tunnel and Transport modes.
+When you enable IPSec on a Cisco ISE interface, an IPSec tunnel is created between Cisco ISE and the NAD to secure the communication.
+You can define a pre-shared key or use X.509 certificates for IPSec authentication.
+IPSec can be enabled on Eth1 through Eth5 interfaces. You can configure IPSec on only one Cisco ISE interface per PSN.
+ISE IPSec Architecture
+Once encrypted packets are received by GE-1 ISE interface ESR intercepts them on Eth0/0 interface.
+interface Ethernet0/0
+ description e0/0->connection to external NAD
+ ip address 10.48.26.170 255.255.255.0
+ ip nat outside
+ ip virtual-reassembly in
+ no ip route-cache
+ crypto map radius
+ESR decrypts them and according to preconfigured NAT rules performs address translation. Outgoing (towards NAD) RADIUS/TACACS packets are translated to Ethernet0/0 interface address and encrypted afterwards.
+ip nat inside source list 1 interface Ethernet0/0 overload
+ip nat inside source static udp 10.1.1.2 1645 interface Ethernet0/0 1645
+ip nat inside source static udp 10.1.1.2 1646 interface Ethernet0/0 1646
+ip nat inside source static udp 10.1.1.2 1812 interface Ethernet0/0 1812
+ip nat inside source static udp 10.1.1.2 1813 interface Ethernet0/0 1813
+ip nat inside source static tcp 10.1.1.2 49 interface Ethernet0/0 49
+access-list 1 permit 10.1.1.0 0.0.0.3
+Packets which are destined to Eth0/0 interface on RADIUS/TACACS ports should be forwared via Eth0/1 interface to 10.1.1.2 ip address, which is internal address of ISE. ESR configuration of Eth0/1
+interface Ethernet0/1
+ description e0/1->tap0 internal connection to ISE
+ ip address 10.1.1.1 255.255.255.252
+ ip nat inside
+ ip virtual-reassembly in
+ no ip route-cache
+ISE configuration of internal Tap-0 interface:
+ISE22-1ek/admin# show interface | b tap0
+tap0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 10.1.1.2  netmask 255.255.255.252  broadcast 10.1.1.3
+        inet6 fe80::6c2e:37ff:fe5f:b609  prefixlen 64  scopeid 0x20<link>
+        ether 6e:2e:37:5f:b6:09  txqueuelen 500  (Ethernet)
+        RX packets 81462  bytes 8927953 (8.5 MiB)
+        RX errors 0  dropped 68798  overruns 0  frame 0
+        TX packets 105  bytes 8405 (8.2 KiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+Configure
+This section describes how to complete the ASA CLI and ISE configurations.
+Network Diagram
+The information in this document uses this network setup:
+ASA Configuration
+Configure the ASA Interfaces
+If the ASA interface/interfaces are not configured, ensure that you configure at least the IP address, interface name, and security-level:
+interface GigabitEthernet0/0
+ nameif outside
+ security-level 100
+ ip address 10.48.66.202 255.255.254.0
+Configure the IKEv1 Policy and Enable IKEv1 on the Outside Interface
+In order to configure the Internet Security Association and Key Management Protocol (ISAKMP) policies for the IKEv1 connections, enter the crypto ikev1 policy <priority> command:
+crypto ikev1 policy 20
+ authentication pre-share
+ encryption aes
+ hash sha
+ group 5
+ lifetime 86400
+Note: An IKEv1 policy match exists when both of the policies from the two peers contain the same authentication, encryption, hash, and Diffie-Hellman parameter values. For IKEv1, the remote peer policy must also specify a lifetime less than or equal to the lifetime in the policy that the initiator sends. If the lifetimes are not identical, then the ASA uses the shorter lifetime. 
+You must enable IKEv1 on the interface that terminates the VPN tunnel. Typically, this is the outside (or public) interface. In order to enable IKEv1, enter the crypto ikev1 enable <interface-name> command in global configuration mode:
+crypto ikev1 enable outside 
+Configure the Tunnel Group (LAN-to-LAN Connection Profile)
+For a LAN-to-LAN tunnel, the connection profile type is ipsec-l2l. In order to configure the IKEv1 preshared key, enter the tunnel-group ipsec-attributes configuration mode:
+tunnel-group 10.48.26.170 type ipsec-l2l
+tunnel-group 10.48.26.170 ipsec-attributes
+ ikev1 pre-shared-key Krakow123
+Configure the ACL for the VPN Traffic of Interest
+The ASA uses Access Control Lists (ACLs) in order to differentiate the traffic that should be protected with IPSec encryption from the traffic that does not require protection. It protects the outbound packets that match a permit Application Control Engine (ACE) and ensures that the inbound packets that match a permit ACE have protection.
+access-list 101 extended permit ip host 10.48.66.202 host 10.48.26.170 
+Note: An ACL for VPN traffic uses the source and destination IP addresses after Network Address Translation (NAT). The only traffic encrypted in this case is traffic between ASA and ISE.
+Configure the IKEv1 Transform Set
+An IKEv1 transform set is a combination of security protocols and algorithms that define the way that the ASA protects data. During IPSec Security Association (SA) negotiations, the peers must identify a transform set or proposal that is the same for both of the peers. The ASA then applies the matched transform set or proposal in order to create an SA that protects data flows in the access list for that crypto map.
+In order to configure the IKEv1 transform set, enter the crypto ipsec ikev1 transform-set command:
+crypto ipsec ikev1 transform-set SET2 esp-aes esp-sha-hmac 
+Configure a Crypto Map and Apply it to an Interface
+A crypto map defines an IPSec policy to be negotiated in the IPSec SA and includes:
+An access list in order to identify the packets that the IPSec connection permits and protects
+Peer identification
+A local address for the IPSec traffic
+The IKEv1 transform sets
+Here is an example:
+crypto map MAP 20 match address 101
+crypto map MAP 20 set peer 10.48.26.170 
+crypto map MAP 20 set ikev1 transform-set SET2
+You can then apply the crypto map to the interface:
+crypto map MAP interface outside
+ASA Final Configuration
+Here is the final configuration on the ASA:
+interface GigabitEthernet0/0
+ nameif outside
+ security-level 0
+ ip address 10.48.66.202 255.255.254.0
+!
+!
+access-list 101 extended permit ip host 10.48.66.202 host 10.48.26.170 
+!
+crypto ipsec ikev1 transform-set SET2 esp-aes esp-sha-hmac 
+!
+crypto map MAP 20 match address 101
+crypto map MAP 20 set peer 10.48.26.170 
+crypto map MAP 20 set ikev1 transform-set SET2
+crypto map MAP interface outside
+ISE Configuration
+Configure IP address on  ISE
+Address should be configured on interface GE1-GE5 from the CLI, GE0 is not supported.
+interface GigabitEthernet 1
+  ip address 10.48.26.170 255.255.255.0
+  ipv6 address autoconfig
+  ipv6 enable
+Note: Application restarts after IP address is configured on the interface:
+% Changing the IP address might cause ISE services to restart
+Continue with IP address change?  Y/N [N]: Y
+Add NAD to IPSec Group on ISE
+
+Navigate to Administration > Network Resources > Network Devices. Click on Add. Ensure you configure the Name, IP Address, Shared Secret. To terminate IPSec tunnel from the NAD select YES against IPSEC Network Device Group.
+Once NAD is added, additional route should be created on ISE, to ensure that RADIUS traffic goes through ESR and gets encrypted:
+ip route 10.48.66.202 255.255.255.255 gateway 10.1.1.1
+Enable IPSEC on ISE
+
+Navigate to Administration > System > Settings. Click on Radius and furhter on IPSEC. Select PSN (Single/Multiple/All) Select Enable option, pick the Interface and Select Authentication Method. Click Save. Services restart on the selected node at this point.
+Note, that after services restart ISE CLI configuration shows configured interface without IP address and in shutdown state, it is expected as ESR (Embedded Services Router) takes control of ISE interface.
+interface GigabitEthernet 1
+  shutdown
+  ipv6 address autoconfig
+  ipv6 enable
+Once services are restarted, ESR functionality is enabled. To login to ESR type esr in the command line:
+ISE22-1ek/admin# esr
+% Entering ESR 5921 shell
+% Cisco IOS Software, C5921 Software (C5921_I86-UNIVERSALK9-M), Version 15.5(2)T2, RELEASE SOFTWARE (fc3)
+% Technical Support: http://www.cisco.com/techsupport
+% Copyright (c) 1986-2015 Cisco Systems, Inc.
+
+Press RETURN to get started, <CTRL-C> to exit
+
+ise-esr5921>en
+ise-esr5921#
+ESR is comes up with the following crypto configuration:
+crypto keyring MVPN-spokes
+  pre-shared-key address 0.0.0.0 0.0.0.0 key Krakow123
+!
+crypto isakmp policy 10
+ encr aes
+ hash sha256
+ authentication pre-share
+ group 16
+!
+crypto isakmp policy 20
+ encr aes
+ hash sha256
+ authentication pre-share
+ group 14
+!
+crypto isakmp key Krakow123 address 0.0.0.0
+!
+crypto isakmp profile MVPN-profile
+   description LAN-to-LAN for spoke router(s) connection
+   keyring MVPN-spokes
+   match identity address 0.0.0.0
+!
+crypto ipsec transform-set radius esp-aes esp-sha256-hmac
+ mode tunnel
+crypto ipsec transform-set radius-2 esp-aes esp-sha256-hmac
+ mode transport
+!
+crypto dynamic-map MVPN-dynmap 10
+ set transform-set radius radius-2 
+!
+crypto map radius 10 ipsec-isakmp dynamic MVPN-dynmap
+ Because of ASA does not support sha256 hashing algorith, additional configuration is required on ESR to match IKEv1 policies for 1st and 2nd phase of IPSEC. Configure isakmp policy and transform set, to match those configured on ASA:
+crypto isakmp policy 30
+ encr aes
+ authentication pre-share
+ group 5
+!
+crypto ipsec transform-set radius-3 esp-aes esp-sha-hmac
+ mode tunnel
+!
+crypto dynamic-map MVPN-dynmap 10
+ set transform-set radius radius-2 radius-3
+ Make sure ESR has a route to send encrypted packets out:
+ip route 0.0.0.0 0.0.0.0 10.48.26.1
+Verify
+ASA
+Before Anyconnect clients connect, ASA has no crypto session:
+BSNS-ASA5515-11# sh cry isa sa
+
+There are no IKEv1 SAs
+
+There are no IKEv2 SAs
+BSNS-ASA5515-11# sh cry ipsec sa
+
+There are no ipsec sas
+BSNS-ASA5515-11# 
+ Client connects via Anyconnect VPN client, as an authentication source ISE 2.2 is used.
+ASA sends a Radius Packet, which triggers VPN session establishment, once the tunnel is up the following output is seen on ASA and it confirms that the phase 1 of the tunnel is up:
+BSNS-ASA5515-11# sh cry isa sa
+
+IKEv1 SAs:
+
+   Active SA: 1
+    Rekey SA: 0 (A tunnel will report 1 Active and 1 Rekey SA during rekey)
+Total IKE SA: 1
+
+1   IKE Peer: 10.48.26.170
+    Type    : L2L             Role    : initiator 
+    Rekey   : no              State   : MM_ACTIVE 
+
+There are no IKEv2 SAs
+BSNS-ASA5515-11#
+Phase 2 is up, and packets are encrypted and decrypted:
+BSNS-ASA5515-11# sh cry ipsec sa  
+interface: outside
+    Crypto map tag: MAP, seq num: 20, local addr: 10.48.66.202
+
+      access-list 101 extended permit ip host 10.48.66.202 host 10.48.26.170 
+      local ident (addr/mask/prot/port): (10.48.66.202/255.255.255.255/0/0)
+      remote ident (addr/mask/prot/port): (10.48.26.170/255.255.255.255/0/0)
+      current_peer: 10.48.26.170
+
+
+      #pkts encaps: 5, #pkts encrypt: 5, #pkts digest: 5
+      #pkts decaps: 5, #pkts decrypt: 5, #pkts verify: 5
+      #pkts compressed: 0, #pkts decompressed: 0
+      #pkts not compressed: 5, #pkts comp failed: 0, #pkts decomp failed: 0
+      #pre-frag successes: 0, #pre-frag failures: 0, #fragments created: 0
+      #PMTUs sent: 0, #PMTUs rcvd: 0, #decapsulated frgs needing reassembly: 0
+      #TFC rcvd: 0, #TFC sent: 0
+      #Valid ICMP Errors rcvd: 0, #Invalid ICMP Errors rcvd: 0
+      #send errors: 0, #recv errors: 0
+
+      local crypto endpt.: 10.48.66.202/0, remote crypto endpt.: 10.48.26.170/0
+      path mtu 1500, ipsec overhead 74(44), media mtu 1500
+      PMTU time remaining (sec): 0, DF policy: copy-df
+      ICMP error validation: disabled, TFC packets: disabled
+      current outbound spi: 5BBE9F07
+      current inbound spi : 068C04D1
+              
+    inbound esp sas:
+      spi: 0x068C04D1 (109839569)
+         transform: esp-aes esp-sha-hmac no compression 
+         in use settings ={L2L, Tunnel, IKEv1, }
+         slot: 0, conn_id: 323584, crypto-map: MAP
+         sa timing: remaining key lifetime (kB/sec): (4373999/3558)
+         IV size: 16 bytes
+         replay detection support: Y
+         Anti replay bitmap: 
+          0x00000000 0x0000003F
+    outbound esp sas:
+      spi: 0x5BBE9F07 (1539219207)
+         transform: esp-aes esp-sha-hmac no compression 
+         in use settings ={L2L, Tunnel, IKEv1, }
+         slot: 0, conn_id: 323584, crypto-map: MAP
+         sa timing: remaining key lifetime (kB/sec): (4373999/3558)
+         IV size: 16 bytes
+         replay detection support: Y
+         Anti replay bitmap: 
+          0x00000000 0x00000001
+ESR
+Same outputs can be checked on ESR, phase one is up:
+ise-esr5921#sh cry isa sa
+IPv4 Crypto ISAKMP SA
+dst             src             state          conn-id status
+10.48.26.170    10.48.66.202    QM_IDLE           1012 ACTIVE MVPN-profile
+
+IPv6 Crypto ISAKMP SA
+
+ise-esr5921#
+Phase 2 is up, packets are encrypted and decrypted successfully:
+ise-esr5921#sh cry ipsec sa
+
+interface: Ethernet0/0
+    Crypto map tag: radius, local addr 10.48.26.170
+
+   protected vrf: (none)
+   local  ident (addr/mask/prot/port): (10.48.26.170/255.255.255.255/0/0)
+   remote ident (addr/mask/prot/port): (10.48.66.202/255.255.255.255/0/0)
+   current_peer 10.48.66.202 port 500
+     PERMIT, flags={}
+    #pkts encaps: 5, #pkts encrypt: 5, #pkts digest: 5
+    #pkts decaps: 5, #pkts decrypt: 5, #pkts verify: 5
+    #pkts compressed: 0, #pkts decompressed: 0
+    #pkts not compressed: 0, #pkts compr. failed: 0
+    #pkts not decompressed: 0, #pkts decompress failed: 0
+    #send errors 0, #recv errors 0
+
+     local crypto endpt.: 10.48.26.170, remote crypto endpt.: 10.48.66.202
+     plaintext mtu 1438, path mtu 1500, ip mtu 1500, ip mtu idb Ethernet0/0
+     current outbound spi: 0x68C04D1(109839569)
+     PFS (Y/N): N, DH group: none
+
+     inbound esp sas:
+      spi: 0x5BBE9F07(1539219207)
+        transform: esp-aes esp-sha-hmac ,
+        in use settings ={Tunnel, }
+        conn id: 31, flow_id: SW:31, sibling_flags 80000040, crypto map: radius
+        sa timing: remaining key lifetime (k/sec): (4259397/3508)
+        IV size: 16 bytes
+        replay detection support: Y
+        Status: ACTIVE(ACTIVE)
+
+     inbound ah sas:
+
+     inbound pcp sas:
+
+     outbound esp sas:
+      spi: 0x68C04D1(109839569)
+        transform: esp-aes esp-sha-hmac ,
+        in use settings ={Tunnel, }
+        conn id: 32, flow_id: SW:32, sibling_flags 80000040, crypto map: radius
+        sa timing: remaining key lifetime (k/sec): (4259397/3508)
+        IV size: 16 bytes
+        replay detection support: Y
+        Status: ACTIVE(ACTIVE)
+
+     outbound ah sas:
+
+     outbound pcp sas:
+ISE
+Live Authentication indicates regular PAP_ASCII authentication:
+Captures taken on GE1 interface of ISE and filtered with ESP or Radius, confirm that there is no Radius in clear text, and all traffic is encrypted:
+It is also possible to send encrypted packets from ISE - Change of Authorization (CoA) - once the tunnel is up and running:
+In this example Session termination was issued, and VPN client got disconnected as a result:
+Troubleshoot
+Common VPN Troubleshooting technique can be applied to troubleshoot issues related to IPSEC. You can find useful documents below:
+IOS IKEv2 Debugs for Site-to-Site VPN with PSKs Troubleshooting TechNote
+ASA IKEv2 Debugs for Site-to-Site VPN with PSKs
+IPsec Troubleshooting: Understanding and Using debug Commands
+Configure FlexVPN Site-to-Site (DVTI to Crypto Map) between NAD and ISE 2.2
+It is also possible to protect RADIUS traffic with FlexVPN. The following topology is used in the example below:
+FlexVPN configuration is straight forward. More details can be found here:
+http://www.cisco.com/c/en/us/support/docs/security/flexvpn/116008-flexvpn-nge-config-00.html
+ASA Configuration
+
+hostname BSNS-ASA5515-11
+domain-name example.com
+
+ip local pool POOL 10.10.10.10-10.10.10.100 mask 255.255.255.0
+!
+interface GigabitEthernet0/0
+ nameif outside
+ security-level 100
+ ip address 10.48.66.202 255.255.254.0 
+!
+interface GigabitEthernet0/1
+ nameif inside
+ security-level 100
+ ip address 172.16.0.1 255.255.255.0 
+same-security-traffic permit inter-interface
+same-security-traffic permit intra-interface
+object network POOL
+ subnet 10.10.10.0 255.255.255.0
+object network ISE
+ host 10.48.17.86
+object network ISE22
+ host 10.1.1.2
+object network INSIDE-NET
+ subnet 172.16.0.0 255.255.0.0
+access-list 101 extended permit ip host 172.16.0.1 host 10.1.1.2 
+access-list OUT extended permit ip any any  
+nat (inside,outside) source static INSIDE-NET INSIDE-NET destination static ISE22 ISE22
+nat (outside,outside) source dynamic POOL interface
+nat (inside,outside) source dynamic any interface
+access-group OUT in interface outside
+route outside 0.0.0.0 0.0.0.0 10.48.66.1 1
+
+aaa-server ISE22 protocol radius
+ authorize-only
+ interim-accounting-update periodic 1
+ dynamic-authorization
+aaa-server ISE22 (inside) host 10.1.1.2
+ key *****
+crypto ipsec ikev2 ipsec-proposal SET
+ protocol esp encryption aes
+ protocol esp integrity sha-1
+crypto ipsec security-association pmtu-aging infinite
+crypto dynamic-map DMAP 1 set ikev1 transform-set SET
+crypto map MAP 10 ipsec-isakmp dynamic DMAP
+crypto map MAP 20 match address 101
+crypto map MAP 20 set peer 10.48.17.87 
+crypto map MAP 20 set ikev2 ipsec-proposal SET
+crypto map MAP interface outside
+crypto ikev2 policy 10
+ encryption aes
+ integrity sha256
+ group 2
+ prf sha256   
+ lifetime seconds 86400
+crypto ikev2 enable outside
+management-access inside
+webvpn
+ enable outside
+ anyconnect image disk0:/anyconnect-win-4.4.00243-webdeploy-k9.pkg 1
+ anyconnect enable
+ tunnel-group-list enable
+ error-recovery disable
+group-policy GP-SSL internal
+group-policy GP-SSL attributes
+ vpn-tunnel-protocol ssl-client 
+tunnel-group RA type remote-access
+tunnel-group RA general-attributes
+ address-pool POOL
+ authentication-server-group ISE22
+ accounting-server-group ISE22
+ default-group-policy GP-SSL
+tunnel-group RA webvpn-attributes
+ group-alias RA enable
+tunnel-group 10.48.17.87 type ipsec-l2l
+tunnel-group 10.48.17.87 ipsec-attributes
+ ikev2 remote-authentication pre-shared-key *****
+ ikev2 local-authentication pre-shared-key *****
+ESR Configuration on ISE
+ise-esr5921#sh run
+Building configuration...
+
+Current configuration : 5778 bytes
+!
+! Last configuration change at 17:32:58 CET Thu Feb 23 2017
+!
+version 15.5
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no service password-encryption
+service call-home
+!
+hostname ise-esr5921
+!
+boot-start-marker
+boot host unix:default-config
+boot-end-marker
+!
+!
+!
+no aaa new-model
+bsd-client server url https://cloudsso.cisco.com/as/token.oauth2
+clock timezone CET 1 0
+mmi polling-interval 60
+no mmi auto-configure
+no mmi pvc
+mmi snmp-timeout 180
+call-home
+ ! If contact email address in call-home is configured as sch-smart-licensing@cisco.com
+ ! the email address configured in Cisco Smart License Portal will be used as contact email address to send SCH notifications.
+ contact-email-addr sch-smart-licensing@cisco.com
+ profile "CiscoTAC-1"
+  active
+  destination transport-method http
+  no destination transport-method email
+!
+!
+!
+!
+!
+!
+!
+!
+
+
+!         
+!
+!
+!
+ip cef
+no ipv6 cef
+!
+multilink bundle-name authenticated
+!
+!
+!
+!
+!
+!
+!
+!
+!
+crypto pki trustpoint SLA-TrustPoint
+ enrollment pkcs12
+ revocation-check crl
+!
+!
+crypto pki certificate chain SLA-TrustPoint
+ certificate ca 01
+  30820321 30820209 A0030201 02020101 300D0609 2A864886 F70D0101 0B050030 
+  32310E30 0C060355 040A1305 43697363 6F312030 1E060355 04031317 43697363 
+  6F204C69 63656E73 696E6720 526F6F74 20434130 1E170D31 33303533 30313934 
+  3834375A 170D3338 30353330 31393438 34375A30 32310E30 0C060355 040A1305 
+  43697363 6F312030 1E060355 04031317 43697363 6F204C69 63656E73 696E6720 
+  526F6F74 20434130 82012230 0D06092A 864886F7 0D010101 05000382 010F0030 
+  82010A02 82010100 A6BCBD96 131E05F7 145EA72C 2CD686E6 17222EA1 F1EFF64D 
+  CBB4C798 212AA147 C655D8D7 9471380D 8711441E 1AAF071A 9CAE6388 8A38E520 
+  1C394D78 462EF239 C659F715 B98C0A59 5BBB5CBD 0CFEBEA3 700A8BF7 D8F256EE 
+  4AA4E80D DB6FD1C9 60B1FD18 FFC69C96 6FA68957 A2617DE7 104FDC5F EA2956AC 
+  7390A3EB 2B5436AD C847A2C5 DAB553EB 69A9A535 58E9F3E3 C0BD23CF 58BD7188 
+  68E69491 20F320E7 948E71D7 AE3BCC84 F10684C7 4BC8E00F 539BA42B 42C68BB7 
+  C7479096 B4CB2D62 EA2F505D C7B062A4 6811D95B E8250FC4 5D5D5FB8 8F27D191 
+  C55F0D76 61F9A4CD 3D992327 A8BB03BD 4E6D7069 7CBADF8B DF5F4368 95135E44 
+  DFC7C6CF 04DD7FD1 02030100 01A34230 40300E06 03551D0F 0101FF04 04030201 
+  06300F06 03551D13 0101FF04 05300301 01FF301D 0603551D 0E041604 1449DC85 
+  4B3D31E5 1B3E6A17 606AF333 3D3B4C73 E8300D06 092A8648 86F70D01 010B0500 
+  03820101 00507F24 D3932A66 86025D9F E838AE5C 6D4DF6B0 49631C78 240DA905 
+  604EDCDE FF4FED2B 77FC460E CD636FDB DD44681E 3A5673AB 9093D3B1 6C9E3D8B 
+  D98987BF E40CBD9E 1AECA0C2 2189BB5C 8FA85686 CD98B646 5575B146 8DFC66A8 
+  467A3DF4 4D565700 6ADF0F0D CF835015 3C04FF7C 21E878AC 11BA9CD2 55A9232C 
+  7CA7B7E6 C1AF74F6 152E99B7 B1FCF9BB E973DE7F 5BDDEB86 C71E3B49 1765308B 
+  5FB0DA06 B92AFE7F 494E8A9E 07B85737 F3A58BE1 1A48A229 C37C1E69 39F08678 
+  80DDCD16 D6BACECA EEBC7CF9 8428787B 35202CDC 60E4616A B623CDBD 230E3AFB 
+  418616A9 4093E049 4D10AB75 27E86F73 932E35B5 8862FDAE 0275156F 719BB2F0 
+  D697DF7F 28
+        quit
+license udi pid CISCO5921-K9 sn 98492083R3X
+username lab password 0 lab
+!
+redundancy
+!
+!
+! 
+crypto keyring MVPN-spokes  
+  pre-shared-key address 0.0.0.0 0.0.0.0 key Krakow123
+crypto ikev2 authorization policy default
+ route set interface
+ route set remote ipv4 10.1.1.0 255.255.255.0
+!
+!
+!
+crypto ikev2 keyring mykeys
+ peer ISR4451
+  address 10.48.23.68
+  pre-shared-key Krakow123
+ !
+!
+!
+crypto ikev2 profile default
+ match identity remote address 0.0.0.0 
+ authentication remote pre-share
+ authentication local pre-share
+ keyring local mykeys
+ aaa authorization group psk list default default local
+ virtual-template 1
+!
+!
+crypto isakmp policy 10
+ encr aes
+ hash sha256
+ authentication pre-share
+ group 16
+!
+crypto isakmp policy 20
+ encr aes
+ hash sha256
+ authentication pre-share
+ group 14 
+crypto isakmp key Krakow123 address 0.0.0.0        
+crypto isakmp profile MVPN-profile
+   description LAN-to-LAN for spoke router(s) connection
+   keyring MVPN-spokes
+   match identity address 0.0.0.0 
+!
+!
+crypto ipsec transform-set radius esp-aes esp-sha256-hmac 
+ mode tunnel
+crypto ipsec transform-set radius-2 esp-aes esp-sha256-hmac 
+ mode transport
+!
+!
+!
+crypto dynamic-map MVPN-dynmap 10
+ set transform-set radius radius-2 
+!
+!
+crypto map radius 10 ipsec-isakmp dynamic MVPN-dynmap 
+!
+!
+!
+!         
+!
+interface Loopback0
+ ip address 10.1.12.2 255.255.255.0
+!
+interface Ethernet0/0
+ description e0/0->connection to external NAD 
+ ip address 10.48.17.87 255.255.255.0
+ ip nat outside
+ ip virtual-reassembly in
+ no ip route-cache
+ crypto map radius
+!
+interface Ethernet0/1
+ description e0/1->tap0 internal connection to ISE
+ ip address 10.1.1.1 255.255.255.252
+ ip nat inside
+ ip virtual-reassembly in
+ no ip route-cache
+!
+interface Ethernet0/2
+ description e0/2->connection to CSSM backend license server
+ no ip address
+ ip virtual-reassembly in
+ no ip route-cache
+!
+interface Ethernet0/3
+ no ip address
+ shutdown
+!
+interface Virtual-Template1 type tunnel
+ ip unnumbered Loopback0
+ tunnel source Ethernet0/0
+ tunnel mode ipsec ipv4
+ tunnel protection ipsec profile default
+!
+ip forward-protocol nd
+!
+!
+no ip http server
+no ip http secure-server
+ip nat inside source list 1 interface Ethernet0/0 overload
+ip nat inside source static udp 10.1.1.2 1645 interface Ethernet0/0 1645
+ip nat inside source static udp 10.1.1.2 1646 interface Ethernet0/0 1646
+ip nat inside source static udp 10.1.1.2 1812 interface Ethernet0/0 1812
+ip nat inside source static udp 10.1.1.2 1813 interface Ethernet0/0 1813
+ip nat inside source static tcp 10.1.1.2 49 interface Ethernet0/0 49
+ip route 0.0.0.0 0.0.0.0 10.48.17.1
+!
+!
+!
+access-list 1 permit 10.1.1.0 0.0.0.3
+!
+control-plane
+!
+ !
+ !
+ !
+ !
+!
+!
+!
+!
+!
+!
+!
+line con 0
+ logging synchronous
+line aux 0
+line vty 0 4
+ login
+ transport input none
+!
+!
+end
+FlexVPN Design Considerations
+VPN tunnel is built using DVTI on ESR side and Crypto Map on ASA side, with the configuration above ASA is able to generate the Radius packet originated from the inside interface, which will ensure correct access-list for encryption to trigger VPN session establishment.
+Note, that in this case ASA NAD should be defined on ISE with inside interface ip address.
+Contributed by Cisco Engineers
+Eugene Korneychuk
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine 2.2

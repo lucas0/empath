@@ -1,0 +1,99 @@
+Configuration Examples and TechNotes
+ISE Posture Deployment Best Practices and Considerations
+Save
+Translations
+Download
+Print
+
+
+
+Updated:March 6, 2020
+Document ID:215260
+Bias-Free Language
+Contents
+Introduction
+Restrictions
+Posture Client Behavior
+Use Cases
+Use Case 1 - Client reauthentication forces the NAD to generate a new session ID.
+Use Case 2 - The switch is configured with order MAB DOT1X and priority DOT1X MAB (Wired).
+Use Case 3 - Wireless clients roam and authentications for different APs are going to different controllers.
+Use Case 4 - Deployments with load balancers (Pre 2.6 Patch 6, 2.7 Patch P2, and 3.0).
+Use Case 5 - Stage 2 discovery probes are responsed to by a different server than the client is authenticated with (Pre 2.6 Patch 6, 2.7 Patch 2, and 3.0).
+Behavior Change Post 2.6 Patch 6, 2.7 Patch 2, and 3.0
+Considerations When Maintaining the Same SessionID
+Introduction
+This document describes some baseline configurations that address several use cases with redirection-based posture. In these configurations the client remains compliant, but the network access device (NAD) limits access because it is in the redirect state.
+Restrictions
+The configurations in this document work for Cisco NADs, but not necessarily for third party NADs.
+Posture Client Behavior
+The posture client will trigger probes at these times:
+Initial login
+Layer 3 (L3) change/Network Interface Card (NIC) change (new IP address, NIC state change)
+Use Cases
+Use Case 1 - Client reauthentication forces the NAD to generate a new session ID.
+In this use case, the client is still compliant, but because of reauthentication, the NAD is in the redirect state (redirect URL and access list).
+By default, Identity Services Engine (ISE) is configured to perform a posture assessment every time that it connects to the network, more specifically for each new session.
+This setting is configured under Work Centers > Posture > Settings > Posture General Settings.
+In order to keep the NAD from generating a new session ID on reauthentication, configure these reauthentication values in the authorization profile. The reauthentication timer displayed is not a standard recommendation, reauthentication timers should be considered per deployment based on connection type (wireless/wired), design (what are the persistence rules on the loadbalancer), and so on.
+Policy > Policy Elements > Results > Authorization > Authorization Profiles
+On switches, you need to configure each interface, or template, to get its reauthentication timer from ISE. 
+authentication timer reauthenticate server
+Note: If there is a load balancer, you need to make sure that persistance is configured in a way that reauthentications will be returned to the original Policy Service (PSN).
+Use Case 2 - The switch is configured with order MAB DOT1X and priority DOT1X MAB (Wired).
+In this case reauthentications will be terminated, because an accounting stop for the 802.1x session will be sent when MAC Authentication Bypass (MAB) is attempted during reauthentication.
+The accounting stop that is sent for the MAB process when it fails authentication is correct, as the username for the client changes from the 802.1X username to the MAB username.
+Dot1x as the method-id in the accounting stop is also correct as the authorizing method was dot1x.
+When Dot1x method succeeds, it sends an accounting start with method-id as dot1x. Here as well, this behavior is as expected.
+In order to resolve this issue, configure the cisco-av-pair:termination-action-modifier = 1 on the authZ profile used when an endpoint is compliant. This attribute-value (AV) pair specifies that the NAD should reuse the method chosen in the original authentication regardless of the configured order.
+Use Case 3 - Wireless clients roam and authentications for different APs are going to different controllers.
+For this situation, the wireless network will need to be designed so that the access points (APs) within reach to other APs for roaming use the same active controller. One example is Wireless LAN Controller (WLC) stateful switchover (SSO) failover. For more information about High Availability (HA) SSO for WLC, see High Availability (SSO) Deployment Guide.
+Use Case 4 - Deployments with load balancers (Pre 2.6 Patch 6, 2.7 Patch P2, and 3.0).
+In deployments with load balancers involved, it is important to make sure that after you make the changes in the previous use cases, the sessions continue to go to the same PSN. Prior to the version/patches listed for this step, posture status is not replicated between the nodes via Light Data Dirstribution (formerly Light Session Directory). Because of this, it is possible for different PSNs to return different posture status results.
+If persistance is not configured correctly, sessions that reauthenticate could go to a different PSN than the one that was originally used. If this happens, the new PSN could mark the sessions compliance status as unknown and pass the authZ result with the redirect access control list (ACL)/URL and limit the endpoints access. Again, this change on the NAD would not be recognized by the posture module and probes will not be triggered.
+For more information on how to configure load balancers, see Cisco & F5 Deployment Guide: ISE Load Balancing Using BIG-IP. It provides a high level overview and F5 specific configuration of a best practice design for ISE deployments in a load balanced environment.
+Use Case 5 - Stage 2 discovery probes are responsed to by a different server than the client is authenticated with (Pre 2.6 Patch 6, 2.7 Patch 2, and 3.0).
+Take a look at the probes within the red box in this diagram..
+PSNs will store session data for five days, so sometimes session data for a "compliant" session still lives on the origninal PSN even if the client no longer authenticates with that node. If the probes enclosed in the red box are responded to by a PSN other than the one that currently authenticates the session AND that PSN has previously owned and marked this endpoint compliant, it is possible for there to be a mismatch between the posture status of the posture module on the endpoint and current authenticating PSN.
+Here are a few common scenarios where this mismatch can occur:
+An accounting stop is not received for an endpoint when it disconnects from the network.
+The NAD failed over from one PSN to another.
+A load balancer forwards authentications to different PSNs for the same endpoint.
+In order to protect from this behavior, ISE can be configured to only allow discovery probes from a particular endpoint to reach the PSN that it currently authenticates to. In order to acheive this, configure a different authorization policy for each PSN in your deployment. In these policies, reference a different authZ profile that contains a Downloadable Access Control List (DACL) which allows probes ONLY to the PSN specified in the authZ condition. See this example::
+Each PSN will have a rule for unknown posture status:
+Each individual profile references a different DACL.
+Note: For wireless, use Airespace ACLs.
+Each DACL only allows probe access to the PSN that handles the authentication.
+In the previous example, 10.10.10.1 is the IP address of PSN 1. The DACL referenced can be altered for any additional services/IPs as needed, but should limit access to only the PSN that handles authentication.
+Behavior Change Post 2.6 Patch 6, 2.7 Patch 2, and 3.0
+Posture status has been added into the RADIUS Session Directory via the Light Data Distribution framework. Each time a posture status update is received on any PSN, it will be replicated to ALL PSNs in the deployment. Once this change is in effect, the implications of authentications and or probes that reach different PSNs on different authentications are removed and any PSN should be able to reply to all endpoints regardless of where they are currently authenticated.
+In the five use cases in this document, consider these behaviors:
+Use Case 1 - Client reauthentication forces the NAD to generate a new session ID. The client is still compliant, but because of reauthentication, the NAD is in the redirect state (redirect URL and access list).
+- This behavior will not change and this configuration should still be implemented on ISE and the NADs.
+Use Case 2 - The switch is configured with order MAB DOT1X and priority DOT1X MAB (Wired).
+- This behavior will not change and this configuration should still be implemented on ISE and the NADs.
+Use Case 3 - Wireless clients roam and authentications for different APs are going to different controllers.
+- This behavior will not change and this configuration should still be implemented on ISE and the NADs.
+Use Case 4 - Deployments with load balancers.
+- The best practices defined in the load balancing guide should still be followed, but in the event that authentications are forwarded to different PSNs by the load balancer, the correct posture status should be returned to the client.
+Use Case 5 - Stage 2 discovery probes are responsed to by a different server than the client is authenticated with
+- This should not be an issue with the new behvaior and the per-PSN authorization profile should not be necessary.
+Considerations When Maintaining the Same SessionID
+When you use the methods listed in this document, a user that remains connected to the network could potentially remain compliant for long periods of time. Even though they reauthenticate, the sessionID does not change and therefore ISE will continue to pass the AuthZ result for their rule matching the compliant status.
+In this event, Periodic Reassessment needs to be configured so that Posture will be required to make sure the endpoint remains compliant with corporate policies at at defined intervals.
+This can be configured under Work Centers > Posture > Settings > Ressessment configurations.
+Contributed by Cisco Engineers
+Zack McIntosh
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Troubleshoot ISE Session Management and Posture
+Cisco Identity Services Engine Administrator Guide, Release 2.2 --- Configure Client Posture Policies
+Compare Earlier ISE Versions to ISE Posture Flow in ISE 2.2
++ Show 2 More
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine
+Identity Services Engine Software

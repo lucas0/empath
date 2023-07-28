@@ -1,0 +1,351 @@
+Configuration Examples and TechNotes
+Configure Device Sensor for ISE Profiling
+Save
+Translations
+Download
+Print
+
+
+
+Updated:January 15, 2016
+Document ID:200292
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Configure
+Step 1. Standard AAA configuration
+Step 2. Configure Device Sensor
+Step 3. Configure profiling on ISE
+Verify
+Troubleshoot
+Step 1. Verify information collected by CDP/LLDP
+Step 2. Check  Device Sensor cache
+Step 3. Check if attributes are present in Radius Accounting
+Step 4. Verify profiler debugs on ISE
+Related Information
+Related Cisco Support Community Discussions
+Introduction
+This document describes how to configure Device Sensor, so that it can be used for profiling purposes on ISE. Device sensor is a feature of access devices. It allows to collect information about connected endpoints. Mostly, information collected by Device Sensor can come from the following protocols:
+Cisco Discovery Protocol (CDP)
+Link Layer Discovery Protocol (LLDP)
+Dynamic Host Configuration Protocol (DHCP)
+On some platforms it is possible to use also H323, SIP (Session Initiation Protocol), MDNS (Multicast Domain Resolution) or HTTP protocols. Configuration possibilities for device sensor capabilities can vary from protocol to protocol. As an example above is available on Cisco Catalyst 3850 with software 03.07.02.E.
+Once the information is collected, it can be encapsulated in radius accounting and send to a profiling server. In this article Identity Service Engine (ISE) is used as a profiling server.
+Prerequisites
+Requirements
+ Cisco recommends that you have knowledge of these topics:
+Radius protocol
+CDP, LLDP and DHCP protocols
+Cisco Identity Service Engine
+Cisco Catalyst Switch 2960
+Components Used
+The information in this document is based on these software and hardware versions:
+Cisco Identity Service Engine version 1.3 patch 3
+Cisco Catalyst Switch 2960s version 15.2(2a)E1
+Cisco IP Phone 8941 version SCCP 9-3-4-17
+Configure
+Step 1. Standard AAA configuration
+In order to configure Authentication, Authorization and Accounting (AAA), follow the steps below:
+1. Enable AAA using aaa new-model command and enable 802.1X globally on the switch
+2. Configure Radius server and enable dynamic authorization (Change of Authorization - CoA)
+3. Enable CDP and LLDP protocols
+4. Add switchport authentication configuration
+!
+aaa new-model
+!
+aaa authentication dot1x default group radius
+aaa authorization network default group radius
+aaa accounting update newinfo
+aaa accounting dot1x default start-stop group radius
+!
+aaa server radius dynamic-author
+ client 1.1.1.1 server-key xyz
+!
+dot1x system-auth-control
+!
+lldp run
+cdp run
+!
+interface GigabitEthernet1/0/13
+ description IP_Phone_8941_connected
+ switchport mode access
+ switchport voice vlan 101
+ authentication event fail action next-method
+ authentication host-mode multi-domain
+ authentication order dot1x mab
+ authentication priority dot1x mab
+ authentication port-control auto
+ mab
+ dot1x pae authenticator
+ dot1x timeout tx-period 2
+ spanning-tree portfast
+end
+!
+radius-server host 1.1.1.1 auth-port 1812 acct-port 1813 key xyz
+!
+In newer software version command radius-server vsa send accounting is enabled by default. If you cannot see attributes send in accounting, verify if the command in enabled.
+Step 2. Configure Device Sensor
+1. Determine which attributes from CDP/LLDP are needed to profile the device. In case of Cisco IP Phone 8941 you can use the following:
+LLDP SystemDescription attribute
+CDP CachePlatform attribute
+For our purpose it would be enough to obtain just one of those since both of them provide Certainty Factory increase of 70 and Minimum Certainty Factory required to be profiled as Cisco-IP-Phone-8941 is 70:
+In order to be profiled as specific Cisco IP Phone, youneed to satisfy minimum conditions for all parent profiles. This means profiler needs to match Cisco-Device (min. Certainty Factor 10) and Cisco-IP-Phone (min. Certainty Factor 20). Even though profiler matches those two profiles, it should still be profiled as specific Cisco IP Phone since each IP Phone model has min. Certainty Factor of 70. Device is assigned to the profile for which it has highest Certainty Factor.
+2. Configure two filter lists - one for CDP and another one for LLDP. Those indicate which attributes should be included in Radius accounting messages. This step is optional
+3. Create two filter-specs for CDP and LLDP. In fiter spec you can either indicate that list of attributes should be included or excluded from accounting messages. In the example following attributes are included:
+device-name from CDP
+system-description from LLDP
+You can configure additional attributes to be transmited via Radius to ISE if needed. This step is also optional.
+4. Add command device-sensor notify all-changes. It triggers updates whenever TLVs are added, modified or removed for current session
+5. In order to actually send the information gathered via Device Sensor functionality, you need to explicitly tell the switch to do so with command device-sensor accounting
+!
+device-sensor filter-list cdp list cdp-list
+ tlv name device-name
+ tlv name platform-type
+!
+device-sensor filter-list lldp list lldp-list
+ tlv name system-description
+!
+device-sensor filter-spec lldp include list lldp-list
+device-sensor filter-spec cdp include list cdp-list
+!
+device-sensor accounting
+device-sensor notify all-changes
+!
+Step 3. Configure profiling on ISE
+1. Add switch as a network device in "Administration>Network Resources>Network Devices". Use the radius server key from the switch as shared secret in Authentication Settings:
+2. Enable Radius probe on the profiling node in "Administration>System>Deployment>ISE node>Profiling Configuration". If all PSN nodes should be used for profiling, enable the probe on all of them:
+3. Configure ISE Authentication Rules. In the example the default authentication rules preconfigured on ISE are used:
+4. Configure ISE Authorization Rules. 'Profiled Cisco IP Phones' rule is used, which is preconfigured on ISE:
+Verify
+In order to verify if profiling is working correctly, please refer to "Operations>Authentications" on ISE:
+First the device was authenticated using MAB (18:49:00). Ten seconds later (18:49:10) it was reprofiled as Cisco-Device and finaly after 42 seconds since first authentications (18:49:42) it received Cisco-IP-Phone-8941 profile. As a result ISE returns Authorization Profile specific for IP Phones (Cisco_IP_Phones) and Downloadable ACL that permits all traffic (permit ip any any). Please note that in this scenario the unknown device has basic access to the network. It can be achieved by adding mac address to ISE internal endpoint database or allowing very basic network access for previously unknown devices.
+Initial profiling took around 40 seconds in this example. On the next authentication ISE already knows the profile and correct attributes (permission to join voice domain and DACL) are applied instantly, unless ISE receives new/updated attributes and it needs to reprofile the device again.
+ In "Administration>Identity Management>Identities>Endpoints>tested endpoint" you can see what kind of attributes were collected by Radius probe and what their values are:
+As you can observe the total Certainty Factor computed is 210 in this scenario. It comes fromt the fact that endpoint matched also Cisco-Device profile (with total certainty factor of 30) and Cisco-IP-Phone profile (with total certainty factor of 40). Since profiler matched both conditions in profile Cisco-IP-Phone-8941, certainty factor for this profile is 140 (70 for each attribute according to profiling policy). To sum up: 30+40+70+70=210.
+Troubleshoot
+Step 1. Verify information collected by CDP/LLDP
+switch#sh cdp neighbors g1/0/13 detail
+-------------------------
+Device ID: SEP20BBC0DE06AE
+Entry address(es):
+Platform: Cisco IP Phone 8941 ,  Capabilities: Host Phone Two-port Mac Relay
+Interface: GigabitEthernet1/0/13,  Port ID (outgoing port): Port 1
+Holdtime : 178 sec
+Second Port Status: Down
+
+Version :
+SCCP 9-3-4-17
+
+advertisement version: 2
+Duplex: full
+Power drawn: 3.840 Watts
+Power request id: 57010, Power management id: 3
+Power request levels are:3840 0 0 0 0
+
+
+Total cdp entries displayed : 1
+
+switch#
+switch#sh lldp neighbors g1/0/13 detail
+------------------------------------------------
+Chassis id: 0.0.0.0
+Port id: 20BBC0DE06AE:P1
+Port Description: SW Port
+System Name: SEP20BBC0DE06AE.
+
+System Description:
+Cisco IP Phone 8941, V3, SCCP 9-3-4-17
+
+Time remaining: 164 seconds
+System Capabilities: B,T
+Enabled Capabilities: B,T
+Management Addresses - not advertised
+Auto Negotiation - supported, enabled
+Physical media capabilities:
+    1000baseT(FD)
+    100base-TX(FD)
+    100base-TX(HD)
+    10base-T(FD)
+    10base-T(HD)
+Media Attachment Unit type: 16
+Vlan ID: - not advertised
+
+MED Information:
+
+    MED Codes:
+          (NP) Network Policy, (LI) Location Identification
+          (PS) Power Source Entity, (PD) Power Device
+          (IN) Inventory
+
+    H/W revision: 3
+    F/W revision: 0.0.1.0
+    S/W revision: SCCP 9-3-4-17
+    Serial number: PUC17140FBO
+    Manufacturer: Cisco Systems , Inc.
+    Model: CP-8941
+    Capabilities: NP, PD, IN
+    Device type: Endpoint Class III
+    Network Policy(Voice): VLAN 101, tagged, Layer-2 priority: 0, DSCP: 0
+    Network Policy(Voice Signal): VLAN 101, tagged, Layer-2 priority: 3, DSCP: 24
+    PD device, Power source: Unknown, Power Priority: Unknown, Wattage: 3.8
+    Location - not advertised
+
+
+Total entries displayed: 1
+If you cannot see any data collected verify the following:
+Check the state of authentication session on the switch (it should be successful):
+piborowi#show authentication sessions int g1/0/13 details
+            Interface:  GigabitEthernet1/0/13
+          MAC Address:  20bb.c0de.06ae
+         IPv6 Address:  Unknown
+         IPv4 Address:  Unknown
+            User-Name:  20-BB-C0-DE-06-AE
+               Status:  Authorized
+               Domain:  VOICE
+       Oper host mode:  multi-domain
+     Oper control dir:  both
+      Session timeout:  N/A
+    Common Session ID:  0AE51820000002040099C216
+      Acct Session ID:  0x00000016
+               Handle:  0xAC0001F6
+       Current Policy:  POLICY_Gi1/0/13
+
+Local Policies:
+        Service Template: DEFAULT_LINKSEC_POLICY_SHOULD_SECURE (priority 150)
+
+Server Policies:
+
+Method status list:
+       Method           State
+       dot1x            Stopped
+
+       mab              Authc Success
+Check if CDP and LLDP protocols are enabled. Check if there are any non-default commands regarding CDP/LLDP/etc. and how those can affect attribute retrieval from the endpoint
+switch#sh running-config all | in cdp run
+cdp run
+switch#sh running-config all | in lldp run
+lldp run
+Verify in configuration guide for your endpoint if it supports CDP/LLDP/etc
+Step 2. Check  Device Sensor cache
+switch#show device-sensor cache interface g1/0/13
+Device: 20bb.c0de.06ae on port GigabitEthernet1/0/13
+--------------------------------------------------
+Proto Type:Name                       Len Value
+LLDP     6:system-description          40 0C 26 43 69 73 63 6F 20 49 50 20 50 68 6F 6E 65
+                                          20 38 39 34 31 2C 20 56 33 2C 20 53 43 43 50 20
+                                          39 2D 33 2D 34 2D 31 37
+CDP      6:platform-type               24 00 06 00 18 43 69 73 63 6F 20 49 50 20 50 68 6F
+                                          6E 65 20 38 39 34 31 20
+CDP     28:secondport-status-type       7 00 1C 00 07 00 02 00
+If you do not see any data in this field or information is not complete verify 'device-sensor' commands, in particular filter-lists and filter-specs.
+Step 3. Check if attributes are present in Radius Accounting
+You can verify that using 'debug radius' command on the switch or performing packet capture between switch and ISE.
+Radius debug:
+Mar 30 05:34:58.716: RADIUS(00000000): Send Accounting-Request to 1.1.1.1:1813 id 1646/85, len 378
+Mar 30 05:34:58.716: RADIUS:  authenticator 17 DA 12 8B 17 96 E2 0F - 5D 3D EC 79 3C ED 69 20
+Mar 30 05:34:58.716: RADIUS:  Vendor, Cisco       [26]  40
+Mar 30 05:34:58.716: RADIUS:   Cisco AVpair       [1]   34  "cdp-tlv=                        "
+Mar 30 05:34:58.716: RADIUS:  Vendor, Cisco       [26]  23
+Mar 30 05:34:58.716: RADIUS:   Cisco AVpair       [1]   17  "cdp-tlv=       "
+Mar 30 05:34:58.721: RADIUS:  Vendor, Cisco       [26]  59
+Mar 30 05:34:58.721: RADIUS:   Cisco AVpair       [1]   53  "lldp-tlv=                                          "
+Mar 30 05:34:58.721: RADIUS:  User-Name           [1]   19  "20-BB-C0-DE-06-AE"
+Mar 30 05:34:58.721: RADIUS:  Vendor, Cisco       [26]  49
+Mar 30 05:34:58.721: RADIUS:   Cisco AVpair       [1]   43  "audit-session-id=0AE518200000022800E2481C"
+Mar 30 05:34:58.721: RADIUS:  Vendor, Cisco       [26]  19
+Mar 30 05:34:58.721: RADIUS:   Cisco AVpair       [1]   13  "vlan-id=101"
+Mar 30 05:34:58.721: RADIUS:  Vendor, Cisco       [26]  18
+Mar 30 05:34:58.721: RADIUS:   Cisco AVpair       [1]   12  "method=mab"
+Mar 30 05:34:58.721: RADIUS:  Called-Station-Id   [30]  19  "F0-29-29-49-67-0D"
+Mar 30 05:34:58.721: RADIUS:  Calling-Station-Id  [31]  19  "20-BB-C0-DE-06-AE"
+Mar 30 05:34:58.721: RADIUS:  NAS-IP-Address      [4]   6   10.229.20.43
+Mar 30 05:34:58.721: RADIUS:  NAS-Port            [5]   6   60000
+Mar 30 05:34:58.721: RADIUS:  NAS-Port-Id         [87]  23  "GigabitEthernet1/0/13"
+Mar 30 05:34:58.721: RADIUS:  NAS-Port-Type       [61]  6   Ethernet                  [15]
+Mar 30 05:34:58.721: RADIUS:  Acct-Session-Id     [44]  10  "00000018"
+Mar 30 05:34:58.721: RADIUS:  Acct-Status-Type    [40]  6   Watchdog                  [3]
+Mar 30 05:34:58.721: RADIUS:  Event-Timestamp     [55]  6   1301463298
+Mar 30 05:34:58.721: RADIUS:  Acct-Input-Octets   [42]  6   538044
+Mar 30 05:34:58.721: RADIUS:  Acct-Output-Octets  [43]  6   3201914
+Mar 30 05:34:58.721: RADIUS:  Acct-Input-Packets  [47]  6   1686
+Mar 30 05:34:58.721: RADIUS:  Acct-Output-Packets [48]  6   35354
+Mar 30 05:34:58.721: RADIUS:  Acct-Delay-Time     [41]  6   0
+Mar 30 05:34:58.721: RADIUS(00000000): Sending a IPv4 Radius Packet
+Mar 30 05:34:58.721: RADIUS(00000000): Started 5 sec timeout
+Mar 30 05:34:58.737: RADIUS: Received from id 1646/85 10.62.145.51:1813, Accounting-response, len 20
+Packet capture:
+Step 4. Verify profiler debugs on ISE
+If the attributes were sent from the switch, it is possible to check if they were received on ISE. In order to check this, please enable profiler debugs for correct PSN node (Administration>System>Logging>Debug Log Configuration>PSN>profiler>debug) and perform authentication of the endpoint one more time.
+Look for following information:
+Debug indicating that radius probe received attributes:
+2015-11-25 19:29:53,641 DEBUG  [RADIUSParser-1-thread-1][] 
+cisco.profiler.probes.radius.RadiusParser -:::- 
+MSG_CODE=[3002], VALID=[true], PRRT_TIMESTAMP=[2015-11-25 19:29:53.637 +00:00], 
+ATTRS=[Device IP Address=10.229.20.43, RequestLatency=7, 
+NetworkDeviceName=deskswitch, User-Name=20-BB-C0-DE-06-AE, 
+NAS-IP-Address=10.229.20.43, NAS-Port=60000, Called-Station-ID=F0-29-29-49-67-0D, 
+Calling-Station-ID=20-BB-C0-DE-06-AE, Acct-Status-Type=Interim-Update, 
+Acct-Delay-Time=0, Acct-Input-Octets=362529, Acct-Output-Octets=2871426, 
+Acct-Session-Id=00000016, Acct-Input-Packets=1138, Acct-Output-Packets=32272, 
+Event-Timestamp=1301458555, NAS-Port-Type=Ethernet, NAS-Port-Id=GigabitEthernet1/0/13, 
+cisco-av-pair=cdp-tlv=cdpCachePlatform=Cisco IP Phone 8941 , 
+cisco-av-pair=cdp-tlv=cdpUndefined28=00:02:00, 
+cisco-av-pair=lldp-tlv=lldpSystemDescription=Cisco IP Phone 8941\, V3\, SCCP 9-3-4-17, 
+cisco-av-pair=audit-session-id=0AE51820000002040099C216, cisco-av-pair=vlan-id=101, 
+cisco-av-pair=method=mab, AcsSessionID=ise13/235487054/2511, SelectedAccessService=Default Network Access, 
+Step=11004, Step=11017, Step=15049, Step=15008, Step=15004, Step=11005, NetworkDeviceGroups=Location#All Locations, 
+NetworkDeviceGroups=Device Type#All Device Types, Service-Type=Call Check, CPMSessionID=0AE51820000002040099C216, 
+AllowedProtocolMatchedRule=MAB, Location=Location#All Locations, Device Type=Device Type#All Device Types, ]
+Debug indicating that attributes were successfully parsed:
+2015-11-25 19:29:53,642 DEBUG  [RADIUSParser-1-thread-1][] cisco.profiler.probes.radius.RadiusParser -:::- Parsed IOS Sensor 1: cdpCachePlatform=[Cisco IP Phone 8941]
+2015-11-25 19:29:53,642 DEBUG  [RADIUSParser-1-thread-1][] cisco.profiler.probes.radius.RadiusParser -:::- Parsed IOS Sensor 2: cdpUndefined28=[00:02:00]
+2015-11-25 19:29:53,642 DEBUG  [RADIUSParser-1-thread-1][] cisco.profiler.probes.radius.RadiusParser -:::- Parsed IOS Sensor 3: lldpSystemDescription=[Cisco IP Phone 8941, V3, SCCP 
+Debug indicating that attributes are processed by forwarder:
+2015-11-25 19:29:53,643 DEBUG  [forwarder-6][] cisco.profiler.infrastructure.probemgr.Forwarder -:20:BB:C0:DE:06:AE:ProfilerCollection:- Endpoint Attributes:
+ID:null
+Name:null
+MAC: 20:BB:C0:DE:06:AE
+        Attribute:AAA-Server     value:ise13
+        (... more attributes ...)
+        Attribute:User-Name      value:20-BB-C0-DE-06-AE
+        Attribute:cdpCachePlatform       value:Cisco IP Phone 8941
+        Attribute:cdpUndefined28         value:00:02:00
+        Attribute:lldpSystemDescription  value:Cisco IP Phone 8941, V3, SCCP 9-3-4-17
+        Attribute:SkipProfiling  value:false
+A forwarder stores endpoints into the Cisco ISE database along with their attributes data, and then notifies the analyzer of new endpoints detected on your network. The analyzer classifies endpoints to the endpoint identity groups and stores endpoints with the matched profiles in the database.
+Step 5. Typically after new attributes are added to the existing collection for specific device, this device/endpoint is added to profiling queue in order to check if it has to be assigned different profile based on new attributes:
+2015-11-25 19:29:53,646 DEBUG  [EndpointHandlerWorker-6-31-thread-1][] 
+cisco.profiler.infrastructure.profiling.ProfilerManager -:20:BB:C0:DE:06:AE:Profiling:- 
+Classify hierarchy 20:BB:C0:DE:06:AE
+2015-11-25 19:29:53,656 DEBUG  [EndpointHandlerWorker-6-31-thread-1][] 
+cisco.profiler.infrastructure.profiling.ProfilerManager -:20:BB:C0:DE:06:AE:Profiling:- 
+Policy Cisco-Device matched 20:BB:C0:DE:06:AE (certainty 30)
+2015-11-25 19:29:53,659 DEBUG  [EndpointHandlerWorker-6-31-thread-1][] 
+cisco.profiler.infrastructure.profiling.ProfilerManager -:20:BB:C0:DE:06:AE:Profiling:- 
+Policy Cisco-IP-Phone matched 20:BB:C0:DE:06:AE (certainty 40)
+2015-11-25 19:29:53,663 DEBUG  [EndpointHandlerWorker-6-31-thread-1][] 
+cisco.profiler.infrastructure.profiling.ProfilerManager -:20:BB:C0:DE:06:AE:Profiling:- 
+Policy Cisco-IP-Phone-8941 matched 20:BB:C0:DE:06:AE (certainty 140)
+2015-11-25 19:29:53,663 DEBUG  [EndpointHandlerWorker-6-31-thread-1][] 
+cisco.profiler.infrastructure.profiling.ProfilerManager -:20:BB:C0:DE:06:AE:Profiling:- 
+After analyzing policy hierarchy: Endpoint: 20:BB:C0:DE:06:AE EndpointPolicy:Cisco-IP-Phone-8941 for:210 ExceptionRuleMatched:false
+Related Information
+1. http://www.cisco.com/c/dam/en/us/solutions/collateral/enterprise/design-zone-security/howto_30_ise_profiling.pdf
+2. http://www.cisco.com/en/US/docs/security/ise/1.0/user_guide/ise10_prof_pol.html
+Contributed by Cisco Engineers
+Piotr Borowiec
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+ISE Profiling Design Guide
+IBNS 2.0 Device Sensor Accounting
+Configure EAP-TLS Authentication with ISE
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine

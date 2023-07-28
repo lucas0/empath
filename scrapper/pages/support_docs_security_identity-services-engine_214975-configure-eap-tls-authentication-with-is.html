@@ -1,0 +1,327 @@
+Configuration Examples and TechNotes
+Configure EAP-TLS Authentication with ISE
+Save
+Translations
+Download
+Print
+
+
+
+Updated:July 13, 2023
+Document ID:214975
+Bias-Free Language
+Contents
+Introduction
+Prerequisites
+Requirements
+Components Used
+Background Information
+Configure
+Obtain Server and Client Certificates
+Step 1. Generate a Certificate Signing Request from ISE
+Step 2. Import CA Certificates into ISE
+Step 3. Obtain Client Certificate for Endpoint
+Network Devices
+Step 4. Add the Network Access Device in ISE
+Policy Elements
+Step 5. Use External Identity Source
+Step 6. Create the Certificate Authentication Profile
+Step 7. Add to an Identity Source Sequence
+Step 8. Define the Allowed Protocols Service
+Step 9. Create the Authorization Profile
+Security Policies
+Step 10. Create the Policy Set
+Step 11. Create an Authentication Policy
+Step 12. Create the Authorization Policy
+Verify
+Troubleshoot
+Common Issues and Techniques to Troubleshoot
+Related Information
+Introduction
+This document describes initial configuration to introduce Extensible Authentication Protocol-Transport Layer Security Authentication with Cisco ISE.
+Prerequisites
+Requirements
+Cisco recommends that you have knowledge of these topics:
+Basic understanding of EAP and RADIUS communications flow.
+Basic RADIUS Authentication knowledge with certificate-based authentication methods in terms of the communication flow.
+Understanding of the differences between Dot1x and MAC Authentication Bypass (MAB).
+Basic understanding of Public Key Infrastructure (PKI).
+Familiarity with how to obtain signed certificates from a Certificate Authority (CA) and manage certificates on the endpoint(s).
+Configuration of Authentication, Authorization, and Accounting (AAA) (RADIUS) related settings on a network device (Wired or Wireless).
+Configuration of Supplicant (on Endpoint) for use with RADIUS/802.1x.
+Components Used
+The information in this document is based on these software and hardware versions:
+Identity Services Engine (ISE) Release 3.x.
+CA - to issue certificates (can be Enterprise CA, third-party/Public CA, or use the Certificate Provisioning Portal).
+Active Directory (external identity source) - from Windows Server; where compatible with ISE.
+Network Access Device (NAD) - can be Switch (Wired) or Wireless LAN Controller (WLC) (Wireless) configured for 802.1x/AAA.
+Endpoint - certificates issued to the (user) identity and supplicant configuration which can be authenticated for network access via RADIUS/802.1x: User Authentication. It is possible to get a machine certificate, but it is not used in this example.
+Note: Since this guide uses ISE Release 3.1, all documentation references are based on this version. However, the same/similar configuration is possible and fully supported on earlier releases of Cisco ISE.
+The information in this document was created from the devices in a specific lab environment. All of the devices used in this document started with a cleared (default) configuration. If your network is live, ensure that you understand the potential impact of any command.
+Background Information
+The main focus is on the ISE configuration which can be applied to multiple scenarios, such as (but not limited to) authentication with an IP-Phone/Endpoint connected via Wired or Wireless.
+For the scope of this guide, it is important to understand these phases of the ISE (RADIUS) Authentication flow:
+Authentication - Identify and validate the end-identity (machine, user, and so on) that requests network access.
+Authorization - Determine what permissions/access the end-identity can be granted on the network.
+Accounting - Report and track the end-identity's network activity after network access is achieved.
+Configure
+Obtain Server and Client Certificates
+Step 1. Generate a Certificate Signing Request from ISE
+The first step is to generate a Certificate Signing Request (CSR) from ISE and submit it to the CA (server) in order to obtain the signed certificate issued to ISE, as a System Certificate. This certificate can be presented as a Server Certificate by ISE during Extensible Authentication Protocol-Transport Layer Security Authentication (EAP-TLS) authentication. This is performed in the ISE UI. Navigate to Administration > System: Certificates > Certificate Management > Certificate Signing Requests. Under Certificate Signing Requests, click Generate Certificate Signing Requests (CSR) as shown in this image.
+Certificate types require different extended key usages. This list outlines which extended key usages are required for each certificate type:
+ISE Identity Certificates
+Multi-Use (Admin, EAP, Portal, pxGrid) - Client and Server Authentication
+Admin - Server Authentication
+EAP Authentication - Server Authentication
+Datagram Transport Layer Security (DTLS) Authentication - Server Authentication
+Portal - Server Authentication
+pxGrid - Client and Server Authentication
+Security Assertion Markup Language (SAML) - SAML Signing Certificate
+ISE Messaging Service - Generate a Signing Certificate or generate a brand new Messaging Certificate
+By default, the ISE Messaging Service System Certificate is for data replication across each ISE node in the deployment, node registration, and other inter-node communications, and is present and issued by the ISE Internal Certificate Authority (CA) server (internal to ISE). No action is required to be completed with this certificate.
+The Admin System Certificate is used to identify each ISE node such as when the API associated to the Admin UI (Management) is used, and for some inter-node communications. In order to set up ISE for the first time, put in place the Admin System Certificate. That action is not directly related to this configuration guide.
+In order to perform IEEE 802.1x via EAP-TLS (certificate-based authentication), take action for the EAP Authentication System Certificate as this is used as the server certificate presented to the endpoint/client during the EAP-TLS flow; as the result is secured inside of the TLS tunnel. To get started, create a CSR to create the EAP Authentication System Certificate and give it to the personnel who manage the CA server(s) in your organization (or Public CA provider) for signing. The end result is the CA-Signed Certificate that binds to the CSR and associates to ISE with these steps.
+On the Certificate Signing Request (CSR) form, choose these options in order to complete the CSR and obtain its contents:
+
+Certificate Usage, for this configuration example, choose EAP Authentication.
+
+If you plan to utilize a wildcard statement in the certificate, *.example.com, then you must also check the Allow Wildcard Certificate check box. The best location is the Subject Alternative Name (SAN) certificate field for compatibility for any usage and across multiple different type of endpoint operating systems that can be present in the environment.
+
+If you did not choose to place a wildcard statement in the certificate, choose which ISE nodes you wish to associate the CA-Signed Certificate to (after signing).
+Note: When you bind the CA-signed certificate that contains the wildcard statement to multiple nodes within the CSR, then the certificate is distributed to each ISE node (or to the selected nodes) in the ISE deployment, and services can restart. However, the services restart is automatically limited to one node at a time. Monitor the services restart via the show application status ise ISE CLI command.
+Next, you need to complete the form in order to define the Subject. This includes the Common Name (CN), Organizational Unit (OU), Organization (O), City (L), State (ST), and Country (C) certificate fields. The $FQDN$ variable is the value that represents the management Fully Qualified Domain Name (hostname + domain name) associated with each ISE node.
+The Subject Alternative Name (SAN) fields are also to be completed in order to include any required and desired information to be used to establish trust. As a requirement, you need to define the DNS Entry that points to the FQDN of the ISE node(s) which is associated to this certificate, after the certificate has been signed.
+
+Lastly, ensure that you define the appropriate Key Type, Key Length, and Digest to Sign With that conforms to the capabilities of the CA Server(s) and with good security practices in mind. Default values are: RSA, 4096 bits, and SHA-384, respectively. Available choices and compatibility are displayed in this page within the ISE Admin UI.
+This is an example of a completed CSR form without using a wildcard statement. Ensure that you use actual values specific to the environment:
+CSR Example
+In order to save the CSR, click Generate. Click Export, located at the bottom right-hand side, in order to export the CSR file(s) from this prompt:
+Export CSR Example
+More information about certificates for use with ISE can be found in Cisco Identity Services Engine Administrator Guide, Release 3.1 > Chapter: Basic Setup > Certificate Management in Cisco ISE and Install a Third-Party CA-Signed Certificate in ISE.
+Step 2. Import CA Certificates into ISE
+After the CA returns the signed certificate, it also includes the full CA chain comprised of a root certificate and one/multiple intermediary certificates. The ISE Admin UI enforces you to import all certificates in the CA chain first, prior to association or upload of any system certificates. This is done in order to ensure each system certificate is properly associated with the CA chain (also known as trusted certificate) within the ISE software.
+These steps are the best way to import the CA certificates and the system certificate into ISE:
+In order to import the root certificate into ISE GUI, navigate to Administration > System: Certificates > Certificate Management. Under Trusted Certificates, click Import and check the certificate usages Trust for authentication within ISE (Infrastructure) and Trust for client authentication and Syslog (Endpoints) check boxes.
+Certificate Usage for CA Chain
+Repeat the previous step for each Intermediary Certificate(s) as part of the CA certificate chain.
+
+Once all certificates, as part of the full CA chain, are imported into the Trusted Certificates store in ISE, return to the ISE GUI and navigate to Administration > System: Certificates > Certificate Management: Certificate Signing Requests. Locate the CSR entry under Friendly Name that corresponds to the signed certificate, click the certificate's check box, and then click Bind Certificate.
+Bind Certificate to CSR
+Note: You need to bind a single CA-Signed Certificate to each CSR one at a time. Repeat for any remaining CSRs created for other ISE nodes in the deployment.
+On the next page, click Browse and choose the signed certificate file, define a desired Friendly Name, and choose the Certificate Usage(s). Submit to save the changes.
+Select Certificate to Bind to CSR
+At this time, the signed certificate is moved to the ISE GUI. Navigate to Administration > System: Certificates > Certificate Management: System Certificates and assign to the same node which the CSR was created for. Repeat the same process for other nodes and/or other certificate usages.
+Step 3. Obtain Client Certificate for Endpoint
+It is required to navigate through a similar process on the endpoint for the creation of a client certificate for use with EAP-TLS. For this example, you need a client certificate signed and issued to the user account to perform User Authentication with ISE. An example of how to obtain a client certificate for the endpoint from an Active Directory environment can be found in: Understand and configure EAP-TLS using WLC and ISE > Configure > Client for EAP-TLS.
+Due to the multiple types of endpoints and operating systems, as the process can be somewhat different, additional examples are not provided. However, the overall process is conceptually the same. Generate a CSR which has all the relevant information to be included in the certificate and have it signed by the CA, whether that is an internal server in the environment or a public/third-party company that provides this type of service.
+Furthermore, the Common Name (CN) and Subject Alternative Name (SAN) certificate fields include the identity in which to use during the authentication flow. This also dictates how the supplicant is to be configured for EAP-TLS in terms of the identity: Machine and/or User Authentication, Machine Authentication, or User Authentication. This example uses only User Authentication in the rest of this document.
+Network Devices
+Step 4. Add the Network Access Device in ISE
+The Network Access Device (NAD) that an endpoint is connected to is also configured in ISE so that RADIUS/TACACS+ (Device Admin) communication can take place. Between the NAD and ISE, a shared secret/password is used for trust purposes.
+In order to add a NAD via the ISE GUI, navigate to  Administration > Network Resources: Network Devices > Network Devices and click Add, which is shown in this image.
+Network Device Example Configuration
+For use with ISE Profiling, you want to also configure SNMPv2c or SNMPv3 (more secure) to allow the ISE Policy Service Node (PSN) to contact the NAD via SNMP Queries that is involved with authenticating the endpoint to ISE in order to collect attributes to make accurate decisions on the endpoint type that is used. The next example shows how to set up SNMP (v2c), from the same page as in the previous example:
+Example SNMPv2c Config
+More information can be found in Cisco Identity Services Engine Administrator Guide, Release 3.1 > Chapter: Secure Access > Defining Network Devices in Cisco ISE.
+At this time, if you have not done so already, you need to configure all AAA related settings on the NAD to authenticate and authorize with Cisco ISE.
+Policy Elements
+These settings are elements that end up binding to either the Authentication Policy or Authorization Policy. In this guide, primarily each policy element is built and then is mapped into the Authentication Policy or Authorization Policy. It is important to understand that the policy is not in effect until the binding to the Authentication / Authorization Policy is completed successfully.
+Step 5. Use External Identity Source
+An External Identity Source is simply a source where the end-identity (machine or user) account resides that is used during the ISE Authentication phase. Active Directory is typically used to support Machine Authentication against the computer account and/or User Authentication against the end-user account in Active Directory. The Internal Endpoints (internal) source does not store the computer account/hostname, therefore, it cannot be used with machine authentication.
+Shown here are the supported identity sources with ISE and protocols (authentication type) that can be used with each identity source:
+Identity Store Capabilities
+More information in regards to the policy elements can be found in Cisco Identity Services Engine Administrator Guide, Release 3.1 > Chapter: Segmentation > Policy Sets.
+Add Active Directory Security Groups to ISE
+In order to use Active Directory security groups in ISE Policies, you must first add the group into the Active Directory join point. From the ISE GUI, choose Administration > Identity Management: Active Directory > {select AD instance name / join point} > tab: Groups > Add > Select Groups From Directory.
+For more information and requirements to integrate ISE 3.x with Active Directory, review this document in full: Active Directory Integration with Cisco ISE 2.x.
+Note: The same action is applicable to add security groups to an LDAP instance. From ISE GUI, choose Administration > Identity Management: External Identity Sources > LDAP > LDAP instance name > tab: Groups > Add > Select Groups From Directory.
+Step 6. Create the Certificate Authentication Profile
+The purpose of the Certificate Authentication Profile is to inform ISE which certificate field the identity (machine or user) can be found on the client certificate (end-identity certificate) presented to ISE during EAP-TLS (also during other certificate based authentication methods). These settings are bound to the Authentication Policy to authenticate the identity. From ISE GUI, navigate to Administration > Identity Management: External Identity Sources > Certificate Authentication Profile and click Add.
+Use Identity From is used to choose the certificate attribute from which a specific field the identity can be found. The choices are:
+If the identity store is to be pointed to Active Directory or LDAP (external identity source), then a feature called Binary Comparison can be used. Binary Comparison performs a lookup of the identity in Active Directory obtained from the client certificate from the Use Identity From selection, which occurs during the ISE Authentication phase. Without Binary Comparison, the identity is simply obtained from the client certificate and is not looked up in Active Directory until the ISE Authorization phase when an Active Directory External Group is used as a condition, or any other conditions that would need to be performed externally to ISE. In order to use Binary Comparison, in the Identity Store choose the external identity source (Active Directory or LDAP) where the end-identity account can be found.
+This is a configuration example when the identity is located in the Common Name (CN) field of the client certificate, with Binary Comparison enabled (optional):
+Certificate Authentication Profile
+More information can be found in Cisco Identity Services Engine Administrator Guide, Release 3.1 > Chapter: Basic Setup > Cisco ISE CA Service > Configure Cisco ISE to Use Certificates for Authenticating Personal Devices > Create a Certificate Authentication Profile for TLS-Based Authentication.
+Step 7. Add to an Identity Source Sequence
+The Identity Source Sequence can be created from the ISE GUI. Navigate to Administration > Identity Management. Under Identity Source Sequences , click Add.
+The next step is to add the Certificate Authentication Profile to an Identity Source Sequence which grants the ability to include multiple Active Directory join points or group a combination of internal/external identity sources together, as desired, which then binds to the Authentication Policy under the Use column.
+The example as shown here allows the lookup to be performed against Active Directory first, then if the user is not found, it looks up on an LDAP server next. For multiple identity sources. always ensure the Treat as if the user was not found and proceed to the next store in the sequence check box is checked. This is so each identity source/server is checked during the authentication request.
+Identity Source Sequence
+Otherwise, you can also bind just the Certificate Authentication Profile to the Authentication Policy.
+Step 8. Define the Allowed Protocols Service
+The Allowed Protocols Service enables only that authentication methods/protocols which ISE supports during RADIUS Authentication. In order to configure from the ISE GUI, navigate to Policy > Policy Elements: Results > Authentication > Allowed Protocols and then it binds as an element to the Authentication Policy.
+Note: Authentication Bypass > Process Host Lookup relates to MAB enabled on ISE.
+These settings must be the same as what is supported and configured on the supplicant (on the endpoint). Otherwise, the authentication protocol is not negotiated as expected and RADIUS communication can fail. In a real-world ISE configuration, it is recommended to enable any authentication protocol that is used in the environment so ISE and the Supplicant can negotiate and authenticate as expected.
+These are the default values (collapsed) when a new instance of the services of the allowed protocol is created.
+Note: At a minimum, you must enable EAP-TLS since ISE and our supplicant authenticates via EAP-TLS in this configuration example.
+Protocols to allow ISE to use during authentication request to endpoint supplicant
+Note: The use of Preferred EAP Protocol set to value of EAP-TLS causes ISE to request the EAP-TLS protocol as the first protocol offered to the endpoint IEEE 802.1x supplicant. This setting is useful if you intend to authenticate via EAP-TLS often on most endpoints that are authenticated with ISE.
+Step 9. Create the Authorization Profile
+The last policy element needed to build is the Authorization Profile, which binds to the Authorization Policy and gives the desired level of access. The Authorization Profile is bound to the Authorization Policy. In order to configure it from ISE GUI, navigate to Policy > Policy Elements: Results > Authorization > Authorization Profiles and click Add.
+The Authorization Profile contains a configuration that results in attributes that are passed from ISE to the NAD for a given RADIUS session, in which these attributes are used to achieve the desired level of network access.
+As shown here, it simply passes RADIUS Access-Accept as the Access Type, however, additional items can be used upon the initial authentication. Notice Attribute Details at the very bottom, which contains the summary of attributes ISE sends to the NAD when it matches a given Authorization Profile.
+Authorization Profile - Policy Element
+More information on the ISE Authorization Profile and Policy can be found in Cisco Identity Services Engine Administrator Guide, Release 3.1 > Chapter: Segmentation > Authorization Policies.
+Security Policies
+Authentication and Authorization Policies are created from the ISE GUI, choose Policy > Policy Sets. These are enabled by default on ISE 3.x. When you install ISE, there is always one Policy Set defined, which is the default Policy Set. The default Policy Set contains predefined and default authentication, authorization, and exception policy rules.
+The Policy Sets are configured hierarchically, which allows the ISE Administrator to group similar policies together, in terms of the intent, into different sets for use within an authentication request. Customization and grouping policies is virtually limitless. As such, one Policy Set could be used for wireless endpoint authentication for network access while another Policy Set could be used for wired endpoint authentication for network access; or for any other unique and differentiating way to manage policies.
+Cisco ISE can evaluate Policy Sets and the policies within uses the top-down approach, to first match a given Policy Set when all conditions of said set evaluate to be True; upon which ISE further evaluates the Authentication Policies and Authorization Policies within that matched the Policy Set, as follows:
+Evaluation of the Policy Set and Policy Set Conditions
+Authentication Policies within the matched Policy Set
+Authorization Policy - Local Exceptions
+Authorization Policy - Global Exceptions
+Authorization Policies
+Policy Exceptions exists globally for all Policy Sets or locally within a specific Policy Set. These Policy Exceptions are handled as part of the Authorization Policies, since they deal with what permissions or results are given for network access for a given temporary scenario.
+The next section covers how to combine the configuration and policy elements to bind to the ISE Authentication and Authorization Policies to authenticate an endpoint via EAP-TLS.
+Step 10. Create the Policy Set
+A Policy Set is a hierarchical container that consists of a single user-defined rule that indicates the allowed protocol or server sequence for network access, as well as authentication and authorization policies and policy exceptions, all also configured with user-defined condition-based rules.
+In order to create a Policy Set from the ISE GUI, navigate to Policy > Policy Set and then click the plus (+) icon in the upper-left corner, as shown in this image.
+Adding a new Policy Set
+The Policy Set can bind/combine this policy element previously configured and is used to determine which Policy Set is to be matched in a given RADIUS Authentication Request (Access-Request):
+Bind: Allowed Protocols Services
+Defining Policy Set Conditions and Allowed Protocols List
+This example uses specific attributes and values that would appear in the RADIUS session to enforce IEEE 802.1x (framed attribute), even though it is possibly redundant to re-enforce the RADIUS protocol. In order to achieve the best results, use only unique RADIUS session attributes that are applicable to the desired intent, such as Network Device Groups or specific for Wired 802.1x, Wireless 802.1x, or both Wired 802.1x and Wireless 802.1x.
+More information on Policy Sets on ISE can be found in the Cisco Identity Services Engine Administrator Guide, Release 3.1 > Chapter: Segmentation > Policy Sets, Authentication Policies, and Authorization Policies sections.
+Step 11. Create an Authentication Policy
+Inside the Policy Set, the Authentication Policy binds/combines these policy elements previously configured to be used with conditions to determine when an Authentication Rule is to be matched.
+Bind: Certificate Authentication Profile or Identity Source Sequence.
+Authentication Policy Rule Example
+Step 12. Create the Authorization Policy
+Inside the Policy Set, the Authorization Policy binds/combines these policy elements previously configured to be used with conditions to determine when an Authorization Rule is to be matched. The example here is for User Authentication since the conditions point to the Domain Users security group in Active Directory.
+Bind: Authorization Profile
+Authorization Policy Rule Example
+In order to add an External Group (such as from Active Directory or LDAP), you must add the group from the external server instance. In this example, it is from the ISE UI: Administration > Identity Management: External Identity Sources > Active Directory {AD Join Point Name} > Groups. From the Group tab, choose Add > Select Groups from Directory and use the Name filter to search for all groups (*) or specific groups, such as Domain Users (*domain users*) to retrieve groups.
+To use external groups in ISE Policies, must add group from Directory
+Searching within the External Directory - Active Directory Example
+After you check the check box next to each group, you would utilize in the Policies within ISE. Do not forget to click Ok and/or Save in order to save the changes.
+Verify
+Use this section in order to confirm that your configuration works properly.
+Once all global configuration and policy elements bind the Policy Set, configuration looks similar to this image for User Authentication via EAP-TLS:
+Troubleshoot
+This section provides information you can use in order to troubleshoot your configuration.
+After the configuration is complete, connect the endpoint to test authentication. The results can be found in the ISE GUI. Choose Operations > Radius > Live Logs, as shown in this image.
+For awareness, the Live Logs for RADIUS and TACACS+ (Device Admin) are available for the authentication attempts/activity up to the past 24 hours and for the past 100 records. If you wish to see this type of reporting data beyond this timeframe, then you need to use the reports, specifically: ISE UI: Operations > Reports > Reports: Endpoints and Users > RADIUS Authentications.
+Example Output from Radius > Live Logs
+In the RADIUS Live Logs in ISE, you expect to find information about the RADIUS session, which includes session attributes, and other helpful information to diagnose behavior observed during an authentication flow. Click the details icon to open the detailed view of the session to view session attributes and related information that is specific to this authentication attempt.
+In order to troubleshoot, it is important to ensure the correct policies are matched. For this configuration example, the desired Authentication and Authorization Policies are matched as expected, as shown in the image:
+In the detailed view, these attributes are checked in order to verify that the authentication behaves as expected per the design as part of this configuration example:
+Event
+This contains whether or not the authentication was successful.
+In a working scenario the value is: 5200 Authentication succeeded.
+
+Username
+This includes the end-identity that was pulled from the client certificate that was presented to ISE.
+In a working scenario, this is the username of the user logged into the endpoint (that is, employee1 from the previous image).
+
+Endpoint ID
+For Wired/Wireless, this value is the MAC address of the network interface card (NIC) from the endpoint.
+In a working scenario, this becomes the MAC address of the endpoint unless the connection is over VPN, in which case it can be the IP Address of the endpoint.
+
+Authentication Policy
+Shows the matched authentication policy for the given session based on session attributes that match the policy conditions.
+In a working scenario, this is the expected authentication policy as configured.
+If you see another policy, it means the expected policy when compared to the conditions in the policy was not evaluated as true. In this case, review the session attributes and ensure each policy contains different yet unique conditions for each policy.
+
+Authorization Policy
+Shows the matched authorization policy for the given session based on session attributes that match the policy conditions.
+In a working scenario, this is the expected authorization policy as configured.
+If you see another policy, it means the expected policy when compared to the conditions in the policy, was not evaluated as true. In this case, review the session attributes and ensure each policy contains different, yet unique, conditions for each policy.
+
+Authorization Result
+Based on the matched Authorization Policy, this shows the Authorization Profile that was used in the given session.
+In a working scenario, this is the same value as configured in the policy. It is good to review for audit purposes and to ensure the correct authorization profile was configured.
+
+Policy Server
+This includes the hostname of the ISE Policy Service Node (PSN) that was involved in the authentication attempt.
+In a working scenario, you only see authentications that go to the first PSN node as configured on the NAD (also known as edge device), unless that PSN was not operational or if failover occurred, such as due to higher latency than expected or if an authentication timeout occurs.
+
+Authentication Method
+Shows the authentication method that was used in the given session. For this example, you see the value as dot1x.
+In a working scenario, based on this configuration example, you see the value as dot1x. If you see another value, it could mean that either dot1x failed or was not attempted.
+
+Authentication Protocol
+Shows the authentication method that was used in the given session. For this example, you see the value as EAP-TLS.
+In a working scenario, based on this configuration example, you always see the value as EAP-TLS. If you see another value, then the supplicant and ISE did not successfully negotiate EAP-TLS.
+
+Network Device
+Shows the network device name, as configured in ISE, for the NAD (also known as the edge device) involved in the authentication attempt between the endpoint and ISE.
+In a working scenario, this name is always given in ISE UI: Administration > System: Network Devices. Based on that configuration, the IP address of the NAD (also known as the edge device) is used to determine which network device the authentication came from which is included in the NAS IPv4 Address session attribute.
+By no means is this a complete list of all possible session attributes to review for troubleshooting or other visibility purposes, as there are other useful attributes to verify. It is recommended to review all session attributes to start to become familiar with all the information. You can see include the right-side under the section Steps, that shows the operations or behavior taken by the ISE.
+Common Issues and Techniques to Troubleshoot
+This list includes some common issues and troubleshooting advice, and by no means is meant to be a complete list. Instead, use this as a guide and develop your own techniques to troubleshoot issues when ISE is involved.
+Issue: Encounter an authentication failure (5400 Authentication failed) or any other non-successful authentication attempt.
+If an authentication failure is encountered, click the details icon which gives information as to why authentication failed and the steps taken. This includes the failure reason and possible root cause.
+
+Since ISE makes the decision on the authentication result, ISE has the information to understand the reason the authentication attempt was not successful.
+Issue: The authentication does not complete successfully and the failure reason shows "5440 Endpoint abandoned EAP session and started new" or "5411 Supplicant stopped responding to ISE".
+
+This failure reason indicates the RADIUS communication did not complete before timing out. Since EAP is between the endpoint and NAD, then you need to check the timeout that is used on the NAD and ensure it is set for at least five seconds.
+
+If five seconds is not enough to resolve this issue, then it is recommended to increase it by five seconds a few times and retest in order to verify if this technique resolves this issue.
+
+If the issue is not resolved from the previous steps, then it is recommended to ensure the authentication is handled by the same and correct ISE PSN node and the overall behavior is not indicative of abnormal behavior, such as higher than normal latency between NAD and ISE PSN node(s).
+
+Also, it is a good idea to verify if the endpoint sends the client certificate through packet capture if ISE does not receive the client certificate, then the endpoint (user certificates) cannot trust the ISE EAP Authentication certificate. If found to be true, then import the CA Chain in the correct certificate stores (Root CA = Trusted Root CA | Intermediary CA = Trusted Intermediary CA).
+
+Issue: Authentication is successful, but does not match the correct Authentication and/or Authorization Policy.
+If you encounter an authentication request that is successful, but does not match the correct Authentication and/or Authorization rules, it is recommended to review session attributes in order to ensure conditions used are accurate and present in the RADIUS session.
+
+ISE evaluates these policies from a top-down approach (with the exception of Posture Policies). You need to first determine if the policy that was matched was above or below the desired policy to be matched. The Authentication Policy is evaluated first and independently of the Authorization Policies. If the Authentication Policy is matched correctly, then it has 22037 Authentication Passed in the Authentication Details under the right-hand section named Steps.
+
+If the desired policy is above the matched policy, this means the sum of the conditions on the desired policy did not evaluate to be true. It reviews all attributes and values in the condition and on the session in order to ensure it exists and no spelling mistake is present.
+
+If the desired policy is below the matched policy, then it means another policy (above) was matched instead of the desired policy. This could mean condition values are not specific enough, the conditions are duplicated in another policy, or the order of the policy is not correct. While it becomes more difficult to troubleshoot, it is recommended to start to review policies in order to determine the reason why the desired policy was not matched. This helps to identify what actions to take next.
+
+Issue: The identity or username used during authentication was not the expected value.
+When this occurs, if the endpoint sends the client certificate, then most likely ISE does not use the correct certificate field in the Certificate Authentication Template; which is evaluated during the Authentication Phase.
+
+Review the client certificate to locate the exact field the desired identity/username exists and ensure the same field is selected from: ISE UI: Administration > Identity Management: External Identity Sources > Certificate Authentication Profile > (certificate authentication profile used in the Authentication Policy).
+
+Issue: Authentication is not successful with failure reason 12514 EAP-TLS failed SSL/TLS handshake because of an unknown CA in the client certificates chain.
+This can occur if the client certificate has a certificate in the CA chain that is not Trusted on ISE UI: Administration > System: Certificates > Trusted Certificates.
+
+This typically can occur when the client certificate (on the endpoint) has a CA chain that is different than the certificate CA chain that is signed to ISE for EAP Authentication.
+
+For resolution, ensure the client certificate CA chain is trusted on ISE and the ISE EAP Authentication server certificate CA chain is trusted on the endpoint.
+- For Windows OS and Chrome, navigate to Start > Run MMC > Add/Remove Snap-In > Certificates > User Certificates.
+- For Firefox: Import the CA chain (not the end-identity certificate) to be trusted for Web Server.
+Related Information
+Cisco Identity Services Engine > Install and Upgrade Guides
+Cisco Identity Services Engine > Configuration Guides
+Cisco Identity Services Engine > Compatibility Information
+Cisco Identity Services Engine Administrator Guide, Release 3.1 > Chapter: Secure Access > Defining Network Devices in Cisco ISE
+Cisco Identity Services Engine Administrator Guide, Release 3.1 > Chapter: Segmentation > Policy Sets
+Cisco Identity Services Engine Administrator Guide, Release 3.1 > Chapter: Segmentation > Authentication Policies
+Cisco Identity Services Engine Administrator Guide, Release 3.1 > Chapter: Segmentation > Authorization Policies
+Cisco Identity Services Engine > Configuration Guides > Active Directory Integration with Cisco ISE 2.x
+Cisco Identity Services Engine Administrator Guide, Release 3.1 > Chapter: Segmentation > Network Access Service > Network Access for Users
+Cisco Identity Services Engine Administrator Guide, Release 3.1 > Chapter: Basic Setup > Certificate Management in Cisco ISE
+Cisco Identity Services Engine Administrator Guide, Release 3.1 > Chapter: Basic Setup > Cisco ISE CA Service > Configure Cisco ISE to Use Certificates for Authenticating Personal Devices > Create a Certificate Authentication Profile for TLS-Based Authentication
+Cisco Identity Services Engine > Configuration Examples and TechNotes > Configure ISE 2.0 Certificate Provisioning Portal
+Cisco Identity Services Engine > Configuration Examples and TechNotes > Install a Third-Party CA-Signed Certificate in ISE
+Wireless LAN (WLAN) > Configuration Examples and TechNotes > Understand and configure EAP-TLS using WLC and ISE
+Technical Support & Documentation - Cisco Systems
+Revision History
+Revision Publish Date Comments
+3.0
+13-Jul-2023
+Added Background Information. Updated Title, Introduction, PII, Branding Requirements, Machine Translation, Style Requirements, Spelling, Formatting.
+2.0
+17-May-2022
+Updated to ISE Release 3.x.
+1.0
+17-Oct-2019
+Initial Release
+Contributed by Cisco Engineers
+Nick DiNofrio
+Cisco TAC Engineer
+Was this Document Helpful?
+Yes No Feedback
+Customers Also Viewed
+Understand and Configure EAP-TLS with a WLC and ISE
+Cisco Identity Services Engine Administrator Guide, Release 3.1 --- Segmentation
+Contact Cisco
+Open a Support Case
+(Requires a Cisco Service Contract)
+This Document Applies to These Products
+Identity Services Engine
