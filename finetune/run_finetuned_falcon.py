@@ -8,9 +8,9 @@ import torch
 from peft import PeftModel, PeftConfig
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
-peft_model_id = "lucas0/outputs"
+peft_model_id = "lucas0/empath-falcon-40b"
 config = PeftConfig.from_pretrained(peft_model_id)
-model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path, return_dict=True, load_in_4bit=True, device_map='auto')
+model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path, return_dict=True, load_in_4bit=True, device_map='auto', trust_remote_code=True)
 tokenizer = AutoTokenizer.from_pretrained(config.base_model_name_or_path)
 
 # Load the Lora model
