@@ -9,7 +9,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import WebDriverException, TimeoutException, StaleElementReferenceException
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup as bs
 import codecs
 import re
 from webdriver_manager.chrome import ChromeDriverManager
@@ -48,9 +48,8 @@ while (len(urls) > 0) and (len(visited) < 5000):
     current_url = urls.pop(0)
     driver.get(current_url)
     get_url = driver.current_url
-    filename = get_url.removeprefix(prefix).replace("/","_")
 
-    next_urls = driver.find_elements(By.TAG_NAME, 'a')
+    filename = get_url.removeprefix(prefix).replace("/","_")
 
     print(get_url, current_url)
     if cwd+"/"+filename in saved_pages:
@@ -59,21 +58,20 @@ while (len(urls) > 0) and (len(visited) < 5000):
         print("page already saved: "+filename)
         continue
 
-    try:
-        wait.until(EC.url_to_be(current_url))
-    except TimeoutException as ex:
-        if current_url not in visited: visited.append(current_url)
-        print(str(ex)+get_url)
+    body = driver.find_element(By.TAG_NAME, "body")
+    if filename.startswith("landing"):
+        next_urls = body.find_elements(By.CLASS_NAME, "landing-revamp_articleLink__KGIzU")
+        filter_and_add_urls(next_urls)
         continue
 
+    elif filename.startswith("article"):
+        main_frame = body.find_element(By.CLASS_NAME, "article_article-left-content__1AUsB")
+        main_text = main_frame.text
+        next_urls = main_frame.find_elements(By.TAG_NAME, 'a')
+        print(filename)
+        with open(cwd+"/pages/"+filename, "w+") as file:
+            file.write(main_text)
 
-    body = driver.find_element(By.TAG_NAME, "body")
-    main_text = body.find_element(By.ID, "fw-content").text
-    print(filename)
-    with open(cwd+"/pages/"+filename, "w+") as file:
-        file.write(main_text)
-
-    if get_url not in visited: visited.append(get_url)
-    if len(urls) < 500: filter_and_add_urls(next_urls)
-    random.shuffle(urls)
+        if get_url not in visited: visited.append(get_url)
+        filter_and_add_urls(next_urls)
     time.sleep(0.5)
