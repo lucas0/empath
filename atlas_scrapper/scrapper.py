@@ -8,7 +8,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import WebDriverException, TimeoutException, StaleElementReferenceException
+from selenium.common.exceptions import WebDriverException, TimeoutException, StaleElementReferenceException, NoSuchElementException
 from bs4 import BeautifulSoup as bs
 import codecs
 import re
@@ -39,39 +39,44 @@ def filter_and_add_urls(next_urls):
             print(error)
             continue
         if (href is not None):
-           href = href.split(".html")[0]+".html"
-           if (href not in visited) and href.startswith(prefix):
+           href = href.split("#")[0]+".html"
+           if (href not in visited+urls) and href.startswith(prefix):
                 urls.append(href)
 
 while (len(urls) > 0) and (len(visited) < 5000):
     print(len(urls), len(visited))
     current_url = urls.pop(0)
-    driver.get(current_url)
-    get_url = driver.current_url
+    try:
+        driver.get(current_url)
+        get_url = driver.current_url
+    except TimeoutException as error:
+        visited.append(get_url)
+        continue
 
     filename = get_url.removeprefix(prefix).replace("/","_")
 
     print(get_url, current_url)
-    if cwd+"/"+filename in saved_pages:
-        if get_url not in visited: visited.append(get_url)
-        if len(urls) < 200: filter_and_add_urls(next_urls)
-        print("page already saved: "+filename)
+
+    try:
+        body = driver.find_element(By.TAG_NAME, "body")
+        if filename.startswith("landing") or (cwd+"/"+filename in saved_pages):
+            next_urls = body.find_elements(By.CLASS_NAME, "landing-revamp_articleLink__KGIzU")
+            continue
+
+        elif filename.startswith("article"):
+            main_frame = body.find_element(By.CLASS_NAME, "article_article-left-content__1AUsB")
+            main_text = main_frame.text
+            next_urls = main_frame.find_elements(By.TAG_NAME, 'a')
+
+    except (NoSuchElementException) as error:
         continue
 
-    body = driver.find_element(By.TAG_NAME, "body")
-    if filename.startswith("landing"):
-        next_urls = body.find_elements(By.CLASS_NAME, "landing-revamp_articleLink__KGIzU")
+    finally:
         filter_and_add_urls(next_urls)
-        continue
+        visited.append(get_url)
 
-    elif filename.startswith("article"):
-        main_frame = body.find_element(By.CLASS_NAME, "article_article-left-content__1AUsB")
-        main_text = main_frame.text
-        next_urls = main_frame.find_elements(By.TAG_NAME, 'a')
-        print(filename)
-        with open(cwd+"/pages/"+filename, "w+") as file:
-            file.write(main_text)
+    print(filename)
+    with open(cwd+"/pages/"+filename, "w+") as file:
+        file.write(main_text)
 
-        if get_url not in visited: visited.append(get_url)
-        filter_and_add_urls(next_urls)
     time.sleep(0.5)

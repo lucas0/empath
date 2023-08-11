@@ -1,0 +1,183 @@
+November 03, 2021 |
+9219 view(s) |
+4 people thought this was helpful
+Configure single sign-on in Control Hub with Shibboleth
+In this article
+You can configure a Single Sign-On (SSO) integration between Control Hub and a deployment that uses Shibboleth as an identity provider (IdP).
+Single sign-on and Control Hub
+Single sign-on (SSO) is a session or user authentication process that permits a user to provide credentials to access one or more applications. The process authenticates users for all the applications that they are given rights to. It eliminates further prompts when users switch applications during a particular session.
+The Security Assertion Markup Language (SAML 2.0) Federation Protocol is used to provide SSO authentication between the Webex cloud and your identity provider (IdP).
+Profiles
+Webex App only supports the web browser SSO profile. In the web browser SSO profile, Webex App supports the following bindings:
+SP initiated POST -> POST binding
+SP initiated REDIRECT -> POST binding
+NameID format
+The SAML 2.0 Protocol supports several NameID formats for communicating about a specific user. Webex App supports the following NameID formats.
+urn:oasis:names:tc:SAML:2.0:nameid-format:transient
+urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified
+urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
+In the metadata that you load from your IdP, the first entry is configured for use in Webex.
+SingleLogout
+Webex App supports the single logout profile. In Webex App, a user can sign out of the application, which uses the SAML single logout protocol to end the session and confirm that sign out with your IdP. Ensure your IdP is configured for SingleLogout.
+Integrate Control Hub with Shibboleth
+
+The configuration guides show a specific example for SSO integration but do not provide exhaustive configuration for all possibilities. For example, the integration steps for nameid-format urn:oasis:names:tc:SAML:2.0:nameid-format:transient are documented. Other formats such as urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified or urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress will work for SSO integration but are outside the scope of our documentation.
+Set up this integration for users in your Webex organization (including Webex App, Webex Meetings, and other services administered in Control Hub). If your Webex site is integrated in Control Hub, the Webex site inherits the user management. If you can't access Webex Meetings in this way and it is not managed in Control Hub, you must do a separate integration to enable SSO for Webex Meetings. (See Configure Single Sign-On for Webex for more information in SSO integration in Site Administration.)
+The integration steps refer to Shibboleth 2.4.5 in CentOS 7 with Tomcat 7 as the web server.
+Before you begin
+For SSO and Control Hub, IdPs must conform to the SAML 2.0 specification. In addition, IdPs must be configured in the following manner:
+Download the Webex metadata to your local system
+1
+From the customer view in https://admin.webex.com, go to Management > Organization Settings, and then scroll to Authentication, and then toggle on the Single sign-on setting to start the setup wizard.
+2
+Choose the certificate type for your organization:
+Self-signed by Cisco—We recommend this choice. Let us sign the certificate so you only need to renew it once every five years.
+Signed by a public certificate authority—More secure but you'll need to frequently update the metadata (unless your IdP vendor supports trust anchors).
+
+  Trust anchors are public keys that act as an authority to verify a digital signature's certificate. For more information, refer to your IdP documentation.
+3
+Download the metadata file.
+The Webex metadata filename is idb-meta-<org-ID>-SP.xml.
+Configure authorization in Shibboleth files
+After you install Shibboleth, you are provided configuration files with examples.
+1
+Go to the directory /opt/shibboleth-idp/conf to access the example files.
+2
+Decide which authorization method to use—for example, LDAP bind to Active Directory.
+3
+Edit the handler.xml file as follows:
+Uncomment
+    <!--  Username/password login handler -->
+    <ph:LoginHandler xsi:type="ph:UsernamePassword"
+                  jaasConfigurationLocation="file:///opt/shibboleth-idp/conf/login.config">  
+  <ph:AuthenticationMethod>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport
+</ph:AuthenticationMethod>
+    </ph:LoginHandler>
+Comment
+<ph:LoginHandler xsi:type="ph:RemoteUser"> 
+<ph:AuthenticationMethod>urn:oasis:names:tc:SAML:2.0:ac:classes:unspecified</ph:AuthenticationMethod>
+    </ph:LoginHandler>
+4
+Fill up the details of your Active Directory to allow for the authentication. Provide the configuration to the file login.config.
+Example:
+ShibUserPassAuth {
+   edu.vt.middleware.ldap.jaas.LdapLoginModule required
+      ldapUrl="ldap://ad0a.cisco.net:389"
+      ssl="false"
+      tls="false"
+      baseDn="cn=Users,dc=cisco,dc=net"
+      subtreeSearch="true"
+      userFilter="sAMAccountName={0}"
+      bindDn="cn=Administrator,cn=Users,dc=cisco,dc=net"
+      bindCredential="ThePassword";
+};
+Configure Shibboleth service provider components for SAML assertion
+1
+Add the file that you downloaded from the Webex SP to the directory /opt/shibboleth-idp/metadata.
+2
+Edit the relying-party.xml file; after the DefaultRelyingParty tag, add the details of the SAML assertion for Webex.
+ <rp:RelyingParty id="https://idbroker.webex.com/ea7c1420-711d-4916-95f8-
+22de53230d1e"
+              provider="https://shib9a.cisco.net/idp/shibboleth"
+              defaultSigningCredentialRef="IdPCredential">
+            <rp:ProfileConfiguration xsi:type="saml:SAML2SSOProfile"
+                includeAttributeStatement="true"
+                assertionLifetime="PT5M" assertionProxyCount="0"
+                signResponses="never" signAssertions="always"
+                encryptAssertions="conditional" encryptNameIds="never"
+                includeConditionsNotBefore="true"/>
+        </rp:RelyingParty>
+For id, you must use the EntityID value from the Webex metadata file. Replace the ID of the example with the EntityID of your organization.
+3
+Inside the metadata:MetadataProvider tag, add the location of the file:
+ <metadata:MetadataProvider id="ShibbolethMetadata" xsi:type="metadata:Chaini
+ngMetadataProvider">
+        <metadata:MetadataProvider id="IdPMD" xsi:type="metadata:FilesystemMetad
+ataProvider" metadataFile="/opt/shibboleth-idp/metadata/idp-metadata.xml" maxRefreshDelay="P1D" />
+    <!--     Cisco UCXN Configuration               -->
+   <metadata:MetadataProvider xsi:type="FilesystemMetadataProvider" xmlns="urn:m
+ace:shibboleth:2.0:metadata" id="ucxn9a" metadataFile="/opt/shibboleth-idp/metad
+ata/ucxn9a-single-agreement.xml" />
+    <!--     Cisco CUCM Configuration               -->
+   <metadata:MetadataProvider xsi:type="FilesystemMetadataProvider" xmlns="urn:m
+ace:shibboleth:2.0:metadata" id="cucm9a" metadataFile="/opt/shibboleth-idp/metad
+ata/cucm9a.cisco.net-single-agreement.xml" />
+    <!--     Cisco CI Configuration               
+   <metadata:MetadataProvider xsi:type="FilesystemMetadataProvider" xmlns="urn:m
+ace:shibboleth:2.0:metadata" id="CI" metadataFile="/opt/shibboleth-idp/metadata/
+idb-meta-ea7c1420-711d-4916-95f8-22de53230d1e-SP.xml" />
+    </metadata:MetadataProvider>
+The SP metadata comes from a file in the Shibboleth file system, in the location where you uploaded the metadata for your Webex organization.
+Configure the assertion attributes
+1
+In the Data Connector section, specify where to retrieve attributes about your users.
+Example:
+Active Directory, with an id of MyLDAP.
+<resolver:DataConnector id="MyLDAP" xsi:type="dc:LDAPDirectory"
+      ldapURL="ldap://ad0a.cisco.net:389"
+      baseDN="cn=Users,dc=cisco,dc=net"
+      principal="Administrator@cisco.net"
+      principalCredential="ThePassword">
+        <dc:FilterTemplate>
+            <![CDATA[
+                (sAMAccountName=$requestContext.principalName)
+            ]]>
+        </dc:FilterTemplate>
+    </resolver:DataConnector>
+2
+In the Attribute definition section, keep what is already in the configuration for transientID.
+3
+Add the extra attribute that the SP is expecting, and define what it maps to in the attribute source.
+Example:
+Map the attribute mail (email address attribute in Active Directory) to uid (UserID in Webex).
+<resolver:AttributeDefinition id="mail-attr" xsi:type="ad:Simple" 
+sourceAttributeID="mail">
+        <resolver:Dependency ref="MyLDAP" />
+        <resolver:AttributeEncoder xsi:type="enc:SAML2String" name="uid" />
+     </resolver:AttributeDefinition>
+4
+Define which attribute to provide to each SP agreement in the attribute-filter.xml file.
+Provide the uid attribute to Webex that maps to the email address of the user.
+Example:
+Release the attribute uid to the SP agreement with Webex.
+<!--  Release the attributes to cisco CI Cloud  -->
+    <afp:AttributeFilterPolicy id="ReleaseToCI">
+        <afp:PolicyRequirementRule xsi:type="basic:AttributeRequesterString" 
+value="https://idbroker.webex.com/ea7c1420-711d-4916-95f8-22de53230d1e" />
+        <afp:AttributeRule attributeID="transientId">
+            <afp:PermitValueRule xsi:type="basic:ANY"/>
+        </afp:AttributeRule>
+        <afp:AttributeRule attributeID="mail-attr">
+            <afp:PermitValueRule xsi:type="basic:ANY" />
+        </afp:AttributeRule>
+    </afp:AttributeFilterPolicy>
+The rule that you created in attribute-resolver.xml should have a policy to release the mail-attr attribute to the EntityID that matches Webex.
+5
+Download the metadata file from the Shibboleth server in /opt/shibboleth-idp/metadata. The filename is idp-metadata.xml.
+Import the IdP metadata and enable single sign-on after a test
+After you export the Webex metadata, configure your IdP, and download the IdP metadata to your local system, you are ready to import it into your Webex organization from Control Hub.
+Before you begin
+Do not test SSO integration from the identity provider (IdP) interface. We only support Service Provider-initiated (SP-initiated) flows, so you must use the Control Hub SSO test for this integration.
+1
+Choose one:
+Return to the Control Hub – certificate selection page in your browser, and then click Next.
+If Control Hub is no longer open in the browser tab, from the customer view in https://admin.webex.com, go to Management > Organization Settings, scroll to Authentication, and then choose Actions > Import Metadata.
+2
+On the Import IdP Metadata page, either drag and drop the IdP metadata file onto the page or use the file browser option to locate and upload the metadata file. Click Next.
+You should use the More secure option, if you can. This is only possible if your IdP used a public CA to sign its metadata.
+In all other cases, you must use the Less secure option. This includes if the metadata is not signed, self-signed, or signed by a private CA.
+3
+Select Test SSO setup, and when a new browser tab opens, authenticate with the IdP by signing in.
+
+  If you receive an authentication error there may be a problem with the credentials. Check the username and password and try again.
+A Webex App error usually means an issue with the SSO setup. In this case, walk through the steps again, especially the steps where you copy and paste the Control Hub metadata into the IdP setup.
+
+  To see the SSO sign-in experience directly, you can also click Copy URL to clipboard from this screen and paste it in a private browser window. From there, you can walk through signing in with SSO. This step stops false positives because of an access token that might be in an existing session from you being signed in.
+4
+Return to the Control Hub browser tab.
+If the test was successful, select Successful test. Turn on SSO and click Next.
+If the test was unsuccessful, select Unsuccessful test. Turn off SSO and click Next.
+
+  The SSO configuration does not take effect in your organization unless you choose first radio button and activate SSO.
+What to do next
+You can follow the procedure in Suppress Automated Emails to disable emails that are sent to new Webex App users in your organization. The document also contains best practices for sending out communications to users in your organization.
