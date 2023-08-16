@@ -12,9 +12,9 @@ chunks = []
 page_names = []
 max_length = 700
 overlap_size = 50
-l = len(glob.glob("*.html"))
-for idx,file in enumerate(glob.glob("*.html")):
-    print(idx+"/"+str(l))
+l = len(glob.glob("*"))
+for idx,file in enumerate(glob.glob("*")):
+    print(str(idx)+"/"+str(l))
     with open(file, "r+") as f:
         text = f.read()
         if len(text) > max_length:

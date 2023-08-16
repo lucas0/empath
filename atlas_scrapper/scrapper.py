@@ -39,18 +39,19 @@ def filter_and_add_urls(next_urls):
             print(error)
             continue
         if (href is not None):
-           href = href.split("#")[0]+".html"
-           if (href not in visited+urls) and href.startswith(prefix):
+            if "#" in href:
+                href = href.split("#")[0]+".html"
+            if (href not in visited+urls) and href.startswith(prefix):
                 urls.append(href)
 
-while (len(urls) > 0) and (len(visited) < 5000):
+while (len(urls) > 0):
     print(len(urls), len(visited))
     current_url = urls.pop(0)
     try:
         driver.get(current_url)
         get_url = driver.current_url
     except TimeoutException as error:
-        visited.append(get_url)
+        visited.append(current_url)
         continue
 
     filename = get_url.removeprefix(prefix).replace("/","_")
@@ -73,7 +74,7 @@ while (len(urls) > 0) and (len(visited) < 5000):
 
     finally:
         filter_and_add_urls(next_urls)
-        visited.append(get_url)
+        if get_url not in visited: visited+=[get_url, current_url]
 
     print(filename)
     with open(cwd+"/pages/"+filename, "w+") as file:
